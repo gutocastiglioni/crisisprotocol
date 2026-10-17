@@ -30,9 +30,11 @@ def ring_frame(t, b_hint=None):
 
 
 class MeshBuilder:
-    def __init__(self, bone_names, atlas_module=atlas):
-        """atlas_module: módulo com uv()/z_to_v() do atlas do personagem (o raptor usa o dele)."""
+    def __init__(self, bone_names, atlas_module=atlas, remap=None):
+        """atlas_module: módulo com uv()/z_to_v() do atlas do personagem (o raptor usa o dele).
+        remap(co, pesos) -> co: ajuste de proporção aplicado à posição de cada vértice (o UV continua o original)."""
         self.atlas = atlas_module
+        self.remap = remap
         self.bm = bmesh.new()
         self.uv = self.bm.loops.layers.uv.new("UVMap")
         self.dl = self.bm.verts.layers.deform.new()
@@ -45,7 +47,7 @@ class MeshBuilder:
             dv[self.groups[bone]] = w / total
 
     def _vert(self, co, weights):
-        v = self.bm.verts.new(co)
+        v = self.bm.verts.new(self.remap(co, weights) if self.remap else co)
         self._weights(v, weights)
         return v
 
@@ -137,6 +139,8 @@ class MeshBuilder:
         faces = {f for v in res["verts"] for f in v.link_faces}
         for v in res["verts"]:
             self._weights(v, weights)
+            if self.remap:
+                v.co = self.remap(v.co, weights)
         corners = [(0, 1), (1, 1), (1, 0), (0, 0)]
         for f in faces:
             f.material_index = mat
@@ -278,15 +282,15 @@ def build_arm(mb, s):
 def build_leg(mb, s):
     k = 1 if s == "L" else -1
     ul, ll, foot, hips = f"UpperLeg_{s}", f"LowerLeg_{s}", f"Foot_{s}", "Hips"
-    # coxa cheia em cima (lado de fora mais largo), afinando até o joelho; panturrilha atrás
-    outer = {2 if k > 0 else 6: 0.012, 1 if k > 0 else 7: 0.006, 3 if k > 0 else 5: 0.006}
+    # coxa cheia em cima (lado de fora mais largo), afinando devagar até o joelho; panturrilha atrás
+    outer = lambda a: {2 if k > 0 else 6: a, 1 if k > 0 else 7: a * 0.6, 3 if k > 0 else 5: a * 0.6}
     mb.loft([
-        R((k * 0.085, 0, 0.93), 0.085, 0.09, {hips: 0.5, ul: 0.5}),
-        R((k * 0.09, 0, 0.86), 0.084, 0.088, {hips: 0.2, ul: 0.8}, outer),
-        R((k * 0.092, -0.003, 0.78), 0.076, 0.082, {ul: 1}, outer),
-        R((k * 0.092, -0.006, 0.69), 0.068, 0.073, {ul: 1}),
-        R((k * 0.091, -0.008, 0.60), 0.058, 0.063, {ul: 1}),
-        R((k * 0.09, -0.01, 0.53), 0.050, 0.054, {ul: 1}),
+        R((k * 0.085, 0, 0.93), 0.092, 0.100, {hips: 0.5, ul: 0.5}),
+        R((k * 0.09, 0, 0.86), 0.093, 0.102, {hips: 0.2, ul: 0.8}, outer(0.022)),
+        R((k * 0.092, -0.003, 0.78), 0.088, 0.096, {ul: 1}, outer(0.018)),
+        R((k * 0.092, -0.006, 0.69), 0.079, 0.087, {ul: 1}, outer(0.008)),
+        R((k * 0.091, -0.008, 0.60), 0.067, 0.073, {ul: 1}),
+        R((k * 0.09, -0.01, 0.53), 0.055, 0.060, {ul: 1}),
         R((k * 0.09, -0.01, 0.48), 0.049, 0.053, {ul: 0.5, ll: 0.5}),
     ], "thigh", 8, v_by_z=True)
     calf = {0: 0.012, 1: 0.008, 7: 0.008}
@@ -315,7 +319,7 @@ def build_gear(mb):
         mb.box(Vector((k * 0.15, -0.06, 0.965)), X, Y, (0.025, 0.03, 0.035), "pouch", {"Hips": 1})
     mb.box(Vector((0, 0.12, 0.965)), X, Y, (0.06, 0.02, 0.03), "pouch", {"Hips": 1})
     # coldre na coxa direita e bolsa de pulso no antebraço esquerdo (como na referência)
-    mb.box(Vector((-0.17, -0.005, 0.76)), X, Y, (0.018, 0.045, 0.07), "leather", {"UpperLeg_R": 1})
+    mb.box(Vector((-0.188, -0.005, 0.76)), X, Y, (0.018, 0.045, 0.07), "leather", {"UpperLeg_R": 1})
     t = S.ARM_DIR_L
     a, _ = ring_frame(t)
     mb.box(S.arm_point("L", S.UPPER_ARM_LEN + S.FOREARM_LEN * 0.62) + a * 0.042, a, Y, (0.012, 0.03, 0.035), "pouch", {"LowerArm_L": 1})
@@ -352,8 +356,17 @@ def build_pistol(mb):
     mb.box(w + t * 0.126 + u * 0.018, a, u, (0.007, 0.012, 0.004), "pistol", hand)
 
 
+RIGID_UPPER = ("Arm", "Hand", "Neck", "Head")  # braços, pistola e cabeça não passam pelo remap de altura
+
+
+def _proportion(co, weights):
+    if any(part in bone for bone in weights for part in RIGID_UPPER):
+        return co
+    return S.rz(co)
+
+
 def build_all(bone_names):
-    mb = MeshBuilder(bone_names)
+    mb = MeshBuilder(bone_names, remap=_proportion)
     build_torso(mb)
     import heroine_head  # cabeça e cabelo (importado aqui: o módulo usa R e MAT_HAIR daqui)
 

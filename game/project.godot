@@ -21,6 +21,8 @@ window/stretch/aspect="expand"
 
 3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=60
+; a física anda a 60 Hz e a tela a 144+ Hz: sem interpolar, ela pula de posição e a câmera (suave) mostra o tranco como borrão
+common/physics_interpolation=true
 
 [rendering]
 

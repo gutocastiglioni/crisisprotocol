@@ -222,7 +222,8 @@ func fire() -> void:
 func camera_focus() -> Vector3:
 	if model.is_ragdoll():
 		return model.ragdoll.bodies["Hips"].global_position - Vector3.UP * 0.9
-	return global_position
+	# posição desenhada (entre dois passos da física), para a câmera seguir sem tranco
+	return get_global_transform_interpolated().origin
 
 
 func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
@@ -367,6 +368,7 @@ func _get_up() -> void:
 	var hips: Vector3 = model.ragdoll.bodies["Hips"].global_position
 	model.stop_ragdoll()
 	global_position = Vector3(hips.x, global_position.y, hips.z)
+	reset_physics_interpolation()
 	_shape.set_deferred("disabled", false)
 	# levanta agachada, sem controle por um instante
 	_rising = true
@@ -401,5 +403,6 @@ func respawn() -> void:
 	health_changed.emit(health)
 	velocity = Vector3.ZERO
 	global_transform = _spawn
+	reset_physics_interpolation()
 	camera_rig.yaw = rotation.y
 	_shape.set_deferred("disabled", false)

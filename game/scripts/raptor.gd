@@ -390,6 +390,7 @@ func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 func reset() -> void:
 	model.stop_ragdoll()
 	global_transform = _spawn
+	reset_physics_interpolation()
 	velocity = Vector3.ZERO
 	health = MAX_HEALTH
 	dead = false

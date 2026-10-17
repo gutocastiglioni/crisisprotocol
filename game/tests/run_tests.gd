@@ -60,6 +60,7 @@ func _run() -> void:
 	await test_asset()
 	print("== animação")
 	await test_animation_tree()
+	await test_run_cycle()
 	print("== ragdoll")
 	await test_ragdoll()
 	print("== jogadora")
@@ -67,6 +68,7 @@ func _run() -> void:
 	await test_player_roll_and_crouch()
 	await test_shoot_kills_dummy()
 	await test_player_death_and_respawn()
+	await test_smooth_camera()
 	print("== controle (gamepad)")
 	await test_gamepad()
 	print("== tiro e combate")
@@ -134,6 +136,63 @@ func test_animation_tree() -> void:
 	var shoulder := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("UpperArm_R")).origin
 	var fwd := -m.global_basis.z
 	check((hand - shoulder).dot(fwd) > 0.4, "mira: mão direita à frente", str((hand - shoulder).dot(fwd)))
+
+
+## Corrida estilo Syphon Filter: tronco inclinado, quique, gingado do quadril e pé de apoio no chão (sem afundar).
+func test_run_cycle() -> void:
+	var w := await _fresh_world()
+	var inst: Node3D = HeroineModel.SCENE.instantiate()
+	w.add_child(inst)
+	var sk: Skeleton3D = inst.find_children("*", "Skeleton3D", true, false)[0]
+	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
+	ap.play("Run")
+	var length := ap.current_animation_length
+	var pos := func(bone: String) -> Vector3: return sk.global_transform * sk.get_bone_global_pose(sk.find_bone(bone)).origin
+	var lean := INF
+	var hips_lo := Vector3.INF
+	var hips_hi := -Vector3.INF
+	var ankle_lo := INF
+	var ankle_hi := -INF
+	for i in 20:
+		ap.seek(length * i / 20.0, true)
+		var hips: Vector3 = pos.call("Hips")
+		var neck: Vector3 = pos.call("Neck")
+		# o glTF olha para +Z: inclinação para a frente = pescoço à frente do quadril
+		lean = minf(lean, rad_to_deg(atan2(neck.z - hips.z, neck.y - hips.y)))
+		hips_lo = hips_lo.min(hips)
+		hips_hi = hips_hi.max(hips)
+		var low := minf(pos.call("Foot_L").y, pos.call("Foot_R").y)
+		ankle_lo = minf(ankle_lo, low)
+		ankle_hi = maxf(ankle_hi, low)
+	# corrida de reação: levemente para a frente, sem o tronco de velocista
+	check(lean > 4.0 and lean < 18.0, "corrida: tronco levemente inclinado para a frente", "%.1f°" % lean)
+	var bob := hips_hi.y - hips_lo.y
+	check(bob > 0.025 and bob < 0.08, "corrida: quique do quadril (baixo, sem pulo de atleta)", "%.3f" % bob)
+	check(hips_hi.x - hips_lo.x > 0.04, "corrida: gingado lateral do quadril", "%.3f" % (hips_hi.x - hips_lo.x))
+	check(ankle_lo > 0.05, "corrida: pé não afunda no chão", "tornozelo mais baixo %.3f" % ankle_lo)
+	check(ankle_hi > 0.11, "corrida: fase de voo (os dois pés no ar)", "%.3f" % ankle_hi)
+	# pé de apoio (esquerdo, quadros 0 a 4) parado em relação ao chão, que passa a Player.RUN_SPEED
+	var plant_lo := Vector2.INF
+	var plant_hi := -Vector2.INF
+	for f in 5:
+		ap.seek(f / 30.0, true)
+		var a: Vector3 = pos.call("Foot_L")
+		var g := Vector2(a.x, a.z + Player.RUN_SPEED * f / 30.0)
+		plant_lo = plant_lo.min(g)
+		plant_hi = plant_hi.max(g)
+	var slide := plant_hi - plant_lo
+	check(slide.x < 0.02, "corrida: pé de apoio não desliza de lado", "%.3f m" % slide.x)
+	check(slide.y < 0.02, "corrida: pé de apoio não patina para a frente/trás", "%.3f m" % slide.y)
+
+
+## Física a 60 Hz em tela de 144+ Hz: posição interpolada, câmera seguindo a posição desenhada.
+func test_smooth_camera() -> void:
+	check(ProjectSettings.get_setting("physics/common/physics_interpolation", false), "interpolação da física ligada")
+	var w := await _fresh_world()
+	var p := _spawn_player(w)
+	await _frames(5)
+	check(p.camera_rig.physics_interpolation_mode == Node.PHYSICS_INTERPOLATION_MODE_OFF, "câmera movida por quadro (fora da interpolação)")
+	check(p.camera_focus().is_equal_approx(p.get_global_transform_interpolated().origin), "câmera segue a posição interpolada")
 
 
 func _body_ok(m: HeroineModel) -> Dictionary:

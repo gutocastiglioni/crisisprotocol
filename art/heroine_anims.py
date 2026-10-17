@@ -13,6 +13,8 @@ import bpy
 
 FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
+# ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
+LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR")
 
 
 def merge(*poses):
@@ -90,29 +92,53 @@ def walk_pass():
     })
 
 
+# Corrida de reação (Regina em Dino Crisis 2 / Syphon Filter): quase em pé, passadas curtas e rápidas, quique
+# baixo, braços dobrados junto do corpo balançando pouco (a pistola na direita), quadril que gira, cai do lado da
+# perna que balança e escorrega para cima do pé de apoio (o gingado).
+RUN_STEP = 8  # quadros por passo (ciclo de 16 = 3,75 passos/s)
+RUN_LEAN = 5  # quadril inclinado para a frente; as coxas compensam para os ângulos abaixo serem em relação ao chão
 RUN_BODY = {
-    "Spine": (8, 0, 0), "Chest": (4, 0, 0), "Head": (-8, 0, 0),
-    "LowerArm_L": (75, 0, 0), "UpperArm_L": (0, 0, -2),
-    "LowerArm_R": (60, 0, 0), "UpperArm_R": (10, 0, -2), "Hand_R": (-20, 0, 0),
+    "Spine": (6, 0, 0), "Chest": (3, 0, 0), "Neck": (-3, 0, 0), "Head": (-7, 0, 0),
+    "Hand_R": (-20, 0, 0), "Hand_L": (-10, 0, 0),
 }
 
 
-def run_contact():
+def run_key(loc, hips, spine, chest, head, leg_l, leg_r, arm_l, arm_r):
+    """Uma pose da metade do ciclo com apoio na esquerda.
+    hips/spine/chest/head: (giro Y, inclinação Z); leg: (coxa em relação ao chão, joelho, pé, abertura Z);
+    arm: (ombro X, ombro Z, cotovelo)."""
     return merge(RUN_BODY, {
-        "loc": (0, -0.015, 0),
-        "Hips": (0, -7, 0), "Chest": (0, 10, 0),
-        "UpperLeg_L": (40, 0, 0), "LowerLeg_L": (-15, 0, 0), "Foot_L": (10, 0, 0),
-        "UpperLeg_R": (-25, 0, 0), "LowerLeg_R": (-45, 0, 0), "Foot_R": (-25, 0, 0),
-        "UpperArm_L": (-35, 0, 0), "UpperArm_R": (20, 0, 0),
+        "loc": loc,
+        "Hips": (RUN_LEAN, hips[0], hips[1]),
+        "Spine": (0, spine[0], spine[1]), "Chest": (0, chest[0], chest[1]), "Head": (0, head[0], head[1]),
+        "UpperLeg_L": (leg_l[0] + RUN_LEAN, 0, leg_l[3]), "LowerLeg_L": (leg_l[1], 0, 0), "Foot_L": (leg_l[2], 0, 0),
+        "UpperLeg_R": (leg_r[0] + RUN_LEAN, 0, leg_r[3]), "LowerLeg_R": (leg_r[1], 0, 0), "Foot_R": (leg_r[2], 0, 0),
+        # o braço que vai à frente cruza um pouco o corpo (gira para dentro)
+        "UpperArm_L": (arm_l[0], max(arm_l[0], 0) * 0.2, arm_l[1]), "LowerArm_L": (arm_l[2], 0, 0),
+        "UpperArm_R": (arm_r[0], max(arm_r[0], 0) * 0.2, arm_r[1]), "LowerArm_R": (arm_r[2], 0, 0),
     })
 
 
-def run_pass():
-    return merge(RUN_BODY, {
-        "loc": (0, -0.04, 0),
-        "UpperLeg_L": (-2, 0, 0), "LowerLeg_L": (-25, 0, 0), "Foot_L": (5, 0, 0),
-        "UpperLeg_R": (35, 0, 0), "LowerLeg_R": (-105, 0, 0), "Foot_R": (-5, 0, 0),
-    })
+# Metade do ciclo (apoio na esquerda): contato (0), amortece (2), calcanhar sobe (3), sai do chão (4), voo (6). Por quadro:
+#   (loc, quadril, coluna, peito, cabeça, perna esquerda, perna direita, braço esquerdo, braço direito)
+# As pernas e a altura do quadril saem de art/solve_run.py (rodar de novo ao mudar o resto da pose): deixam o pé
+# de apoio parado no chão, na linha dele (sem deslizar de lado, mesmo com o gingado) e indo para trás na
+# velocidade da corrida do jogo (Player.RUN_SPEED = 4,4 m/s; 2 * RUN_STEP quadros = 2 passos).
+RUN_HALF = [
+    (0, ((0.004, -0.04, 0), (-9, 1), (6, -1), (14, -1), (-10, 0), (27, -12, 0, 1), (-15, -65, -15, 2), (-14, 4, 82), (14, 3, 92))),
+    (1, ((0.013, -0.044, 0), (-6.5, 3), (4, -2), (9, -1.5), (-6, 0), (24, -26, 1.5, -4), (-2.5, -80, -12.5, 2), (-9, 4, 83.5), (9, 3, 90.5))),
+    (2, ((0.022, -0.072, 0), (-4, 5), (2, -3), (4, -2), (-2, 0), (21.5, -40, 18.5, -9), (10, -95, -10, 2.5), (-4, 4, 85), (4, 3, 89))),
+    (3, ((0.024, -0.066, 0), (1, 4), (-1, -2), (-3, -2), (3, 0), (9.5, -38, 22.5, -8), (28, -95, -5, -2), (4, 4, 86), (-3, 3, 86))),
+    (4, ((0.022, -0.04, 0), (4, 3), (-3, -2), (-7, -1), (6, 0), (-8.5, -24, 11.5, -5), (40, -88, 0, -3), (9, 4, 88), (-8, 3, 85))),
+    (6, ((0.008, -0.03, 0), (7, 1), (-5, -1), (-12, -1), (9, 0), (-20, -50, -15, 2), (40, -45, 0, -1.5), (13, 4, 90), (-13, 3, 83))),
+]
+
+
+def run_keys():
+    """Ciclo de 2 passos: a metade com apoio na esquerda e o espelho com a direita."""
+    half = [(f, run_key(*k)) for f, k in RUN_HALF]
+    keys = half + [(f + RUN_STEP, mirror(p)) for f, p in half]
+    return keys + [(2 * RUN_STEP, half[0][1])]
 
 
 def strafe_keys():
@@ -171,7 +197,7 @@ def actions():
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": [(0, walk_contact()), (8, walk_pass()), (16, mirror(walk_contact())), (24, mirror(walk_pass())), (32, walk_contact())],
-        "Run": [(0, run_contact()), (5, run_pass()), (10, mirror(run_contact())), (15, mirror(run_pass())), (20, run_contact())],
+        "Run": run_keys(),
         "AimIdle": [(0, AIM), (30, aim_sway), (60, AIM)],
         "Shoot": [(0, AIM), (2, recoil), (9, AIM)],
         "StrafeL": strafe,
@@ -203,6 +229,14 @@ def apply_pose(rig, pose):
     rig.pose.bones["Hips"].location = loc
 
 
+def make_cyclic(act):
+    """Modificador Cycles em cada curva: as alças automáticas passam a enxergar o ciclo fechado."""
+    fcurves = act.fcurves if hasattr(act, "fcurves") else act.layers[0].strips[0].channelbags[0].fcurves
+    for fc in fcurves:
+        fc.modifiers.new("CYCLES")
+        fc.update()
+
+
 def build_actions(rig):
     rig.animation_data_create()
     made = []
@@ -217,6 +251,8 @@ def build_actions(rig):
             rig.pose.bones["Hips"].keyframe_insert("location", frame=frame)
         act.use_frame_range = True
         act.frame_range = (keys[0][0], keys[-1][0])
+        if name in LOOPS:
+            make_cyclic(act)
         made.append(act)
     rig.animation_data.action = None
     apply_pose(rig, {})

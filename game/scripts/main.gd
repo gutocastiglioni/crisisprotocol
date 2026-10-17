@@ -167,6 +167,7 @@ func _parse_args() -> void:
 	elif _shot == "face":
 		# close do rosto (--yaw gira em volta dela: 0 = de frente)
 		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		_review_cam.fov = 30.0
 		add_child(_review_cam)
 		_review_cam.current = true
@@ -230,6 +231,7 @@ func _process(delta: float) -> void:
 				if _shot == "dummy" and at.call(2.4):
 					# chega perto para ver o alvo caído
 					player.global_position = Vector3(2.0, 0, -1.0)
+					player.reset_physics_interpolation()
 					player.model.visible = false
 				if _shot == "dummy" and _t > 2.5:
 					player.camera_rig.look_at_point(dummies[0].model.ragdoll.bodies["Hips"].global_position)
@@ -252,8 +254,11 @@ func _setup_raptor_shot() -> void:
 	}
 	player.global_position = r.global_position + her.get(_shot.trim_prefix("raptor_"), fwd * 4.0)
 	player.rotation.y = PI * 0.5
+	player.reset_physics_interpolation()
+	r.reset_physics_interpolation()
 	player.camera_rig.yaw = 0.0
 	_review_cam = Camera3D.new()
+	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_review_cam.fov = 55.0
 	add_child(_review_cam)
 	_review_cam.current = not _player_cam

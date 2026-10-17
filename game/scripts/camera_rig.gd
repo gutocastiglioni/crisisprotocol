@@ -21,6 +21,8 @@ var _shake_t := 0.0
 
 func _ready() -> void:
 	top_level = true
+	# movida a cada quadro da tela, não no passo da física (que é interpolado)
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	spring = SpringArm3D.new()
 	spring.spring_length = 3.0
 	spring.collision_mask = 1

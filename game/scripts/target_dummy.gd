@@ -53,6 +53,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 func reset() -> void:
 	model.stop_ragdoll()
 	global_transform = _spawn
+	reset_physics_interpolation()
 	health = max_health
 	dead = false
 	_shape.set_deferred("disabled", false)

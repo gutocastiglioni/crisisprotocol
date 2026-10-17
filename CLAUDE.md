@@ -13,7 +13,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - `art/` — gerador da heroína: `heroine_spec.py` (medidas/ossos), `heroine_mesh.py` (malha por anéis + UV + pesos),
   `heroine_rig.py` (esqueleto, materiais, marcador do cano), `heroine_anims.py` (animações em keyframes),
   `heroine_head.py` (cabeça esculpida de 16 lados, nariz, cabelo em calota/franja/laterais/cortina com pontas por alfa),
-  `build_heroine.py` (monta tudo e exporta), `preview.py` (renders de conferência, serve para os dois), `atlas.py` (layout da textura).
+  `build_heroine.py` (monta tudo e exporta), `solve_run.py` (resolve pernas/quadril da corrida para o pé de apoio não
+  deslizar; imprime `RUN_HALF` para `heroine_anims.py` — rodar com `art/heroine.blend` ao mudar a pose da corrida), `preview.py` (renders de conferência, serve para os dois), `atlas.py` (layout da textura).
   Raptor: `raptor_spec.py`, `raptor_mesh.py` (usa o MeshBuilder da heroína), `raptor_rig.py`, `raptor_anims.py`
   (IK nas pernas; convenção de ângulos no cabeçalho), `raptor_atlas.py`, `build_raptor.py`.
 - `tools/` — `make_textures.py` (atlas 512x512 da heroína: corpo pintado em 256 e ampliado) + `paint_clothes.py` (trama,
