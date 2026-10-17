@@ -1,0 +1,187 @@
+# Pipeline de qualidade e segurança — QUALQUER stack. Copie para .github/workflows/security.yml
+# (o bootstrap faz isso) junto com .github/actions/setup-stack/action.yml.
+# Os comandos vêm de .claude/quality.json; job sem comando definido é pulado.
+# Portão de verdade: proteja a branch main exigindo estes jobs. Ações fixadas por SHA; binários por checksum.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # toda segunda: dependências e DAST mesmo sem commit novo
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: comandos do projeto (.claude/quality.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      install: ${{ steps.q.outputs.install }}
+      typecheck: ${{ steps.q.outputs.typecheck }}
+      lint: ${{ steps.q.outputs.lint }}
+      unit: ${{ steps.q.outputs.unit }}
+      services: ${{ steps.q.outputs.services }}
+      authz: ${{ steps.q.outputs.authz }}
+      functions: ${{ steps.q.outputs.functions }}
+      seed: ${{ steps.q.outputs.seed }}
+      e2e: ${{ steps.q.outputs.e2e }}
+      responsive: ${{ steps.q.outputs.responsive }}
+      headers: ${{ steps.q.outputs.headers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: q
+        run: |
+          test -f .claude/quality.json || { echo "::error::.claude/quality.json ausente — rode o bootstrap da skill fullstack-feature"; exit 1; }
+          for k in install typecheck lint unit services authz functions seed e2e responsive headers; do
+            v=$(jq -r --arg k "$k" '.commands[$k] // empty' .claude/quality.json)
+            { echo "$k<<__CMD__"; echo "$v"; echo "__CMD__"; } >> "$GITHUB_OUTPUT"
+          done
+
+  secrets:
+    name: segredos no histórico (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: instalar gitleaks v8.30.1 (binário oficial, checksum conferido)
+        run: |
+          curl -sSLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz gitleaks && rm gitleaks.tar.gz
+      # histórico inteiro: segredo apagado num commit posterior continua vazado (rotacione a chave)
+      - run: ./gitleaks git . --redact --no-banner --exit-code 1
+
+  sast:
+    name: análise estática (semgrep, multi-linguagem)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # p/default cobre JS/TS, Python, Go, Java, Dart, Kotlin, C#, PHP…; + OWASP Top 10 e segredos
+      - run: pipx run semgrep==1.178.0 scan --error --metrics off --config p/default --config p/owasp-top-ten --config p/secrets
+
+  dependencies:
+    name: dependências vulneráveis (osv-scanner, multi-linguagem)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # lê package-lock, pnpm-lock, yarn.lock, pubspec.lock, poetry.lock, requirements.txt, go.sum, pom.xml, gradle…
+      - run: |
+          curl -sSLo osv-scanner https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_linux_amd64
+          echo "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner && ./osv-scanner scan source -r .
+
+  quality:
+    name: tipos, lint e testes unitários
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: plan
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-stack
+      - if: needs.plan.outputs.install != ''
+        run: ${{ needs.plan.outputs.install }}
+      - if: needs.plan.outputs.typecheck != ''
+        run: ${{ needs.plan.outputs.typecheck }}
+      - if: needs.plan.outputs.lint != ''
+        run: ${{ needs.plan.outputs.lint }}
+      - if: needs.plan.outputs.unit != ''
+        run: ${{ needs.plan.outputs.unit }}
+
+  authorization:
+    name: autorização (RLS / regras / matriz da API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: plan
+    if: needs.plan.outputs.authz != '' || needs.plan.outputs.functions != ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-stack
+      - if: needs.plan.outputs.install != ''
+        run: ${{ needs.plan.outputs.install }}
+      - if: needs.plan.outputs.services != ''
+        run: ${{ needs.plan.outputs.services }}
+      - if: needs.plan.outputs.authz != ''
+        run: ${{ needs.plan.outputs.authz }}
+      - if: needs.plan.outputs.functions != ''
+        run: ${{ needs.plan.outputs.functions }}
+
+  e2e:
+    name: fluxos, modais e responsividade
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [plan, quality, authorization]
+    if: always() && needs.plan.outputs.e2e != '' && needs.quality.result == 'success' && needs.authorization.result != 'failure'
+    env:
+      E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-stack
+      - if: needs.plan.outputs.install != ''
+        run: ${{ needs.plan.outputs.install }}
+      - if: hashFiles('playwright.config.*') != ''
+        run: npx playwright install --with-deps chromium
+      - if: needs.plan.outputs.services != ''
+        run: ${{ needs.plan.outputs.services }}
+      - if: needs.plan.outputs.seed != ''
+        run: ${{ needs.plan.outputs.seed }}
+      - run: ${{ needs.plan.outputs.e2e }}
+      - if: needs.plan.outputs.responsive != ''
+        run: ${{ needs.plan.outputs.responsive }}
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidencias-e2e
+          path: |
+            playwright-report/
+            test-results/
+            test/failures/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  dast:
+    name: DAST no staging (headers + OWASP ZAP baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: plan
+    if: vars.STAGING_URL != '' && github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-stack
+      - if: needs.plan.outputs.headers != ''
+        run: |
+          ${{ needs.plan.outputs.install }}
+          ${{ needs.plan.outputs.headers }}
+        env:
+          E2E_HEADERS_URL: ${{ vars.STAGING_URL }}
+      - uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ vars.STAGING_URL }}
+          allow_issue_writing: false
+          fail_action: true

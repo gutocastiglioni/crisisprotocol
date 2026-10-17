@@ -1,0 +1,15 @@
+
+# segredos e saídas de teste (fullstack-feature)
+.env
+.env.*
+!.env.example
+.env.e2e
+playwright-report/
+test-results/
+test/failures/
+
+# Godot / Blender
+game/.godot/
+*.blend1
+__pycache__/
+art/*.blend
