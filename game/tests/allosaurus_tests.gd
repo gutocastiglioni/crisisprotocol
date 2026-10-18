@@ -264,6 +264,10 @@ func test_arena() -> void:
 	var space := w.get_world_3d().direct_space_state
 	var gz: float = Yard.ROAD[Yard.ROAD.size() - 1].y
 	var through := PhysicsRayQueryParameters3D.create(Vector3(-52, 1.0, gz), Vector3(-62, 1.0, gz), 1)
+	check(not space.intersect_ray(through).is_empty(), "portão do pátio começa fechado")
+	for d: Door in w.get_tree().get_nodes_in_group("doors"):
+		d.open()
+	await t._frames(3)
 	check(space.intersect_ray(through).is_empty(), "portão do pátio aberto para a pedreira")
 	var beside := PhysicsRayQueryParameters3D.create(Vector3(-52, 1.0, gz + 5.0), Vector3(-62, 1.0, gz + 5.0), 1)
 	check(not space.intersect_ray(beside).is_empty(), "do lado do portão continua fechado")

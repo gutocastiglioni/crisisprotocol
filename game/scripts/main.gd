@@ -228,12 +228,11 @@ func _build_prompt(layer: CanvasLayer) -> Control:
 	_prompt_text = _label(box, "", Vector2(15, 0))
 	box.visible = false
 	layer.add_child(box)
-	_set_prompt(box, "M16")
+	_set_prompt(box, "PEGAR M16 (E)")
 	return box
 
 
-func _set_prompt(box: Control, weapon_name: String) -> void:
-	var text := "PEGAR %s (E)" % weapon_name
+func _set_prompt(box: Control, text: String) -> void:
 	if _prompt_text.text == text:
 		return
 	_prompt_text.text = text
@@ -293,6 +292,8 @@ func reset_all() -> void:
 	player.respawn()
 	for c in chests:
 		c.reset()
+	for d: Door in get_tree().get_nodes_in_group("doors"):
+		d.reset()
 	Fx.clear_decals()
 	Blood.clear()
 	for d in dummies:
@@ -384,9 +385,12 @@ func _parse_args() -> void:
 func _process(delta: float) -> void:
 	_crosshair.visible = player.aiming and player.model.is_aimed()
 	var target := player.pick_target()
-	_prompt.visible = target != null
+	var door := player.pick_door() if target == null else null
+	_prompt.visible = target != null or door != null
 	if target:
-		_set_prompt(_prompt, Player.WEAPON_STATS[target.item].name)
+		_set_prompt(_prompt, "PEGAR %s (E)" % Player.WEAPON_STATS[target.item].name)
+	elif door:
+		_set_prompt(_prompt, "%s (E)" % door.verb)
 	_hud_weapon.text = Player.WEAPON_STATS[player.weapon()].name
 	# HUD ampliado (apply_gfx): arma no canto de cima à direita e aviso embaixo no centro, em qualquer proporção
 	var area := get_viewport().get_visible_rect().size / _hud.scale

@@ -38,7 +38,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
 - `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, cenário, pátio da mata `yard.gd`,
-  pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
+  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
   começo), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb` = armas dos baús e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
@@ -87,7 +87,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Salto (golpe sai das garras dos pés) e investida chamam `Player.launch()`: ragdoll arremessado em C em volta do golpe
   (`Ragdoll.fling` + `_hold_c`), depois ela levanta. A morte do raptor é ragdoll (`RaptorModel.RAGDOLL`), não animação.
   Andando, o raptor só se move para a frente do corpo e a velocidade da animação acompanha (`WALK_ANIM_SPEED`/`RUN_ANIM_SPEED`).
-- Pedreira (`Arena`): última sala, depois do portão (aberto) no fundo do pátio; paredões de pedra, ruínas e pedras grandes
+- Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
+- Pedreira (`Arena`): última sala, depois do portão (fechado até abrir) no fundo do pátio; paredões de pedra, ruínas e pedras grandes
   (cobertura que o alossauro não atravessa), capim alto, postes (`Yard.lamp`). Alossauro em `Arena.ALLO` e 2 raptors em `Arena.POSTS`.
 - Alossauro (`allosaurus.gd`, herda `Enemy`; modelo `AllosaurusModel` = `RaptorModel` com outro arquivo/atlas/ragdoll/sons graves):
   vê → ruge (`ROAR_RANGE`: `Player.daze(3 s)`, não fere; volta a rugir com `ROAR_COOLDOWN`) → persegue andando (`stalk`) e escolhe:
@@ -128,5 +129,5 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   nem "no_decals"), no máximo `MAX_SPLATS`; `Blood.clear()` no reinício. Quem leva tiro de carne: o esguicho sai no tiro
   (`Player._pellet_hit`); dano na jogadora sai no `Player.take_hit`.
 - Headshot: tiro que passa pela parte "Head" do ragdoll (as partes acompanham a animação; a cápsula é atravessada por
-  `Player.body_part`) multiplica o dano por `head_mult` do alvo e chama `take_headshot` (HUD "HEADSHOT"). Soldado ×10 (morre),
+  `Player.body_part`) multiplica o dano por `head_mult` do alvo e chama `take_headshot` (HUD "HEADSHOT"). Soldado ×10 e `Soldier.take_headshot` mata sempre (qualquer arma/distância); a cabeça conta também por proximidade do raio (`HEAD_HIT_RADIUS`),
   alvo ×4; raptor `head_mult = 1` = sem headshot (cabeçudo).

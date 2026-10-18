@@ -21,6 +21,7 @@ func run(runner: SceneTree) -> void:
 	await test_loses_target_and_gives_up()
 	await test_yard_nav()
 	await test_main_scene_patrols()
+	await test_doors_seal_rooms()
 
 
 func check(cond: bool, name: String, detail := "") -> void:
@@ -289,9 +290,13 @@ func test_yard_nav() -> void:
 	while Time.get_ticks_msec() < until and NavigationServer3D.map_get_closest_point(map, probe).distance_to(probe) > 0.5:
 		await t._frames(1)
 	check(NavigationServer3D.map_get_closest_point(map, probe).distance_to(probe) <= 0.5, "malha de navegação do pátio sincronizada")
-	# porta aberta na parede oeste: um raio passa de um lado ao outro, e a parede ao lado bloqueia
+	# porta fechada: nada passa (tiro, visão, corpo); aberta (E), um raio passa de um lado ao outro, e a parede ao lado bloqueia
 	var space := w.get_world_3d().direct_space_state
 	var through := PhysicsRayQueryParameters3D.create(Vector3(-10, 1.0, Yard.DOOR_Z), Vector3(-16, 1.0, Yard.DOOR_Z), 1)
+	check(not space.intersect_ray(through).is_empty(), "porta do galpão começa fechada")
+	for d: Door in w.get_tree().get_nodes_in_group("doors"):
+		d.open()
+	await t._frames(3)
 	check(space.intersect_ray(through).is_empty(), "porta: passa de um lado ao outro")
 	var beside := PhysicsRayQueryParameters3D.create(Vector3(-10, 1.0, 4.0), Vector3(-16, 1.0, 4.0), 1)
 	check(not space.intersect_ray(beside).is_empty(), "parede oeste fora da porta continua fechada")
@@ -375,5 +380,53 @@ func test_main_scene_patrols() -> void:
 		check(rs[k].global_position.y > -0.5, "raptor %d não caiu do mundo" % k, str(rs[k].global_position))
 	check(sold_moved > 3.0, "soldado faz a ronda de verdade", "%.1f m" % sold_moved)
 	check(not alerted, "a heroína parada na entrada não é notada por ninguém (raptors, alossauro nem guardas do galpão)")
+	main.queue_free()
+	await t.process_frame
+
+
+## Três salas separadas por portas fechadas: o tiro e o alarme de uma sala não chamam os inimigos das outras; com a porta
+## aberta (E) o barulho passa; a porta abre ao interagir perto dela.
+func test_doors_seal_rooms() -> void:
+	if t._world:
+		t._world.queue_free()
+		t._world = null
+		await t.process_frame
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	t.get_root().add_child(main)
+	await t._frames(3)
+	var doors := t.get_nodes_in_group("doors")
+	check(doors.size() == 2, "duas portas: galpão-pátio e pátio-pedreira", str(doors.size()))
+	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
+	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2, "três salas: galpão, pátio e pedreira")
+	var yard_r: Raptor = main.raptors[0]
+	var p: Player = main.player
+	# depois de matar os guardas a tiros, nada vem: tiro e grito não atravessam a porta fechada
+	p.global_position = Vector3(-11.5, 0, Yard.DOOR_Z)
+	main.soldiers[0].spot()
+	p.make_noise(26.0, 2.2)
+	await t._frames(30)
+	check(yard_r.alert_level() == 0 and yard_r.aware < 0.1, "porta fechada: o tiro e o alarme do galpão não chegam ao pátio", "%d %.2f" % [yard_r.alert_level(), yard_r.aware])
+	for r: Raptor in main.raptors:
+		check(r.alert_level() == 0, "porta fechada: nenhum raptor alertado", str(r.global_position))
+	check(main.allosaurus.alert_level() == 0, "porta fechada: o alossauro não ouve nada")
+	# a porta abre com E, perto dela
+	check(p.pick_door() != null and p.pick_door().room == 0, "perto da porta do galpão: aviso de abrir")
+	Input.action_press("interact")
+	await t._frames(4)
+	Input.action_release("interact")
+	var shed_door: Door = null
+	for d: Door in doors:
+		if d.room == 0:
+			shed_door = d
+	check(shed_door.opened and shed_door.collision_layer == 0, "E abre a porta e tira a colisão")
+	check(Level.connected(t, 0, 1) and not Level.connected(t, 0, 2), "porta do galpão aberta, a do portão ainda fechada")
+	p.make_noise(26.0, 2.2)
+	await t._frames(3)
+	check(yard_r.aware > 0.5 or yard_r.alert_level() > 0, "porta aberta: o tiro chega ao pátio", "%.2f" % yard_r.aware)
+	for r: Raptor in main.raptors.slice(Yard.POSTS.size()):
+		check(r.alert_level() == 0 and r.aware < 0.1, "pedreira continua sem ouvir (portão fechado)", str(r.aware))
+	# reiniciar fecha as portas
+	main.reset_all()
+	check(not shed_door.opened and shed_door.collision_layer == 1, "reiniciar fecha as portas")
 	main.queue_free()
 	await t.process_frame

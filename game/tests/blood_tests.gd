@@ -225,6 +225,13 @@ func test_headshot_soldier() -> void:
 	await t._frames(3)
 	t.check(heads.is_empty() and not s2.dead and s2.health == Soldier.MAX_HEALTH - Player.DAMAGE,
 		"tiro no peito: dano normal, sem headshot", "vida=%d %s" % [s2.health, str(heads)])
+	# tiro na cabeça de humano é letal mesmo com dano mínimo (longe, queda de dano): vida cheia, 1 de dano
+	var s3 := Soldier.new()
+	s3.position = Vector3(-2.5, 0, -5)
+	w.add_child(s3)
+	await t._frames(5)
+	s3.take_headshot(1, Vector3.FORWARD, s3.global_position + Vector3.UP * 1.6)
+	t.check(s3.dead, "headshot em humano mata mesmo com dano mínimo", "vida=%d" % s3.health)
 	Input.action_release("aim")
 
 

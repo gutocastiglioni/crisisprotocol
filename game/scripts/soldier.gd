@@ -253,6 +253,11 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 	model.set_aim(true)
 
 
+## Tiro na cabeça de um humano é letal, qualquer arma e distância (a queda de dano com o alcance não salva ninguém).
+func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:
+	take_hit(maxi(amount, health), dir, at, true)
+
+
 func wound() -> float:
 	return 1.0 - float(maxi(health, 0)) / MAX_HEALTH
 

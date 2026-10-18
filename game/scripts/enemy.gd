@@ -267,9 +267,14 @@ func _update_marker() -> void:
 	_marker.visible = lv > 0
 
 
+## Som vindo de `pos` chega aqui: mesma sala, ou salas ligadas por portas abertas (a porta fechada segura tiro e grito).
+func _reaches(pos: Vector3) -> bool:
+	return Level.connected(get_tree(), Level.room_of(pos.x), Level.room_of(global_position.x))
+
+
 ## Barulho em `pos` que alcança `radius` metros: a atenção sobe mais quanto mais perto (`power` = o quanto, no máximo).
 func hear_noise(pos: Vector3, radius: float, power: float) -> void:
-	if dead or in_combat():
+	if dead or in_combat() or not _reaches(pos):
 		return
 	var d := _flat(pos - global_position).length()
 	if d >= radius:
@@ -283,7 +288,7 @@ func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 
 ## Grito de outro raptor que viu a presa: depois de um instante (o som viaja, eles reagem) vem caçar o lugar.
 func on_alarm(src: Node3D, at: Vector3) -> void:
-	if dead or src == self:
+	if dead or src == self or not _reaches(src.global_position):
 		return
 	_last_known = at
 	alert_t = ALERT_TIME

@@ -38,6 +38,7 @@ const WEAPON_STATS := {
 		"range": 24.0, "shake": 0.14, "push": 9.0, "hole": 0.06, "casing": "shell", "name": "ESCOPETA"},
 }
 const BLOOM_DECAY := 4.0  # graus por segundo
+const HEAD_HIT_RADIUS := 0.17  # tiro que passa a esta distância do centro da cabeça é na cabeça
 const PICK_RANGE := 0.9  # distância até o lugar de ajoelhar para poder pegar
 const HIP_AIM_TIME := 0.6
 const SHOT_MASK := 1 | 2 | Ragdoll.LAYER
@@ -162,9 +163,13 @@ func _physics_process(delta: float) -> void:
 			return
 		if Input.is_action_just_pressed("jump") and _jump(wish):
 			return
-		if Input.is_action_just_pressed("interact") and pick_target():
-			moves.start_pickup(pick_target())
-			return
+		if Input.is_action_just_pressed("interact"):
+			if pick_target():
+				moves.start_pickup(pick_target())
+				return
+			var door := pick_door()
+			if door:
+				door.open()
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
 
@@ -308,6 +313,16 @@ func pick_target() -> Node:
 	return null
 
 
+## Porta fechada ao alcance (aviso e abrir; o baú tem prioridade), ou null.
+func pick_door() -> Door:
+	if dead or grabbed or moves.busy():
+		return null
+	for d: Door in get_tree().get_nodes_in_group("doors"):
+		if d.can_open(global_position):
+			return d
+	return null
+
+
 func fire() -> void:
 	if _shot_cd > 0.0 or dead or grabbed or moves.busy():
 		return
@@ -385,7 +400,7 @@ func _pellet_hit(hit: Dictionary, dir: Vector3, stats: Dictionary, hits: Diction
 	var head := false
 	if col is PhysicalBone3D:
 		who = Ragdoll.owner_of(col)
-		head = (col as PhysicalBone3D).bone_name == "Head" and _has_headshot(who)
+		head = _has_headshot(who) and ((col as PhysicalBone3D).bone_name == "Head" or body_part(who, hit.position, dir) == "Head")
 		if not (who and who.has_method("take_hit") and not who.get("dead")):
 			# corpo já caído: o tiro empurra a parte atingida
 			Ragdoll.push(col, dir * float(stats.push), hit.position)
@@ -422,6 +437,16 @@ static func _has_headshot(who: Object) -> bool:
 func body_part(who: Object, at: Vector3, dir: Vector3) -> String:
 	var q := PhysicsRayQueryParameters3D.create(at - dir * 0.05, at + dir * 0.8, Ragdoll.LAYER, model.ragdoll.body_rids())
 	var h := get_world_3d().direct_space_state.intersect_ray(q)
+	if h and h.collider is PhysicalBone3D and Ragdoll.owner_of(h.collider) == who:
+		if (h.collider as PhysicalBone3D).bone_name == "Head":
+			return "Head"
+	# a cabeça do ragdoll é pequena (a de capuz, maior): o tiro que passa raspando por ela também conta
+	var m: Variant = who.get("model")
+	if m != null and m.get("ragdoll") != null and m.ragdoll.bodies.has("Head"):
+		var head: Vector3 = m.ragdoll.bodies["Head"].global_position
+		var t := (head - at).dot(dir)
+		if t > -0.35 and t < 1.2 and (at + dir * t).distance_to(head) < HEAD_HIT_RADIUS:
+			return "Head"
 	if h and h.collider is PhysicalBone3D and Ragdoll.owner_of(h.collider) == who:
 		return (h.collider as PhysicalBone3D).bone_name
 	return ""

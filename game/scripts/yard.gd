@@ -26,7 +26,8 @@ const Z_HALF := 18.0
 ## Eixo da estrada (de terra batida), da porta até o portão.
 const ROAD := [Vector2(-13.5, -2.5), Vector2(-26, -2.5), Vector2(-34, -9.5), Vector2(-45, -9.5), Vector2(-50, -3.0), Vector2(-54, -3.0)]
 const ROAD_W := 4.0
-const GATE_GAP := 4.4  # vão aberto na parede do fundo, no portão (largura)
+const GATE_GAP := 4.4  # vão na parede do fundo, no portão (largura)
+const GATE_X := X_FAR - 1.1  # o portão fecha o vão da parede do fundo (parede em X_FAR - 1,1)
 ## Onde cada raptor começa e a rota de patrulha dele (pontos em chão livre, longe das árvores).
 const POSTS := [
 	{"pos": Vector3(-24, 0, -2.5), "route": [Vector3(-24, 0, -2.5), Vector3(-31.6, 0, -7.4), Vector3(-42, 0, -9.5), Vector3(-31.6, 0, -7.4)]},
@@ -66,6 +67,14 @@ static func west_wall(parent: Node) -> void:
 	for z in [z0 + 0.12, z1 - 0.12]:
 		_prop(parent, _bm(Vector3(0.5, DOOR_H, 0.24)), Vector3(-h, DOOR_H * 0.5, z), "wall", 1.5)
 	_prop(parent, _bm(Vector3(1.0, 0.02, DOOR_W)), Vector3(-h, 0.01, DOOR_Z), "wall", 1.0)
+	# porta de correr de chapa, fechada: abre para o lado, para dentro da parede (E)
+	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTA")
+	var slab := Node3D.new()
+	slab.add_child(_prop_at(_bm(Vector3(0.18, DOOR_H, DOOR_W - 0.1)), Vector3(0, DOOR_H * 0.5, 0), "wall", 1.0))
+	for y in [0.5, 1.4, 2.3]:
+		slab.add_child(_prop_at(_bm(Vector3(0.26, 0.12, DOOR_W - 0.1)), Vector3(0, y, 0), "wall", 2.0))
+	slab.add_child(_prop_at(_bm(Vector3(0.26, 0.5, 0.1)), Vector3(0, 1.1, DOOR_W * 0.5 - 0.5), "wall", 2.0))  # puxador
+	door.add_panel(slab, Vector3(0, 0, DOOR_W + 0.1), 0.0)
 
 
 # ------------------------------------------------------------------ construção
@@ -400,20 +409,22 @@ static func _grass_patch(parent: Node, center: Vector3, radius: float, rng: Rand
 		_card_pair(patch, Vector3(o.x, 0, o.y), "grass_card", rng.randf_range(1.1, 1.5), rng.randf() * PI)
 
 
-## Portão de ferro aberto: as duas folhas giradas para dentro da pedreira, presas nos pilares.
+## Portão de ferro fechado no vão da parede do fundo (as duas folhas presas nos pilares): abre com E, as folhas
+## giram para dentro da pedreira e dão na última sala.
 static func _gate(parent: Node) -> void:
 	var gz: float = ROAD[ROAD.size() - 1].y
-	var gx := X_FAR + 0.9
+	var gx := GATE_X
 	for s in [-1, 1]:
 		_prop(parent, _bm(Vector3(0.32, 3.2, 0.32)), Vector3(gx, 1.6, gz + s * 2.4), "wall", 1.5)
+	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, 6.0, GATE_GAP + 0.4), 1, "ABRIR PORTAO")
+	for s in [-1, 1]:
 		var leaf := Node3D.new()
-		parent.add_child(leaf)
-		leaf.position = Vector3(gx, 0, gz + s * 2.25)
-		leaf.rotation.y = s * deg_to_rad(-75.0)
+		leaf.position = Vector3(0, 0, s * 2.25)
 		for y in [0.5, 1.2, 1.9, 2.6]:
 			_prop(leaf, _bm(Vector3(0.08, 0.08, 2.3)), Vector3(0, y, -s * 1.15), "wall", 2.0)
 		for k in 3:
 			_prop(leaf, _bm(Vector3(0.06, 2.2, 0.06)), Vector3(0, 1.6, -s * (0.35 + k * 0.8)), "wall", 2.0)
+		door.add_panel(leaf, leaf.position, s * deg_to_rad(-75.0))
 
 
 ## Postes de luz na beira da estrada: luz fria esverdeada, sem sombra (só os do galpão fazem, ver Gfx.set_mode).
@@ -454,11 +465,17 @@ static func _bm(size: Vector3) -> BoxMesh:
 
 
 static func _prop(parent: Node, mesh: Mesh, pos: Vector3, tex: String, scale := 0.5) -> MeshInstance3D:
+	var mi := _prop_at(mesh, pos, tex, scale)
+	parent.add_child(mi)
+	return mi
+
+
+## Como `_prop`, mas devolve a malha solta (para entrar numa folha de porta).
+static func _prop_at(mesh: Mesh, pos: Vector3, tex: String, scale := 0.5) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = material(tex, scale)
 	mi.position = pos
-	parent.add_child(mi)
 	return mi
 
 
@@ -504,8 +521,14 @@ static func bake_nav(parent: Node) -> NavigationRegion3D:
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nm.geometry_collision_mask = 1
 	var data := NavigationMeshSourceGeometryData3D.new()
+	# portas fechadas não entram na malha como parede: quando abrem, o caminho já passa por elas
+	var doors: Array[Node] = parent.get_tree().get_nodes_in_group("doors")
+	for d: Door in doors:
+		d.collision_layer = 0
 	NavigationServer3D.parse_source_geometry_data(nm, data, parent)
 	NavigationServer3D.bake_from_source_geometry_data(nm, data)
+	for d: Door in doors:
+		d.collision_layer = 0 if d.opened else 1
 	var region := NavigationRegion3D.new()
 	region.navigation_mesh = nm
 	parent.add_child(region)

@@ -15,6 +15,21 @@ const SIZE := 26.0
 const WALL_H := 4.5
 
 
+## Sala de um ponto no eixo X: 0 galpão, 1 pátio da mata, 2 pedreira (as divisas são as paredes das portas).
+static func room_of(x: float) -> int:
+	if x > -SIZE * 0.5:
+		return 0
+	return 1 if x > Yard.X_FAR - 0.6 else 2
+
+
+## Som e alarme passam de uma sala à outra só se todas as portas entre elas estão abertas.
+static func connected(tree: SceneTree, a: int, b: int) -> bool:
+	for r in range(mini(a, b), maxi(a, b)):
+		if not Door.is_open(tree, r):
+			return false
+	return true
+
+
 static func material(tex: String, scale := 0.5) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = Gfx.shader()
