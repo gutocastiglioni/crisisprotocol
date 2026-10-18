@@ -3,6 +3,7 @@
 Uso: python tools/make_textures.py [saida.png]
 Saída padrão: game/assets/characters/heroine_atlas.png
 """
+import math
 import random
 import sys
 from pathlib import Path
@@ -227,6 +228,44 @@ def paint_pistol():
     noise("pistol", 3)
 
 
+def paint_rifle():
+    """M16: preto fosco com arestas mais claras, frisos (telha) e desgaste."""
+    x, y, w, h = rect("rifle")
+    for j in range(h):
+        t = j / (h - 1)
+        c = METAL_HI if t < 0.1 else (METAL_LO if t > 0.88 else (34, 35, 38))
+        hline(x, x + w - 1, y + j, c)
+    for i in range(x + 6, x + w - 6, 5):
+        vline(i, y + 8, y + h - 9, METAL_LO)
+    d.rectangle([x, y, x + w - 1, y + h - 1], outline=METAL_LO)
+    noise("rifle", 4)
+
+
+def paint_shotgun():
+    """Escopeta: aço oxidado (azulado, gasto nas arestas) e madeira de nogueira com veios (coronha, cabo, telha)."""
+    x, y, w, h = rect("shotgun")
+    for j in range(h):
+        t = j / (h - 1)
+        c = (96, 100, 112) if t < 0.1 else ((20, 21, 26) if t > 0.88 else (40, 43, 52))
+        hline(x, x + w - 1, y + j, c)
+    d.rectangle([x, y, x + w - 1, y + h - 1], outline=(20, 21, 26))
+    noise("shotgun", 3)
+    x, y, w, h = rect("shotgun_wood")
+    rng = random.Random(12)
+    for j in range(h):
+        t = j / (h - 1)
+        base = (112, 66, 34) if 0.1 < t < 0.88 else ((140, 88, 48) if t <= 0.1 else (70, 40, 20))
+        hline(x, x + w - 1, y + j, base)
+    # veios ondulados ao longo da peça e frisos da telha (pegada)
+    for k in range(7):
+        y0 = y + 4 + k * 4 + rng.randrange(2)
+        pts = [(x + i, y0 + round(1.5 * math.sin(i * 0.11 + k))) for i in range(0, w, 4)]
+        d.line(pts, fill=(84, 48, 24))
+    for i in range(x + 30, x + 66, 4):
+        vline(i, y + 5, y + h - 6, (78, 44, 22))
+    noise("shotgun_wood", 4)
+
+
 # ---------------------------------------------------------------- pernas e botas
 def paint_legs():
     x, y, w, h = rect("thigh")
@@ -299,6 +338,8 @@ def main():
     paint_torso()
     paint_sleeves()
     paint_pistol()
+    paint_rifle()
+    paint_shotgun()
     paint_legs()
     paint_gear()
     # corpo pintado em 256 e ampliado; rosto e cabelo pintados direto em 512 (atlas.TEX_SCALE)

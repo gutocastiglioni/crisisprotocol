@@ -38,7 +38,8 @@ if (imp.status !== 0) {
   console.error(`falha ao importar o projeto (${why}):\n${imp.stdout ?? ''}${imp.stderr ?? ''}`);
   process.exit(1);
 }
-const r = spawnSync(godot, ['--headless', '--path', '.', '--script', 'res://tests/run_tests.gd'], opts);
+// passo fixo de 1/60 s: o tempo de jogo é o mesmo, mas sem esperar o relógio (minutos -> segundos)
+const r = spawnSync(godot, ['--headless', '--fixed-fps', '60', '--path', '.', '--script', 'res://tests/run_tests.gd'], opts);
 if (r.error) {
   console.error(`não foi possível rodar o Godot: ${r.error.message}`);
   process.exit(1);

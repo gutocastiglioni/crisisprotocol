@@ -8,20 +8,22 @@ Convenção dos ângulos (graus, euler ZYX local de cada osso):
 Os valores dos ossos _R são escritos com o mesmo significado do lado _L; a conversão de sinal é feita aqui.
 """
 import math
+import sys
 
 import bpy
 
 FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
-LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR")
+LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
+         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim")
 
 
 def merge(*poses):
     out = {}
     for p in poses:
         for k, v in p.items():
-            if k == "loc":
+            if k == "loc" or not isinstance(v, tuple):
                 out[k] = v
             else:
                 base = out.get(k, (0, 0, 0))
@@ -71,27 +73,6 @@ CROUCH = {
 }
 
 
-def walk_contact():
-    """Pé esquerdo tocando o chão na frente."""
-    return merge(IDLE, {
-        "loc": (0, -0.025, 0),
-        "Hips": (0, -5, 0), "Chest": (0, 8, 0),
-        "UpperLeg_L": (25, 0, 0), "LowerLeg_L": (-5, 0, 0), "Foot_L": (12, 0, 0),
-        "UpperLeg_R": (-18, 0, 0), "LowerLeg_R": (-22, 0, 0), "Foot_R": (-18, 0, 0),
-        "UpperArm_L": (-15, 0, 0), "LowerArm_L": (5, 0, 0),
-        "UpperArm_R": (6, 0, 0),
-    })
-
-
-def walk_pass():
-    """Apoio na esquerda, direita passando por baixo do corpo."""
-    return merge(IDLE, {
-        "loc": (0, 0.012, 0),
-        "UpperLeg_L": (2, 0, 0), "LowerLeg_L": (-6, 0, 0),
-        "UpperLeg_R": (12, 0, 0), "LowerLeg_R": (-50, 0, 0), "Foot_R": (10, 0, 0),
-    })
-
-
 # Corrida de reação (Regina em Dino Crisis 2 / Syphon Filter): quase em pé, passadas curtas e rápidas, quique
 # baixo, braços dobrados junto do corpo balançando pouco (a pistola na direita), quadril que gira, cai do lado da
 # perna que balança e escorrega para cima do pé de apoio (o gingado).
@@ -101,6 +82,40 @@ RUN_BODY = {
     "Spine": (6, 0, 0), "Chest": (3, 0, 0), "Neck": (-3, 0, 0), "Head": (-7, 0, 0),
     "Hand_R": (-20, 0, 0), "Hand_L": (-10, 0, 0),
 }
+
+
+GUARD_PITCH = 34  # pistola em guarda: cano inclinado para baixo (graus)
+GUARD_WRIST = (0.03, 0.12, -0.13)  # pulso direito em relação ao da mira, no espaço do Blender: para dentro, para trás, para baixo
+
+
+def pistol_guard(sk, body):
+    """Guarda baixa com as duas mãos: a mesma pegada da mira (mão esquerda envolvendo a direita), com o cano
+    inclinado GUARD_PITCH para baixo e o pulso mais perto do corpo. Resolvida por IK sobre o tronco de `body`
+    (os braços acompanham o peito, então serve agachada ou em pé)."""
+    import heroine_ik as IK
+    from mathutils import Matrix, Vector
+
+    aim_m = sk.matrices(AIM)
+    hand = aim_m["Hand_R"]
+    support = hand.inverted() @ IK.palm(sk, aim_m, "L")  # mão esquerda no referencial da direita
+    # alvo no referencial do peito da mira; depois levado para o peito de `body`
+    target = Matrix.Translation(hand.translation + Vector(GUARD_WRIST))         @ Matrix.Rotation(math.radians(GUARD_PITCH), 4, "X") @ hand.to_3x3().to_4x4()
+    pose = merge(body, {k: v for k, v in AIM.items() if k.startswith(("UpperArm", "LowerArm", "Hand"))})
+    target = sk.matrices(pose)["Chest"] @ aim_m["Chest"].inverted() @ target
+
+    def res(m):
+        h = m["Hand_R"]
+        e = list(h.translation - target.translation)
+        for i in (1, 2):
+            e += list((h.col[i].to_3d() - target.col[i].to_3d()) * 0.3)
+        return e
+
+    pose, e1 = IK.solve(sk, pose, IK.arm_unknowns("R"), res, IK.arm_bounds("R"))
+    grip = target @ support
+    pose, e2 = IK.solve(sk, pose, IK.arm_unknowns("L", hand=False), lambda m: list(IK.palm(sk, m, "L") - grip),
+                        IK.arm_bounds("L"))
+    print(f"[guard] pistola em guarda: erro mão direita {e1 * 1000:.1f} mm, esquerda {e2 * 1000:.1f} mm")
+    return {k: v for k, v in pose.items() if k.startswith(("UpperArm", "LowerArm", "Hand"))}
 
 
 def run_key(loc, hips, spine, chest, head, leg_l, leg_r, arm_l, arm_r):
@@ -141,40 +156,6 @@ def run_keys():
     return keys + [(2 * RUN_STEP, half[0][1])]
 
 
-def strafe_keys():
-    """Passo lateral para a esquerda: abre a perna esquerda, a direita acompanha."""
-    together = merge(AIM, {"UpperLeg_L": (-12, 0, -2), "LowerLeg_L": (12, 0, 0),
-                           "UpperLeg_R": (6, 0, -4), "LowerLeg_R": (8, 0, 0), "Foot_R": (-6, 0, 0)})
-    left_out = merge(together, {"loc": (0, 0.01, 0), "UpperLeg_L": (10, 0, 20), "LowerLeg_L": (-25, 0, 0)})
-    wide = merge(together, {"loc": (0, -0.02, 0), "UpperLeg_L": (0, 0, 14), "UpperLeg_R": (0, 0, 12)})
-    right_in = merge(together, {"loc": (0, 0.01, 0), "UpperLeg_L": (0, 0, 6),
-                                "UpperLeg_R": (10, 0, 2), "LowerLeg_R": (-25, 0, 0)})
-    return [(0, together), (6, left_out), (12, wide), (18, right_in), (24, together)]
-
-
-def roll_keys():
-    """Rolamento de combate para a frente, no lugar (o Godot move o corpo)."""
-    tuck = {
-        "UpperArm_L": (40, 0, -10), "LowerArm_L": (90, 0, 0),
-        "UpperArm_R": (40, 0, -10), "LowerArm_R": (90, 0, 0),
-    }
-    legs = lambda thigh, shin, foot: {
-        "UpperLeg_L": (thigh, 0, 4), "LowerLeg_L": (shin, 0, 0), "Foot_L": (foot, 0, 0),
-        "UpperLeg_R": (thigh, 0, 4), "LowerLeg_R": (shin, 0, 0), "Foot_R": (foot, 0, 0),
-    }
-    return [
-        (0, merge(IDLE, {"loc": (0, -0.05, 0)})),
-        (4, merge(tuck, legs(50, -70, 20), {"loc": (0, -0.22, 0), "Hips": (25, 0, 0), "Spine": (25, 0, 0), "Head": (25, 0, 0)})),
-        (8, merge(tuck, legs(100, -130, 30), {"loc": (0, -0.40, 0), "Hips": (90, 0, 0), "Spine": (40, 0, 0), "Chest": (20, 0, 0), "Head": (40, 0, 0)})),
-        (12, merge(tuck, legs(105, -135, 30), {"loc": (0, -0.29, 0), "Hips": (180, 0, 0), "Spine": (40, 0, 0), "Chest": (20, 0, 0), "Head": (40, 0, 0)})),
-        (16, merge(tuck, legs(100, -130, 30), {"loc": (0, -0.40, 0), "Hips": (270, 0, 0), "Spine": (40, 0, 0), "Chest": (20, 0, 0), "Head": (35, 0, 0)})),
-        (21, merge(tuck, legs(70, -110, 40), {"loc": (0, -0.36, 0), "Hips": (350, 0, 0), "Spine": (25, 0, 0), "Head": (0, 0, 0)})),
-        (27, merge(IDLE, {"loc": (0, -0.04, 0), "Hips": (360, 0, 0), "Spine": (5, 0, 0),
-                          "UpperLeg_L": (15, 0, 0), "LowerLeg_L": (-20, 0, 0),
-                          "UpperLeg_R": (15, 0, 0), "LowerLeg_R": (-20, 0, 0)})),
-    ]
-
-
 HIT = merge(IDLE, {
     # o tronco vai para trás (-22°); os braços compensam para não "subirem" junto
     "Spine": (-8, 0, 0), "Chest": (-14, 4, 0), "Head": (-22, 0, 0),
@@ -183,27 +164,52 @@ HIT = merge(IDLE, {
 })
 
 
-def actions():
-    """nome -> lista de (frame, pose)."""
+def actions(sk):
+    """nome -> lista de (frame, pose). Caminhadas, cambalhota, escalada e fuzil saem por IK (sk = esqueleto)."""
+    import heroine_gait as G
+    import heroine_moves as M
+    import heroine_rifle as RF
+    import heroine_shotgun as SG
+
     idle_breath = merge(IDLE, {"Chest": (-1.5, 0, 0), "Head": (2, 4, 0), "loc": (0, -0.004, 0)})
     aim_sway = merge(AIM, {"Chest": (0, 1.5, 0), "UpperArm_R": (1, 0, 0), "UpperArm_L": (1, 0, 0)})
     recoil = merge(AIM, {"UpperArm_R": (9, 0, 0), "UpperArm_L": (8, 0, 0), "LowerArm_R": (8, 0, 0), "Chest": (-3, 0, 0)})
-    crouch_breath = merge(CROUCH, {"Spine": (2, 0, 0), "loc": (0, -0.36, 0)})
+    # agachada com a pistola em guarda nas duas mãos (com arma longa, a parte de cima vem do RifleHold)
+    crouch = dict(CROUCH, **pistol_guard(sk, CROUCH))
+    crouch_breath = merge(crouch, {"Spine": (2, 0, 0), "loc": (0, -0.36, 0)})
     death_fall = merge(HIT, {
         "loc": (0, -0.12, 0), "Spine": (-10, 0, 0), "Head": (-8, 0, 0),
         "UpperLeg_L": (20, 0, 0), "LowerLeg_L": (-35, 0, 0), "UpperLeg_R": (20, 0, 0), "LowerLeg_R": (-35, 0, 0),
     })
-    strafe = strafe_keys()
+    A = sys.modules[__name__]
+    g = M.gaits(A, pistol_guard(sk, M.crouch_walk_body(A)))
+    strafe = G.solve_cycle(sk, g["strafe"], "StrafeL")
+    crouch_strafe = G.solve_cycle(sk, g["crouch_strafe"], "CrouchStrafeL")
+    hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
+    hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
-        "Walk": [(0, walk_contact()), (8, walk_pass()), (16, mirror(walk_contact())), (24, mirror(walk_pass())), (32, walk_contact())],
+        "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
         "Run": run_keys(),
         "AimIdle": [(0, AIM), (30, aim_sway), (60, AIM)],
         "Shoot": [(0, AIM), (2, recoil), (9, AIM)],
         "StrafeL": strafe,
-        "StrafeR": [(f, mirror_aim(p)) for f, p in strafe],
-        "Crouch": [(0, CROUCH), (30, crouch_breath), (60, CROUCH)],
-        "Roll": roll_keys(),
+        "StrafeR": G.mirror_lateral(strafe),
+        "Crouch": [(0, crouch), (30, crouch_breath), (60, crouch)],
+        "CrouchWalk": G.solve_cycle(sk, g["crouch_walk"], "CrouchWalk"),
+        "CrouchStrafeL": crouch_strafe,
+        "CrouchStrafeR": G.mirror_lateral(crouch_strafe),
+        "Roll": M.roll_keys(A, sk),
+        "Jump": M.jump_keys(A),
+        "Fall": M.fall_keys(A),
+        "Hang": M.hang_keys(A, sk),
+        "ClimbUp": M.climb_keys(A, sk),
+        "Mantle": M.mantle_keys(A, sk),
+        "RifleHold": [(0, hold), (30, hold_breath), (60, hold)],
+        "RifleAim": [(0, rifle_aim), (60, rifle_aim)],
+        "RifleShoot": [(0, rifle_aim), (2, rifle_recoil), (4, rifle_aim)],
+        "ShotgunShoot": SG.shoot_keys(A, sk, rifle_aim),
+        "Pickup": RF.pickup_keys(A, sk, hold),
         "Hit": [(0, IDLE), (3, HIT), (14, IDLE)],
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],
     }
@@ -238,9 +244,11 @@ def make_cyclic(act):
 
 
 def build_actions(rig):
+    import heroine_ik
+
     rig.animation_data_create()
     made = []
-    for name, keys in actions().items():
+    for name, keys in actions(heroine_ik.Skeleton(rig)).items():
         act = bpy.data.actions.new(name)
         act.use_fake_user = True
         rig.animation_data.action = act

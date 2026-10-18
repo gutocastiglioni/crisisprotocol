@@ -1,20 +1,34 @@
 extends Node3D
-## Cena de teste: sala, heroína, alvos de treino, um velociraptor, HUD e pós-processo PS1.
+## Cena de teste: sala, heroína, alvos de treino, baús com M16 e escopeta, um velociraptor, HUD e pós-processo PS1.
 ## Captura para conferência:  godot --path game -- --capture=out.png [--shot=idle|aim|run|ragdoll|front|roll|crouch|face]
+##   movimentos:  --shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim  (--at=segundos)
+##   armas:  --shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump  (tiros: --at=segundos)
 ##   raptor:  --shot=raptor_idle|raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead
 ##            (câmera de revisão em volta dele; --yaw=graus gira a câmera; --playercam usa a câmera dela)
+##   --pitch=graus inclina a câmera dela junto com --yaw (> 0 = para cima; mirando, a arma acompanha)
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
 
 const POST_SHADER := preload("res://shaders/psx_post.gdshader")
-const HELP := "WASD mover  SHIFT andar  MOUSE-D mirar  MOUSE-E atirar\nESPACO rolar  C agachar  H dano  K morrer\nR reiniciar  F1 ajuda  F2 visual PS1/PS2"
+const MOVE_SHOTS := [
+	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
+	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
+]
+const HELP := "WASD mover  SHIFT andar  MOUSE-D mirar  MOUSE-E atirar\nESPACO cambalhota  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  R reiniciar  F1 ajuda  F2 PS1/PS2"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
+var chest: Chest
+var chests: Array[Chest] = []
 var raptors: Array[Raptor] = []
+var soldiers: Array[Soldier] = []
 var _hud: CanvasLayer
 var _post: ColorRect
 var _hud_health: Label
 var _hud_help: Label
+var _hud_weapon: Label
+var _hud_stealth: Label
+var _prompt: Control
+var _prompt_text: Label
 var _crosshair: Label
 var _capture := ""
 var _shot := "idle"
@@ -22,6 +36,7 @@ var _t := 0.0
 var _until := 1.5
 var _saving := false
 var _yaw := NAN
+var _pitch := -0.15
 var _review_cam: Camera3D
 var _player_cam := false
 
@@ -40,13 +55,43 @@ func _ready() -> void:
 		t.rotation.y = PI + d[1]
 		add_child(t)
 		dummies.append(t)
-	# raptor no fundo do galpão, fora da vista dela no começo
-	var r := Raptor.new()
-	r.target = player
-	r.position = Vector3(7, 0, -9)
-	r.rotation.y = atan2(7.0, -15.0)
-	add_child(r)
-	raptors.append(r)
+	# baú com o M16 perto do começo, de frente para ela
+	chest = Chest.new()
+	chest.position = Vector3(2.6, 0, 3.6)
+	chest.rotation.y = atan2(-2.6, 2.4)
+	add_child(chest)
+	chests.append(chest)
+	# baú com a escopeta do outro lado, perto da coluna da esquerda, de frente para ela; a frente fica mais para +Z
+	# que para +X (menos de 45°): a textura do cenário é projetada pelo mundo e, virada para +X, o estêncil sai espelhado
+	var sg := Chest.new()
+	sg.item = "shotgun"
+	sg.position = Vector3(-3.0, 0, 2.6)
+	sg.rotation.y = atan2(3.0, 3.4)
+	add_child(sg)
+	chests.append(sg)
+	# os velociraptors ficam no pátio da mata (segunda sala, pela porta oeste), cada um patrulhando a sua rota
+	for post in Yard.POSTS:
+		var r := Raptor.new()
+		r.target = player
+		r.position = post.pos
+		var first: Vector3 = post.route[1] - post.pos
+		r.rotation.y = atan2(-first.x, -first.z)
+		for p in post.route:
+			r.route.append(p)
+		add_child(r)
+		raptors.append(r)
+	# soldados de guarda no galpão, cada um com a sua ronda (alarme em comum com os raptors: grupo "enemies")
+	for g in Soldier.GUARDS:
+		var sd := Soldier.new()
+		sd.target = player
+		sd.position = g.route[0]
+		var next: Vector3 = g.route[1] - g.route[0]
+		sd.rotation.y = atan2(-next.x, -next.z)
+		for p in g.route:
+			sd.route.append(p)
+		add_child(sd)
+		soldiers.append(sd)
+	Yard.bake_nav(self)
 	_build_post()
 	_build_hud()
 	player.health_changed.connect(func(v: int) -> void: _hud_health.text = "VIDA %d" % v)
@@ -76,6 +121,11 @@ func _build_hud() -> void:
 	layer.layer = 1
 	_hud = layer
 	_hud_health = _label(layer, "VIDA 100", Vector2(6, 4))
+	_hud_weapon = _label(layer, "PISTOLA", Vector2.ZERO)
+	_hud_weapon.size.x = 64
+	_hud_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_stealth = _label(layer, "", Vector2.ZERO)
+	_prompt = _build_prompt(layer)
 	# mira numa camada sem escala: ancorada no centro, a escala do HUD (apply_gfx) a jogaria para o canto
 	var cross_layer := CanvasLayer.new()
 	cross_layer.layer = 1
@@ -91,6 +141,30 @@ func _build_hud() -> void:
 	# no topo, logo abaixo da vida: embaixo ficava por cima das pernas dela em telas 4:3
 	_hud_help = _label(layer, HELP, Vector2(6, 16))
 	add_child(layer)
+
+
+## Aviso de interação embaixo, no centro: triângulo verde (o botão do controle) + "PEGAR <arma> (E)".
+func _build_prompt(layer: CanvasLayer) -> Control:
+	var box := Control.new()
+	var tri := Line2D.new()
+	tri.points = PackedVector2Array([Vector2(6, 1), Vector2(11, 10), Vector2(1, 10), Vector2(6, 1)])
+	tri.width = 1.5
+	tri.default_color = Color(0.4, 1.0, 0.5)
+	box.add_child(tri)
+	_prompt_text = _label(box, "", Vector2(15, 0))
+	box.visible = false
+	layer.add_child(box)
+	_set_prompt(box, "M16")
+	return box
+
+
+func _set_prompt(box: Control, weapon_name: String) -> void:
+	var text := "PEGAR %s (E)" % weapon_name
+	if _prompt_text.text == text:
+		return
+	_prompt_text.text = text
+	var font := _prompt_text.get_theme_font("font")
+	box.size = Vector2(15.0 + font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x, 12.0)
 
 
 func _label(parent: Node, text: String, pos: Vector2) -> Label:
@@ -129,12 +203,29 @@ func apply_gfx(m: String) -> void:
 	_crosshair.add_theme_font_size_override("font_size", int(8 * k))
 
 
+## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos raptors (calmos, desconfiados, alertados).
+func _update_stealth_hud(area: Vector2) -> void:
+	var level := 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		level = maxi(level, e.alert_level())
+	var bars := clampi(roundi(player.visibility() * 5.0), 1, 5)
+	var status: String = ["", "  DESCONFIADOS", "  ALERTA!"][level]
+	_hud_stealth.text = "VISIVEL %s%s%s" % ["#".repeat(bars), ".".repeat(5 - bars), status]
+	_hud_stealth.add_theme_color_override("font_color", [Color(0.85, 0.9, 0.8), Color(1.0, 0.85, 0.3), Color(1.0, 0.3, 0.25)][level])
+	_hud_stealth.position = Vector2(6, area.y - 14)
+
+
 func reset_all() -> void:
 	player.respawn()
+	for c in chests:
+		c.reset()
+	Fx.clear_decals()
 	for d in dummies:
 		d.reset()
 	for r in raptors:
 		r.reset()
+	for sd in soldiers:
+		sd.reset()
 
 
 # ------------------------------------------------------------------ captura de tela para revisão
@@ -159,9 +250,24 @@ func _parse_args() -> void:
 			_player_cam = true
 		elif a.begins_with("--yaw="):
 			_yaw = deg_to_rad(float(a.get_slice("=", 1)))
+		elif a.begins_with("--pitch="):
+			_pitch = deg_to_rad(float(a.get_slice("=", 1)))
+		elif a.begins_with("--pos=") and OS.is_debug_build():
+			# ferramenta de revisão: começa em x,z (e olhando para `graus`, 0 = para -Z)
+			var v := a.get_slice("=", 1).split(",")
+			player.global_position = Vector3(float(v[0]), 0.0, float(v[1]))
+			player.rotation.y = deg_to_rad(float(v[2])) if v.size() > 2 else 0.0
+			player.camera_rig.yaw = player.rotation.y
+			player.reset_physics_interpolation()
 	if _capture == "":
 		return
 	_hud_help.visible = _shot == "idle"
+	if _shot.begins_with("soldier"):
+		_setup_soldier_shot()
+	else:
+		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
+		for sd in soldiers:
+			sd.process_mode = Node.PROCESS_MODE_DISABLED
 	if _shot.begins_with("raptor_"):
 		_setup_raptor_shot()
 	elif _shot == "face":
@@ -178,10 +284,22 @@ func _parse_args() -> void:
 			Input.action_press("move_forward")
 		"crouch":
 			Input.action_press("crouch")
+	if _shot in MOVE_SHOTS:
+		_setup_move_shot()
 
 
 func _process(delta: float) -> void:
 	_crosshair.visible = player.aiming and player.model.is_aimed()
+	var target := player.pick_target()
+	_prompt.visible = target != null
+	if target:
+		_set_prompt(_prompt, Player.WEAPON_STATS[target.item].name)
+	_hud_weapon.text = Player.WEAPON_STATS[player.weapon()].name
+	# HUD ampliado (apply_gfx): arma no canto de cima à direita e aviso embaixo no centro, em qualquer proporção
+	var area := get_viewport().get_visible_rect().size / _hud.scale
+	_hud_weapon.position = Vector2(area.x - _hud_weapon.size.x - 6, 4)
+	_update_stealth_hud(area)
+	_prompt.position = Vector2(roundf((area.x - _prompt.size.x) * 0.5), area.y - 34)
 	if _capture == "":
 		return
 	var prev := _t
@@ -190,14 +308,18 @@ func _process(delta: float) -> void:
 	if not is_nan(_yaw) and (_shot != "ragdoll" or _t > 2.3):
 		# ângulo fixo de câmera relativo à frente dela (0 = atrás, 180 = de frente)
 		player.camera_rig.yaw = player.rotation.y + _yaw
-		player.camera_rig.pitch = -0.15
+		player.camera_rig.pitch = _pitch
 	if _review_cam and _shot == "face":
 		var a := player.rotation.y + PI + (0.0 if is_nan(_yaw) else _yaw)
 		var head := player.global_position + Vector3.UP * 1.6
 		_review_cam.global_position = head + Vector3(sin(a), 0.03, cos(a)) * 0.75
 		_review_cam.look_at(head)
-	elif _review_cam:
+	elif _review_cam and _shot.begins_with("raptor_"):
 		_raptor_shot(at)
+	if _shot.begins_with("soldier"):
+		_soldier_shot(at)
+	if _shot in MOVE_SHOTS:
+		_move_shot(at)
 	match _shot:
 		"aim":
 			# reaplica: o Godot solta ações pressionadas se a janela perde o foco
@@ -239,11 +361,125 @@ func _process(delta: float) -> void:
 		_save_and_quit()
 
 
+## Revisão dos movimentos novos: põe a jogadora na frente do obstáculo/baú e aperta os botões na hora certa.
+func _setup_move_shot() -> void:
+	for d in dummies:
+		d.visible = false
+	var spots := {
+		"hang": [Vector3(-2.5, 0, -0.35), 0.0], "climb": [Vector3(-2.5, 0, -0.35), 0.0],
+		"mantle": [Vector3(0, 0, -9.95), 0.0], "pickup": [chest.kneel_transform().origin + chest.global_basis.z * 0.5, chest.rotation.y],
+		"pickup_shotgun": [chests[1].kneel_transform().origin + chests[1].global_basis.z * 0.5, chests[1].rotation.y],
+		# de frente para a pilha de caixas de madeira, com a coluna de metal à esquerda
+		"fire_pistol": [Vector3(-2.4, 0, 1.6), 0.0], "fire_m16": [Vector3(-2.4, 0, 1.6), 0.0],
+		"fire_shotgun": [Vector3(-2.4, 0, 1.6), 0.0], "pump": [Vector3(-2.4, 0, 1.6), 0.0],
+	}
+	if _shot in spots:
+		player.global_position = spots[_shot][0]
+		player.rotation.y = spots[_shot][1]
+		player.reset_physics_interpolation()
+		player.camera_rig.yaw = player.rotation.y
+	if _shot.begins_with("rifle") or _shot == "fire_m16":
+		player.give_weapon("m16")
+	if _shot.begins_with("shotgun") or _shot in ["fire_shotgun", "pump"]:
+		player.give_weapon("shotgun")
+	if _shot == "pump":
+		# de lado, perto das mãos, para ver a telha indo e voltando
+		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_review_cam.fov = 40.0
+		add_child(_review_cam)
+		_review_cam.current = true
+
+
+func _move_shot(at: Callable) -> void:
+	var tap := func(action: String, sec: float) -> void:
+		if at.call(sec):
+			Input.action_press(action)
+		if at.call(sec + 0.05):
+			Input.action_release(action)
+	match _shot:
+		"walk":
+			Input.action_press("walk")
+			Input.action_press("move_forward")
+		"crouch_walk", "crouch_aim":
+			tap.call("crouch", 0.05)
+			if _t > 0.3:
+				Input.action_press("move_forward" if _shot == "crouch_walk" else "move_left")
+			if _shot == "crouch_aim":
+				Input.action_press("aim")
+		"jump", "hang", "mantle":
+			tap.call("jump", 0.4)
+		"climb":
+			tap.call("jump", 0.4)
+			tap.call("jump", 1.2)
+		"pickup", "pickup_shotgun":
+			tap.call("interact", 0.3)
+		"rifle_aim", "shotgun_aim":
+			Input.action_press("aim")
+		"fire_pistol", "fire_m16", "fire_shotgun", "pump":
+			Input.action_press("aim")
+			var gap: float = {"fire_pistol": 0.3, "fire_m16": 0.12, "fire_shotgun": 0.85, "pump": 9.0}[_shot]
+			var n: int = {"fire_pistol": 6, "fire_m16": 12, "fire_shotgun": 3, "pump": 1}[_shot]
+			if _t < 0.6 + gap * n:
+				# pistola: tiros espalhados pela caixa (a mira anda antes do próximo); os outros, no mesmo ponto
+				# (a dispersão é da arma)
+				var spread := (player.shots_fired - 2.5) * 0.05 if _shot == "fire_pistol" else 0.0
+				# mira na face da caixa de baixo da pilha
+				player.camera_rig.look_at_point(Vector3(-2.5, 0.7, -0.9))
+				player.camera_rig.yaw += spread + (0.0 if is_nan(_yaw) else _yaw)
+			for k in n:
+				if at.call(0.6 + k * gap):
+					player.fire()
+			if _shot == "pump":
+				var right := player.global_basis.x
+				var hands := player.global_position + Vector3.UP * 1.35 - player.global_basis.z * 0.35
+				_review_cam.global_position = hands + right * 1.1 + Vector3.UP * 0.1 - player.global_basis.z * 0.2
+				_review_cam.look_at(hands)
+
+
+## Revisão do soldado: de frente para ela, a 4 m (soldier = ele a vê e atira; soldier_dead = leva um tiro e cai).
+func _setup_soldier_shot() -> void:
+	for d in dummies:
+		d.visible = false
+	var sd := soldiers[0]
+	sd.route.clear()
+	for other in soldiers.slice(1):
+		other.process_mode = Node.PROCESS_MODE_DISABLED
+	sd.global_position = player.global_position + Vector3(0, 0, -4.0)
+	sd.rotation.y = PI
+	sd.reset_physics_interpolation()
+	# câmera de revisão perto dele (--yaw gira em volta: 0 = de frente); --playercam usa a dela
+	if not _player_cam:
+		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_review_cam.fov = 45.0
+		add_child(_review_cam)
+		_review_cam.current = true
+
+
+func _soldier_shot(at: Callable) -> void:
+	var sd := soldiers[0]
+	if at.call(0.1):
+		if _shot == "soldier_dead":
+			sd.take_hit(999, Vector3.BACK, sd.global_position + Vector3.UP)
+		else:
+			sd.spot()
+	if _review_cam:
+		var body: Vector3 = sd.model.ragdoll.bodies["Hips"].global_position * Vector3(1, 0, 1) if sd.dead else sd.global_position
+		var a := sd.rotation.y + PI + (deg_to_rad(25.0) if is_nan(_yaw) else _yaw)
+		_review_cam.global_position = body + Vector3(sin(a), 0.0, cos(a)) * (2.6 if not sd.dead else 2.2) + Vector3.UP * 1.45
+		_review_cam.look_at(body + Vector3.UP * (1.05 if not sd.dead else 0.2))
+
+
 ## Revisão do raptor: posiciona os dois, liga uma câmera própria e força o estado pedido.
 func _setup_raptor_shot() -> void:
 	var r := raptors[0]
 	for d in dummies:
 		d.visible = false
+	# só este raptor entra na cena de revisão, parado no lugar (sem patrulha)
+	r.route.clear()
+	for other in raptors.slice(1):
+		other.process_mode = Node.PROCESS_MODE_DISABLED
 	# corredor livre no fundo do galpão (z = 9), ele olhando para +X, ela à frente/atrás dele
 	r.global_position = Vector3(-4, 0, 9)
 	r.rotation.y = -PI * 0.5
@@ -298,5 +534,5 @@ func _save_and_quit() -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(_capture)
-	print("captura salva: ", _capture, " ", img.get_size(), " yaw_cam=", player.camera_rig.yaw, " yaw_player=", player.rotation.y, " estado=", player.model.state, " raptor=", raptors[0].state if raptors else "-")
+	print("captura salva: ", _capture, " ", img.get_size(), " yaw_cam=", player.camera_rig.yaw, " yaw_player=", player.rotation.y, " estado=", player.model.state, " raptor=", raptors[0].state if raptors else "-", " buracos=", Fx.decal_count())
 	get_tree().quit()

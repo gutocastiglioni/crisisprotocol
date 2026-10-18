@@ -377,5 +377,22 @@ def build_all(bone_names):
         build_arm(mb, s)
         build_leg(mb, s)
     build_gear(mb)
-    build_pistol(mb)
+    return mb
+
+
+def build_weapon(bone_names, kind):
+    """Pistola, fuzil ou escopeta (sem a telha) numa malha à parte (o Godot mostra só a arma em uso), presa à mão
+    direita."""
+    mb = MeshBuilder(bone_names)
+    if kind == "pistol":
+        build_pistol(mb)
+    elif kind == "shotgun":
+        import heroine_rifle
+        import heroine_shotgun
+
+        heroine_shotgun.build_shotgun(mb, heroine_rifle.grip_rest(), {"Hand_R": 1}, pump=False)
+    else:
+        import heroine_rifle
+
+        heroine_rifle.build_rifle(mb, heroine_rifle.grip_rest(), {"Hand_R": 1})
     return mb

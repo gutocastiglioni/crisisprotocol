@@ -5,7 +5,10 @@ Uso:
 Saídas:
   art/heroine.blend
   game/assets/characters/heroine.glb
+  game/assets/characters/m16.glb e shotgun.glb (as armas deitadas no baú, em relação à raiz dela ajoelhada)
+  game/assets/characters/heroine_moves.json (caminhos da raiz e medidas dos movimentos, lidos pelo Godot)
 """
+import json
 import sys
 from pathlib import Path
 
@@ -16,10 +19,18 @@ ROOT = ART.parent
 sys.path.insert(0, str(ART))
 
 import heroine_anims  # noqa: E402
+import heroine_mesh  # noqa: E402
+import heroine_moves  # noqa: E402
+import heroine_rifle  # noqa: E402
 import heroine_rig  # noqa: E402
+import heroine_shotgun  # noqa: E402
+import heroine_spec  # noqa: E402
 
 ATLAS = ROOT / "game/assets/characters/heroine_atlas.png"
 GLB = ROOT / "game/assets/characters/heroine.glb"
+CHEST_GLB = ROOT / "game/assets/characters/m16.glb"
+CHEST_SHOTGUN_GLB = ROOT / "game/assets/characters/shotgun.glb"
+MOVES_JSON = ROOT / "game/assets/characters/heroine_moves.json"
 BLEND = ART / "heroine.blend"
 
 
@@ -34,6 +45,9 @@ def stats(mesh_obj, rig, actions):
     me = mesh_obj.data
     tris = sum(len(p.vertices) - 2 for p in me.polygons)
     unweighted = [v.index for v in me.vertices if not v.groups]
+    for o in rig.children:
+        if o.type == "MESH" and o is not mesh_obj:
+            print(f"[heroine] {o.name}: triangulos={sum(len(p.vertices) - 2 for p in o.data.polygons)}")
     print(f"[heroine] triangulos={tris} vertices={len(me.vertices)} ossos={len(rig.data.bones)}")
     print(f"[heroine] vertices_sem_peso={len(unweighted)}")
     for a in actions:
@@ -42,15 +56,16 @@ def stats(mesh_obj, rig, actions):
         raise SystemExit("vértices sem peso de osso")
 
 
-def export(path):
+def export(path, **extra):
     path.parent.mkdir(parents=True, exist_ok=True)
+    opts = {"export_materials": "EXPORT", **extra}
     bpy.ops.export_scene.gltf(
         filepath=str(path),
+        **opts,
         export_format="GLB",
         export_yup=True,
         export_texcoords=True,
         export_normals=True,
-        export_materials="EXPORT",
         export_image_format="AUTO",
         export_skins=True,
         export_animations=True,
@@ -63,15 +78,49 @@ def export(path):
     print(f"[heroine] exportado {path}")
 
 
+def export_chest_weapon(name, build, path):
+    """A arma sozinha (sem esqueleto) deitada em RIFLE_CHEST: o Godot põe no baú, onde as mãos a pegam
+    (fuzil e escopeta têm o cabo e a telha nos mesmos pontos)."""
+    mb = heroine_mesh.MeshBuilder(heroine_spec.BONE_NAMES)
+    build(mb, heroine_rifle.RIFLE_CHEST, {"Hand_R": 1})
+    me = bpy.data.meshes.new(name + "Mesh")
+    mb.bm.normal_update()
+    mb.bm.to_mesh(me)
+    mb.bm.free()
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    me.materials.append(bpy.data.materials["HeroineBody"])
+    for o in bpy.data.objects:
+        o.select_set(o is obj)
+    export(path, use_selection=True, export_materials="NONE")  # o Godot põe o material (atlas da heroína)
+    bpy.data.objects.remove(obj)
+
+
+def write_moves(path):
+    data = heroine_moves.data(heroine_moves.gaits(heroine_anims))
+    data["rifle"] = {"grab_frame": heroine_rifle.GRAB_FRAME, "pickup_frames": heroine_rifle.PICKUP_FRAMES,
+                     "kneel_dist": heroine_rifle.KNEEL_DIST}
+    sg = heroine_shotgun
+    data["shotgun"] = {"frames": sg.FRAMES, "pump": [[f, d] for f, d in sg.PUMP_KEYS], "stroke": sg.STROKE}
+    path.write_text(json.dumps(data, indent=1), encoding="utf8")
+    print(f"[heroine] medidas em {path}")
+
+
 def main():
     reset_scene()
     rig = heroine_rig.make_armature()
     body = heroine_rig.make_mesh_object(rig, ATLAS)
     heroine_rig.make_muzzle(rig)
+    heroine_rig.make_muzzle(rig, "RifleMuzzle", heroine_rifle.muzzle_position())
+    heroine_rig.make_muzzle(rig, "ShotgunMuzzle", heroine_shotgun.muzzle_position())
+    heroine_rig.make_pump(rig)
     acts = heroine_anims.build_actions(rig)
     stats(body, rig, acts)
     bpy.ops.wm.save_as_mainfile(filepath=str(BLEND))
     export(GLB)
+    export_chest_weapon("M16Chest", heroine_rifle.build_rifle, CHEST_GLB)
+    export_chest_weapon("ShotgunChest", heroine_shotgun.build_shotgun, CHEST_SHOTGUN_GLB)
+    write_moves(MOVES_JSON)
 
 
 if __name__ == "__main__":

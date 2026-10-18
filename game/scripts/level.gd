@@ -1,5 +1,6 @@
 class_name Level
-## Sala de teste: galpão com piso de concreto, paredes metálicas, colunas e caixas.
+## Sala de teste: galpão com piso de concreto, paredes metálicas, colunas, caixas (as empilhadas têm borda
+## para ficar pendurada e subir; as baixas, para escalar) e a plataforma de carga no fundo (escalar).
 ## Malhas subdivididas porque a luz é por vértice (como no PS1).
 
 const TEX := {
@@ -7,6 +8,8 @@ const TEX := {
 	"wall": preload("res://assets/textures/wall.png"),
 	"crate": preload("res://assets/textures/crate.png"),
 	"hazard": preload("res://assets/textures/hazard.png"),
+	"chest": preload("res://assets/textures/chest.png"),
+	"chest_shotgun": preload("res://assets/textures/chest_shotgun.png"),
 }
 const SIZE := 26.0
 const WALL_H := 4.5
@@ -25,6 +28,8 @@ static func block(parent: Node, size: Vector3, pos: Vector3, tex: String, scale 
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
+	# tipo de superfície para o impacto e o buraco de bala (Fx.SURFACES)
+	body.set_meta("surface", tex)
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
@@ -51,7 +56,11 @@ static func build(parent: Node) -> void:
 	block(parent, Vector3(SIZE, 0.4, SIZE), Vector3(0, -0.2, 0), "concrete", 0.35)
 	for s in [-1, 1]:
 		block(parent, Vector3(SIZE, WALL_H, 0.4), Vector3(0, WALL_H * 0.5, s * h), "wall", 0.5)
-		block(parent, Vector3(0.4, WALL_H, SIZE), Vector3(s * h, WALL_H * 0.5, 0), "wall", 0.5)
+		if s == 1:
+			block(parent, Vector3(0.4, WALL_H, SIZE), Vector3(s * h, WALL_H * 0.5, 0), "wall", 0.5)
+	# parede oeste com a porta para o pátio da mata (segunda sala) e o pátio em si
+	Yard.west_wall(parent)
+	Yard.build(parent)
 	# colunas
 	for p in [Vector3(-5, 0, -4), Vector3(5, 0, -4), Vector3(-5, 0, 4), Vector3(5, 0, 4)]:
 		block(parent, Vector3(0.8, WALL_H, 0.8), p + Vector3.UP * WALL_H * 0.5, "wall", 0.75)
@@ -66,7 +75,8 @@ static func build(parent: Node) -> void:
 	]
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
-	# faixa de perigo no chão (rampa de carga)
+	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar) e a faixa de perigo na frente dela
+	block(parent, Vector3(6.0, 1.3, 2.0), Vector3(0, 0.65, -h + 1.2), "concrete", 0.35)
 	block(parent, Vector3(6.0, 0.02, 0.6), Vector3(0, 0.01, -10.5), "hazard", 1.0)
 	_details(parent)
 	_lights(parent)

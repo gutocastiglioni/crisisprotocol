@@ -11,7 +11,11 @@ const EXPECTED_BONES := [
 const EXPECTED_ANIMS := ["Idle", "Walk", "Run", "AimIdle", "Shoot", "StrafeL", "StrafeR", "Crouch", "Roll", "Hit", "Death"]
 
 const RAPTOR_TESTS := preload("res://tests/raptor_tests.gd")
+const AI_TESTS := preload("res://tests/ai_tests.gd")
+const SOLDIER_TESTS := preload("res://tests/soldier_tests.gd")
 const GFX_TESTS := preload("res://tests/gfx_tests.gd")
+const MOVES_TESTS := preload("res://tests/moves_tests.gd")
+const WEAPONS_TESTS := preload("res://tests/weapons_tests.gd")
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -80,8 +84,16 @@ func _run() -> void:
 	print("== movimento avançado")
 	await test_crouch_aim()
 	await test_strafe_right()
+	print("== movimentos novos e fuzil")
+	await MOVES_TESTS.new().run(self)
+	print("== escopeta, buracos de bala e disparos")
+	await WEAPONS_TESTS.new().run(self)
 	print("== velociraptor")
 	await RAPTOR_TESTS.new().run(self)
+	print("== IA, furtividade e pátio da mata")
+	await AI_TESTS.new().run(self)
+	print("== guerrilheiros")
+	await SOLDIER_TESTS.new().run(self)
 	print("== visual (PS1/PS2) e atlas")
 	await GFX_TESTS.new().run(self)
 	print("\n%d ok, %d falharam" % [_passed, _failures.size()])
@@ -104,10 +116,11 @@ func test_asset() -> void:
 	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
 	for a in EXPECTED_ANIMS:
 		check(ap.has_animation(a) and ap.get_animation(a).length > 0.1, "animação " + a)
-	var mi: MeshInstance3D = inst.find_children("*", "MeshInstance3D", true, false)[0]
+	# corpo + as duas armas
 	var tris := 0
-	for s in mi.mesh.get_surface_count():
-		tris += mi.mesh.surface_get_array_index_len(s) / 3
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		for s in mi.mesh.get_surface_count():
+			tris += mi.mesh.surface_get_array_index_len(s) / 3
 	check(tris > 800 and tris < 5000, "orçamento de triângulos, PS2 do começo (800-5000)", str(tris))
 	check(inst.find_child("Muzzle", true, false) != null, "marcador do cano (Muzzle)")
 	inst.free()
@@ -279,7 +292,7 @@ func test_player_roll_and_crouch() -> void:
 	await _frames(2)
 	Input.action_release("roll")
 	check(p.rolling and p.model.state == "roll", "espaço = rolar")
-	await _frames(60)
+	await _frames(int(Moves.data().roll.frames * 2) + 6)
 	check(not p.rolling, "rolamento termina")
 	check(p.global_position.z < z0 - 2.0, "rolamento desloca para a frente", str(p.global_position.z - z0))
 	Input.action_press("crouch")
@@ -289,7 +302,7 @@ func test_player_roll_and_crouch() -> void:
 	check(p.crouching and p.model.state == "crouch", "C = agachar")
 	Input.action_press("move_forward")
 	await _frames(20)
-	check(absf(p.velocity.z) < 0.01, "agachada não anda")
+	check(p.velocity.z < -0.3 and p.velocity.z > -1.0 and p.crouching, "agachada anda devagar", str(p.velocity.z))
 	Input.action_release("move_forward")
 
 
@@ -450,8 +463,12 @@ func test_crouch_aim() -> void:
 	check(p.aiming and p.crouching, "agachada + mirando")
 	var yaw0 := p.rotation.y
 	p.camera_rig.yaw = yaw0 + 0.5
-	await _frames(20)
-	check(absf(p.rotation.y - (yaw0 + 0.5)) < 0.1, "agachada mirando olha para câmera", str(p.rotation.y - yaw0))
+	await _frames(30)
+	# vira para o ponto sob a retícula (a câmera fica no ombro direito: perto, não é a frente da câmera)
+	var d := p.camera_rig.aim_point([p.get_rid()]) - p.global_position
+	var want := atan2(-d.x, -d.z)
+	check(absf(angle_difference(p.rotation.y, want)) < 0.1 and absf(angle_difference(p.rotation.y, yaw0 + 0.5)) < 0.45,
+		"agachada mirando vira para onde a câmera mira", "%.2f x %.2f" % [p.rotation.y, want])
 	Input.action_release("aim")
 
 
@@ -524,7 +541,7 @@ func test_gamepad() -> void:
 	await _frames(2)
 	_joy_button(JOY_BUTTON_A, false)
 	check(p.rolling, "botão A = rolar")
-	await _frames(60)
+	await _frames(int(Moves.data().roll.frames * 2) + 6)
 	_joy_button(JOY_BUTTON_B, true)
 	await _frames(2)
 	_joy_button(JOY_BUTTON_B, false)

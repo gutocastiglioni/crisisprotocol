@@ -24,6 +24,9 @@ RECTS = {
     "pouch": (144, 160, 32, 32),
     "leather": (176, 160, 32, 32),
     "neck": (192, 96, 32, 16),
+    "rifle": (128, 128, 128, 32),
+    "shotgun": (112, 192, 96, 32),
+    "shotgun_wood": (112, 224, 96, 32),
 }
 
 # Faixas de altura (z em metros) que cada peça vertical ocupa no seu retângulo.

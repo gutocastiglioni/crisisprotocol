@@ -106,7 +106,11 @@ func test_jaw() -> void:
 func test_roar_on_sight() -> void:
 	var pr := await _pair(Vector3(0, 0, 8))
 	var r: Raptor = pr[1]
-	await t._frames(4)
+	# a atenção sobe com ela à vista (ai_tests.gd cobre a desconfiança); até 4 s para notar parada a 8 m
+	for i in 240:
+		await t._frames(1)
+		if r.state == "roar":
+			break
 	check(r.state == "roar", "raptor grita ao ver a heroína", r.state)
 	check(r.model.current == "Roar", "animação de grito tocando", r.model.current)
 	await t._frames(120)
@@ -414,7 +418,7 @@ func test_reset_all_while_grabbed() -> void:
 	# BUG: raptor vê a heroína imediatamente porque ela respawnou perto dele no teste
 	# (na main real, os spawns são diferentes). Então o estado pode ser roar, não idle.
 	check(not r.dead and r.health == Raptor.MAX_HEALTH, "reset_all: raptor vive e vida cheia")
-	check(r.state == "idle" or r.state == "roar", "raptor volta a idle ou detecta a presa", r.state)
+	check(r.state in ["idle", "suspicious", "roar"], "raptor volta a idle, desconfia ou detecta a presa", r.state)
 
 
 func test_raptor_killed_mid_leap() -> void:

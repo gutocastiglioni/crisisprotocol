@@ -101,3 +101,12 @@ func yaw_basis() -> Basis:
 
 func aim_ray() -> Array[Vector3]:
 	return [camera.global_position, -camera.global_basis.z]
+
+
+## Ponto sob a retícula: o que o raio da câmera acerta (cenário e personagens), ou 30 m à frente.
+## Acertos a menos de 2 m da câmera (o ombro dela, uma quina) não contam: a arma viraria de repente.
+func aim_point(exclude: Array[RID]) -> Vector3:
+	var ray := aim_ray()
+	var q := PhysicsRayQueryParameters3D.create(ray[0] + ray[1] * 2.0, ray[0] + ray[1] * 30.0, 1 | 2, exclude)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.position if hit else ray[0] + ray[1] * 30.0

@@ -1,21 +1,18 @@
 class_name Raptor
-extends CharacterBody3D
-## Velociraptor inimigo (jeito Dino Crisis 2). Ao ver a presa dá o grito, depois a estuda rodeando
-## e farejando, e ataca: salto, investida, rabada (se ela estiver perto da traseira) ou, às vezes,
-## mordida que segura e sacode. Rolar na hora certa esquiva de qualquer ataque.
+extends Enemy
+## Velociraptor inimigo (jeito Dino Crisis 2). Percepção, patrulha e alarme vêm de Enemy; ao ver a presa dá o grito
+## (que é o alarme), a estuda rodeando e farejando, e ataca: salto, investida, rabada (se ela estiver perto da traseira)
+## ou, às vezes, mordida que segura e sacode. Rolar na hora certa esquiva de qualquer ataque.
 
 signal killed
 signal attacked(kind: String)
 
-const SIGHT_RANGE := 14.0
 const STUDY_DIST := 4.5
 const WALK_SPEED := 1.1
 const RUN_SPEED := 7.0
 const RUN_ANIM_SPEED := 4.2  # m/s que a animação Run representa em velocidade 1 (passada 1 m em 0,24 s de apoio)
 const WALK_ANIM_SPEED := 1.075  # idem Walk (passada 0,8 m em 0,744 s de apoio): sem patinar
 const CLAW_REACH := 0.5  # garra a esta distância do corpo dela = acertou
-const TURN_RATE := 6.0
-const GRAVITY := 18.0
 const LEAP_UP := 5.0
 const LEAP_MAX_SPEED := 10.0
 const LEAP_PREP := 0.32
@@ -29,22 +26,15 @@ const SHAKE_PERIOD := 0.4  # um ciclo da animação Shake
 const MAX_HEALTH := 170
 const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7}
 const BITE_CHANCE := 0.6  # perto e de frente: morde ou recua
-
-@export var target: Player
+const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "recover", "hit"]
 
 var model: RaptorModel
 var health := MAX_HEALTH
-var state := "idle"
-var dead := false
-var rng := RandomNumberGenerator.new()
-var _t := 0.0
-var _dur := 0.0
 var _done := false  # o golpe deste ataque já foi resolvido (acertou ou errou)
 var _circle := 1.0
 var _bite_after_charge := false
 var _spin := 0.0
 var _ticks := 0
-var _spawn: Transform3D
 var last_hit_at := Vector3.ZERO  # onde o último golpe pegou nela (garra no salto, cabeça na investida)
 
 
@@ -67,20 +57,41 @@ func _ready() -> void:
 	add_child(torso)
 	model = RaptorModel.new()
 	add_child(model)
-	_spawn = global_transform
-	rng.randomize()
+	patrol_speed = 1.4
+	investigate_speed = 2.4
+	hunt_speed = 4.2
+	_enemy_ready()
 
 
 func _physics_process(delta: float) -> void:
-	if not is_on_floor():
-		velocity.y -= GRAVITY * delta
-	_t += delta
+	_tick(delta)
+	if not _calm_state(delta):
+		_combat_state(delta)
+	move_and_slide()
+
+
+func in_combat() -> bool:
+	return state in COMBAT
+
+
+func _play(anim: String, blend := 0.15, speed := 1.0, restart := false) -> void:
+	model.play(anim, blend, speed, restart)
+
+
+func _anim_speed(run: bool) -> float:
+	return RUN_ANIM_SPEED if run else WALK_ANIM_SPEED
+
+
+func _on_spotted() -> void:
+	start_roar()
+
+
+func _on_enter() -> void:
+	_done = false
+
+
+func _combat_state(delta: float) -> void:
 	match state:
-		"idle":
-			_stop(delta)
-			model.play("Idle")
-			if _can_see_target():
-				start_roar()
 		"roar":
 			_stop(delta)
 			_face(_to_target(), delta, 2.0)
@@ -113,17 +124,9 @@ func _physics_process(delta: float) -> void:
 				start_study()
 		"dead":
 			_stop(delta)
-	move_and_slide()
 
 
 # ------------------------------------------------------------------ estados
-func _enter(s: String, anim: String, blend := 0.15) -> void:
-	state = s
-	_t = 0.0
-	_done = false
-	model.play(anim, blend, 1.0, true)
-
-
 func start_roar() -> void:
 	_enter("roar", "Roar")
 
@@ -165,6 +168,11 @@ func _recover(time := 0.8) -> void:
 
 ## Decide o ataque depois de estudar a presa (distância e lado em que ela está).
 func choose_attack() -> void:
+	if not _combat_sees():
+		# ela sumiu enquanto ele estudava: não ataca no escuro, vai até onde a viu
+		alert_t = ALERT_TIME
+		start_hunt(_last_known)
+		return
 	var to := _to_target()
 	var dist := to.length()
 	var local := global_basis.inverse() * to
@@ -188,6 +196,11 @@ func choose_attack() -> void:
 func _study(delta: float) -> void:
 	if not _has_target():
 		_enter("idle", "Idle")
+		return
+	# perdeu a presa de vista (ela se escondeu ou fugiu): vai até onde a viu por último
+	if _lost_t > LOSE_TIME:
+		alert_t = ALERT_TIME
+		start_hunt(_last_known)
 		return
 	# ela chegou perto da traseira: rabada na hora (antes de virar de frente para ela)
 	if _behind_close():
@@ -364,6 +377,9 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	if health == 0:
 		die(dir, at)
 		return
+	if not state in COMBAT and _has_target():
+		# levou tiro sem ter notado ninguém: já sabe onde ela está e avisa os outros
+		_raise_alarm()
 	if state == "hold":
 		# tiro faz soltar a presa
 		_release(-global_basis.z * 3.0 + Vector3.UP * 1.5)
@@ -384,16 +400,14 @@ func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	var carry := Vector3(velocity.x, maxf(velocity.y, 0.0), velocity.z)
 	velocity = Vector3.ZERO
 	model.start_ragdoll(carry + flat * 1.8, flat * 30.0, at)
+	_update_marker()
 	killed.emit()
 
 
 func reset() -> void:
 	model.stop_ragdoll()
-	global_transform = _spawn
-	reset_physics_interpolation()
-	velocity = Vector3.ZERO
+	_reset_enemy()
 	health = MAX_HEALTH
-	dead = false
 	collision_layer = 2
 	_enter("idle", "Idle", 0.0)
 
@@ -406,37 +420,3 @@ func _behind_close() -> bool:
 	return (global_basis.inverse() * to).z > 0.3 and to.length() < TAIL_REACH - 0.3
 
 
-func _has_target() -> bool:
-	return is_instance_valid(target) and not target.dead
-
-
-func _can_see_target() -> bool:
-	if not _has_target():
-		return false
-	var eye := global_position + Vector3.UP * 1.3
-	var goal := target.global_position + Vector3.UP * 1.2
-	if eye.distance_to(goal) > SIGHT_RANGE:
-		return false
-	var q := PhysicsRayQueryParameters3D.create(eye, goal, 1)
-	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
-
-
-func _to_target() -> Vector3:
-	if not is_instance_valid(target):
-		return -global_basis.z
-	var to := target.global_position - global_position
-	to.y = 0.0
-	return to
-
-
-func _stop(delta: float) -> void:
-	var k := 1.0 - exp(-10.0 * delta)
-	velocity.x = lerpf(velocity.x, 0.0, k)
-	velocity.z = lerpf(velocity.z, 0.0, k)
-
-
-func _face(dir: Vector3, delta: float, rate := TURN_RATE) -> void:
-	dir.y = 0.0
-	if dir.length() < 0.01:
-		return
-	rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), 1.0 - exp(-rate * delta))

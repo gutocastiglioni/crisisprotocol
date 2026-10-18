@@ -72,7 +72,17 @@ def render(scene, path):
     bpy.ops.render.render(write_still=True)
 
 
+def show_weapon(name):
+    """Mostra só a arma da ação (o Godot faz o mesmo): escopeta nas Shotgun*, fuzil nas Rifle*/Pickup, pistola
+    nas outras."""
+    shown = "Shotgun" if name.startswith("Shotgun") else ("M16" if name.startswith(("Rifle", "Pickup")) else "Pistol")
+    for o in bpy.data.objects:
+        if o.name in ("Pistol", "M16", "Shotgun", "ShotgunPump"):
+            o.hide_render = not o.name.startswith(shown)
+
+
 def set_action(rig, name):
+    show_weapon(name)
     act = bpy.data.actions[name]
     rig.animation_data.action = act
     if hasattr(rig.animation_data, "action_slot") and len(act.slots):
@@ -91,6 +101,7 @@ def main():
     frame_subject(cam, rig)
     if mode == "turntable":
         rig.animation_data.action = None
+        show_weapon("")
         for yaw in (0, 35, 90, 180, 270):
             aim_camera(cam, yaw)
             render(scene, out / f"turn_{yaw:03d}.png")

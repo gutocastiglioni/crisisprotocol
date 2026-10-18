@@ -1,47 +1,92 @@
 class_name HeroineModel
 extends Node3D
-## Modelo da heroína: materiais PS1, árvore de animação (corpo + mira/tiro na parte de cima) e ragdoll.
+## Modelo da heroína: materiais PS1, árvore de animação (corpo + fuzil/mira/tiro na parte de cima), armas
+## (pistola, M16 e escopeta em malhas à parte: só a da mão aparece; a telha da escopeta desliza no bombeamento)
+## e ragdoll.
+
+## a escopeta bombeou (a telha chegou para trás): sai o cartucho em `at` com velocidade `vel`
+signal shell_ejected(at: Vector3, vel: Vector3)
 
 const SCENE := preload("res://assets/characters/heroine.glb")
 # o atlas direto (não a cópia dentro do .glb): tem o alfa das pontas do cabelo e mipmaps para o visual PS2
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 
-const LOOPS := ["Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR"]
+const LOOPS := [
+	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
+	"Fall", "Hang", "RifleHold", "RifleAim",
+]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
 	"UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R",
 ]
 const STATES := {
-	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "roll": "Roll",
-	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "death": "Death",
+	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
+	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
+	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
+	"death": "Death",
 }
+## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
+const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r"]
+## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
+const CARRY := [
+	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
+	"jump", "fall",
+]
+## arma: [malha, marcador do cano]
+const WEAPONS := {"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"], "shotgun": ["Shotgun", "ShotgunMuzzle"]}
+## armas longas: pose de carregar, mira e pegar do fuzil (a escopeta tem o cabo e a telha nos mesmos pontos)
+const LONG_GUNS := ["m16", "shotgun"]
+## janela de ejeção da escopeta em relação ao centro da telha em repouso (lado direito, atrás, em cima; m)
+const SHELL_PORT := Vector3(0.02, 0.018, 0.21)
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
+## Outro personagem com o mesmo esqueleto e animações (guerrilheiro): a cena e o atlas dele (antes de entrar na árvore).
+var scene: PackedScene = SCENE
+var atlas: Texture2D = ATLAS
 
 var skeleton: Skeleton3D
+var aim_pitch: AimPitch
 var anim_player: AnimationPlayer
 var tree: AnimationTree
-var muzzle: Node3D
 var ragdoll: Ragdoll
 var state := "idle"
+var weapon := "pistol"
+var holstered := false
+var _meshes := {}
+var _muzzles := {}
 var _aim := 0.0
 var _aim_target := 0.0
+var _carry := 0.0
+var _pump: Node3D
+var _pump_rest: Transform3D
+var _pump_t := -1.0  # segundos desde o tiro da escopeta (-1 = parada)
+var _ejected := false
 
 
 func _ready() -> void:
-	var inst := SCENE.instantiate()
+	var inst := scene.instantiate()
 	inst.rotation.y = PI  # o glTF olha para +Z; no Godot a frente é -Z
 	add_child(inst)
 	skeleton = inst.find_children("*", "Skeleton3D", true, false)[0]
 	anim_player = inst.find_children("*", "AnimationPlayer", true, false)[0]
-	muzzle = inst.find_child("Muzzle", true, false)
+	for w in WEAPONS:
+		_meshes[w] = inst.find_child(WEAPONS[w][0], true, false)
+		_muzzles[w] = inst.find_child(WEAPONS[w][1], true, false)
+	_pump = inst.find_child("ShotgunPump", true, false)
+	if _pump:
+		_pump_rest = _pump.transform
 	_apply_materials(inst)
 	for a in LOOPS:
 		anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
 	_build_tree()
+	# inclinação da mira antes do ragdoll (que, ligado, manda no esqueleto)
+	aim_pitch = AimPitch.new()
+	aim_pitch.influence = 0.0
+	skeleton.add_child(aim_pitch)
 	ragdoll = Ragdoll.create(skeleton)
 	ragdoll.hit_owner = get_parent()
+	set_weapon(weapon)
 
 
 func _apply_materials(root: Node) -> void:
@@ -52,7 +97,7 @@ func _apply_materials(root: Node) -> void:
 			var two_sided := src != null and src.cull_mode == BaseMaterial3D.CULL_DISABLED
 			m.shader = Gfx.shader(two_sided)
 			m.set_shader_parameter("rim", 0.35)
-			m.set_shader_parameter("albedo_tex", ATLAS)
+			m.set_shader_parameter("albedo_tex", atlas)
 			m.set_shader_parameter("tint", tint)
 			m.set_shader_parameter("desaturate", desaturate)
 			mi.set_surface_override_material(i, m)
@@ -71,15 +116,28 @@ func _build_tree() -> void:
 		base.add_input(s)
 		bt.add_node("a_" + s, _anim(STATES[s]))
 	bt.add_node("base", base)
-	bt.add_node("walk_speed", AnimationNodeTimeScale.new())
-	bt.connect_node("walk_speed", 0, "a_walk")
+	for s in SCALED:
+		bt.add_node(s + "_speed", AnimationNodeTimeScale.new())
+		bt.connect_node(s + "_speed", 0, "a_" + s)
+	# subir da borda pode começar no meio (borda baixa: o pulo já entra na subida)
+	bt.add_node("climb_seek", AnimationNodeTimeSeek.new())
+	bt.connect_node("climb_seek", 0, "a_climb")
 	var i := 0
 	for s in STATES:
-		bt.connect_node("base", i, "walk_speed" if s == "walk" else "a_" + s)
-		# rolar/morrer sempre começam do quadro 0
+		var src: String = s + "_speed" if s in SCALED else ("climb_seek" if s == "climb" else "a_" + s)
+		bt.connect_node("base", i, src)
+		# rolar, pular, subir, pegar e morrer sempre começam do quadro 0
 		base.set_input_reset(i, true)
 		i += 1
 
+	# fuzil nas mãos (pose de carregar) por cima da locomoção
+	var carry := AnimationNodeBlend2.new()
+	_filter_upper_body(carry)
+	bt.add_node("a_carry", _anim("RifleHold"))
+	bt.add_node("carry", carry)
+	bt.connect_node("carry", 0, "base")
+	bt.connect_node("carry", 1, "a_carry")
+	# mira e tiro: a pose de cada arma (0 = pistola, 1 = fuzil)
 	var aim := AnimationNodeBlend2.new()
 	var shoot := AnimationNodeOneShot.new()
 	shoot.fadein_time = 0.02
@@ -89,16 +147,26 @@ func _build_tree() -> void:
 	hit.fadeout_time = 0.15
 	_filter_upper_body(aim)
 	_filter_upper_body(shoot)
-	bt.add_node("a_aim", _anim("AimIdle"))
-	bt.add_node("a_shoot", _anim("Shoot"))
+	for n in [["aim_pose", "AimIdle", "RifleAim"], ["shoot_pose", "Shoot", "RifleShoot"]]:
+		bt.add_node("a_" + n[0] + "_pistol", _anim(n[1]))
+		bt.add_node("a_" + n[0] + "_m16", _anim(n[2]))
+		bt.add_node(n[0], AnimationNodeBlend2.new())
+		bt.connect_node(n[0], 0, "a_" + n[0] + "_pistol")
+	bt.connect_node("aim_pose", 1, "a_aim_pose_m16")
+	# tiro das armas longas: M16 (0) ou escopeta com o bombeamento (1)
+	bt.add_node("a_shoot_pose_shotgun", _anim("ShotgunShoot"))
+	bt.add_node("long_shoot", AnimationNodeBlend2.new())
+	bt.connect_node("long_shoot", 0, "a_shoot_pose_m16")
+	bt.connect_node("long_shoot", 1, "a_shoot_pose_shotgun")
+	bt.connect_node("shoot_pose", 1, "long_shoot")
 	bt.add_node("a_hit", _anim("Hit"))
 	bt.add_node("aim", aim)
 	bt.add_node("shoot", shoot)
 	bt.add_node("hit", hit)
-	bt.connect_node("aim", 0, "base")
-	bt.connect_node("aim", 1, "a_aim")
+	bt.connect_node("aim", 0, "carry")
+	bt.connect_node("aim", 1, "aim_pose")
 	bt.connect_node("shoot", 0, "aim")
-	bt.connect_node("shoot", 1, "a_shoot")
+	bt.connect_node("shoot", 1, "shoot_pose")
 	bt.connect_node("hit", 0, "shoot")
 	bt.connect_node("hit", 1, "a_hit")
 	bt.connect_node("output", 0, "hit")
@@ -128,18 +196,106 @@ func _process(delta: float) -> void:
 		return
 	_aim = move_toward(_aim, _aim_target, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim)
+	aim_pitch.influence = _aim
+	var carry := 1.0 if weapon in LONG_GUNS and not holstered and state in CARRY else 0.0
+	_carry = move_toward(_carry, carry, delta * 6.0)
+	tree.set("parameters/carry/blend_amount", _carry)
+	_update_pump(delta)
 
 
-func set_state(s: String, walk_scale := 1.0) -> void:
-	tree.set("parameters/walk_speed/scale", walk_scale)
+## Bombeamento: a telha segue o mesmo caminho que a mão esquerda faz na animação ShotgunShoot
+## (heroine_moves.json "shotgun": quadro -> recuo, smoothstep entre as chaves, como no Blender).
+func _update_pump(delta: float) -> void:
+	if _pump_t < 0.0 or _pump == null:
+		return
+	_pump_t += delta
+	var d: Dictionary = Moves.data().shotgun
+	var f := _pump_t * Moves.fps()
+	var back := pump_offset(f)
+	_pump.transform = _pump_rest * Transform3D(Basis(), Vector3(0, 0, back))  # -Z local = para a frente (cano)
+	if not _ejected and back >= float(d.stroke) * 0.95:
+		_ejected = true
+		var port: Transform3D = (_pump.get_parent() as Node3D).global_transform * _pump_rest
+		var b := port.basis.orthonormalized()
+		shell_ejected.emit(port * SHELL_PORT, b.x * randf_range(1.6, 2.2) + b.y * randf_range(0.8, 1.3))
+	if f >= float(d.frames):
+		_pump_t = -1.0
+		_pump.transform = _pump_rest
+
+
+## Recuo da telha (m, para trás) no quadro `f` do ShotgunShoot.
+static func pump_offset(f: float) -> float:
+	var keys: Array = Moves.data().shotgun.pump
+	for i in keys.size() - 1:
+		var k0: Array = keys[i]
+		var k1: Array = keys[i + 1]
+		if f >= k0[0] and f <= k1[0]:
+			var t: float = (f - k0[0]) / (k1[0] - k0[0])
+			return lerpf(k0[1], k1[1], t * t * (3.0 - 2.0 * t))
+	return float(keys[-1][1])
+
+
+## Troca o estado do corpo; `speed_scale` = velocidade da animação nos estados de andar (negativa = de costas).
+func set_state(s: String, speed_scale := 1.0) -> void:
+	if s in SCALED:
+		tree.set("parameters/%s_speed/scale" % s, speed_scale)
 	if s == state:
 		return
 	state = s
 	tree.set("parameters/base/transition_request", s)
 
 
+## Começa o estado do quadro 0 mesmo se já estiver nele (outra cambalhota, outro pulo).
+func play(s: String) -> void:
+	state = ""
+	set_state(s)
+
+
+## Começa o estado em `sec` segundos da animação (só "climb").
+func play_from(s: String, sec: float) -> void:
+	play(s)
+	if sec > 0.0:
+		tree.set("parameters/climb_seek/seek_request", sec)
+
+
+## Arma na mão ("pistol", "m16" ou "shotgun"): mostra a malha dela e usa as poses de mira/tiro dela.
+func set_weapon(w: String) -> void:
+	weapon = w
+	var k := 1.0 if w in LONG_GUNS else 0.0
+	tree.set("parameters/aim_pose/blend_amount", k)
+	tree.set("parameters/shoot_pose/blend_amount", k)
+	tree.set("parameters/long_shoot/blend_amount", 1.0 if w == "shotgun" else 0.0)
+	_stop_pump()
+	_show_weapon()
+
+
+func _stop_pump() -> void:
+	_pump_t = -1.0
+	if _pump:
+		_pump.transform = _pump_rest
+
+
+## Guardada (pendurada, subindo, pegando outra arma): nenhuma arma na mão.
+func holster(on: bool) -> void:
+	holstered = on
+	_show_weapon()
+
+
+func _show_weapon() -> void:
+	for w in _meshes:
+		if _meshes[w]:
+			_meshes[w].visible = w == weapon and not holstered
+	if _pump:
+		_pump.visible = weapon == "shotgun" and not holstered
+
+
 func set_aim(on: bool) -> void:
 	_aim_target = 1.0 if on else 0.0
+
+
+## Altura da mira (radianos, > 0 = para cima): o tronco inclina e a arma aponta para o ponto mirado.
+func set_aim_pitch(rad: float) -> void:
+	aim_pitch.pitch = rad
 
 
 func is_aimed() -> bool:
@@ -148,23 +304,36 @@ func is_aimed() -> bool:
 
 func shoot() -> void:
 	tree.set("parameters/shoot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	if weapon == "shotgun":
+		_pump_t = 0.0
+		_ejected = false
 
 
 func hit() -> void:
 	tree.set("parameters/hit/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	_stop_pump()  # o golpe tira a mão da telha (a animação do tiro é cortada)
 
 
 func muzzle_position() -> Vector3:
-	return muzzle.global_position if muzzle else global_position + Vector3.UP * 1.3
+	var m: Node3D = _muzzles.get(weapon)
+	return m.global_position if m else global_position + Vector3.UP * 1.3
+
+
+func is_weapon_visible(w: String) -> bool:
+	return _meshes[w] != null and _meshes[w].visible
 
 
 func start_ragdoll(impulse: Vector3, at: Variant = null) -> void:
+	_stop_pump()
+	aim_pitch.influence = 0.0
 	tree.active = false
 	ragdoll.start(impulse, at)
 
 
 ## Ragdoll com o corpo todo voando a `vel` (arremessada por um golpe).
 func fling_ragdoll(vel: Vector3, at: Variant = null) -> void:
+	_stop_pump()
+	aim_pitch.influence = 0.0
 	tree.active = false
 	await ragdoll.fling(vel, at)
 
@@ -175,6 +344,7 @@ func stop_ragdoll() -> void:
 	state = ""
 	set_state("idle")
 	set_aim(false)
+	holster(false)
 	_aim = 0.0
 
 
