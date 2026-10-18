@@ -27,7 +27,7 @@ RECTS = {
 }
 
 # olho pintado na cabeça: (u, v) do centro no retângulo "head" (lado esquerdo; o direito é 1 - u)
-EYE_UV = (0.19, 0.21)
+EYE_UV = (0.2, 0.47)
 
 
 def uv(rect_name, u, v):

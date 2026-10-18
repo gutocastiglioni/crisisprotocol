@@ -9,22 +9,22 @@ const ATLAS := preload("res://assets/characters/raptor_atlas.png")
 const LOOPS := ["Idle", "Walk", "Run", "Study", "Shake"]
 # mesmo formato de Ragdoll.BONES; pernas com cone (joelho e tornozelo dobram em sentidos opostos)
 const RAGDOLL := {
-	"Hips": {"child": "Spine", "len": 0.25, "box": Vector3(0.32, 0.36, 0.30), "joint": "none", "mass": 20.0},
-	"Spine": {"child": "Chest", "len": 0.25, "box": Vector3(0.30, 0.40, 0.26), "joint": "cone", "swing": 15.0, "twist": 10.0, "mass": 15.0},
-	"Chest": {"child": "Neck1", "len": 0.22, "box": Vector3(0.24, 0.30, 0.22), "joint": "cone", "swing": 15.0, "twist": 10.0, "mass": 10.0},
-	"Neck1": {"child": "Neck2", "len": 0.20, "radius": 0.07, "joint": "cone", "swing": 35.0, "twist": 15.0, "mass": 3.0},
-	"Neck2": {"child": "Head", "len": 0.19, "radius": 0.065, "joint": "cone", "swing": 35.0, "twist": 15.0, "mass": 3.0},
-	"Head": {"child": "", "len": 0.46, "radius": 0.075, "joint": "cone", "swing": 30.0, "twist": 20.0, "mass": 4.0},
+	"Hips": {"child": "Spine", "len": 0.17, "box": Vector3(0.30, 0.34, 0.24), "joint": "none", "mass": 20.0},
+	"Spine": {"child": "Chest", "len": 0.19, "box": Vector3(0.30, 0.40, 0.22), "joint": "cone", "swing": 15.0, "twist": 10.0, "mass": 15.0},
+	"Chest": {"child": "Neck1", "len": 0.20, "box": Vector3(0.26, 0.36, 0.22), "joint": "cone", "swing": 15.0, "twist": 10.0, "mass": 10.0},
+	"Neck1": {"child": "Neck2", "len": 0.14, "radius": 0.09, "joint": "cone", "swing": 35.0, "twist": 15.0, "mass": 3.0},
+	"Neck2": {"child": "Head", "len": 0.14, "radius": 0.085, "joint": "cone", "swing": 35.0, "twist": 15.0, "mass": 3.0},
+	"Head": {"child": "", "len": 0.55, "radius": 0.08, "joint": "cone", "swing": 30.0, "twist": 20.0, "mass": 4.0},
 	"Tail1": {"child": "Tail2", "len": 0.40, "radius": 0.09, "joint": "cone", "swing": 25.0, "twist": 10.0, "mass": 4.0},
 	"Tail2": {"child": "Tail3", "len": 0.40, "radius": 0.065, "joint": "cone", "swing": 30.0, "twist": 10.0, "mass": 3.0},
 	"Tail3": {"child": "Tail4", "len": 0.40, "radius": 0.045, "joint": "cone", "swing": 30.0, "twist": 10.0, "mass": 2.0},
 	"Tail4": {"child": "", "len": 0.55, "radius": 0.03, "joint": "cone", "swing": 30.0, "twist": 10.0, "mass": 1.0},
-	"Thigh_L": {"child": "Shin_L", "len": 0.40, "radius": 0.10, "joint": "cone", "swing": 50.0, "twist": 15.0, "mass": 8.0},
-	"Thigh_R": {"child": "Shin_R", "len": 0.40, "radius": 0.10, "joint": "cone", "swing": 50.0, "twist": 15.0, "mass": 8.0},
-	"Shin_L": {"child": "Meta_L", "len": 0.48, "radius": 0.045, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 3.0},
-	"Shin_R": {"child": "Meta_R", "len": 0.48, "radius": 0.045, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 3.0},
-	"Meta_L": {"child": "Toe_L", "len": 0.17, "radius": 0.035, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 1.5},
-	"Meta_R": {"child": "Toe_R", "len": 0.17, "radius": 0.035, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 1.5},
+	"Thigh_L": {"child": "Shin_L", "len": 0.40, "radius": 0.11, "joint": "cone", "swing": 50.0, "twist": 15.0, "mass": 8.0},
+	"Thigh_R": {"child": "Shin_R", "len": 0.40, "radius": 0.11, "joint": "cone", "swing": 50.0, "twist": 15.0, "mass": 8.0},
+	"Shin_L": {"child": "Meta_L", "len": 0.48, "radius": 0.06, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 3.0},
+	"Shin_R": {"child": "Meta_R", "len": 0.48, "radius": 0.06, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 3.0},
+	"Meta_L": {"child": "Toe_L", "len": 0.17, "radius": 0.04, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 1.5},
+	"Meta_R": {"child": "Toe_R", "len": 0.17, "radius": 0.04, "joint": "cone", "swing": 45.0, "twist": 5.0, "mass": 1.5},
 }
 
 var skeleton: Skeleton3D

@@ -13,3 +13,6 @@ game/.godot/
 *.blend1
 __pycache__/
 art/*.blend
+
+# modelos extraídos de jogos comerciais: só referência local, nunca no repositório
+possible_models/
