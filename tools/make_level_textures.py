@@ -1,7 +1,7 @@
 """Texturas 256x256 do galpão (visual de PS2 do começo): piso de concreto, parede de painéis metálicos,
 caixa de madeira, faixa de perigo e os baús de armas (metal verde-oliva, estêncil do M16 e da escopeta). Cada uma cobre
 ~2 m no mundo (world_uv_scale 0.5). Mais os decalques de buraco de bala (bullet_holes.png) e os quadros dos efeitos
-do tiro (shot_fx.png: clarões e baforada), com alfa.
+do tiro (shot_fx.png: clarões e baforada) e do sangue (blood_fx.png: esguicho, respingo, gotas, poça), com alfa.
 
 Uso: python tools/make_level_textures.py
 Saída: game/assets/textures/*.png
@@ -417,12 +417,104 @@ def shot_fx():
     return img
 
 
+def blood_fx():
+    """Sangue (jeito Dino Crisis) 256x256 com alfa, 2x2 quadros de 128: [0] esguicho de frente para a câmera (miolo
+    com jatos e gotas em volta), [1] respingo no chão/parede (mancha com gotas e escorridos), [2] gotas do rastro,
+    [3] poça (borda ondulada, centro mais escuro). Gerador próprio (não mexe na sequência das outras texturas)."""
+    S = 128
+    dark, red, light = (78, 4, 6), (128, 8, 10), (168, 22, 20)
+    img = Image.new("RGBA", (S * 2, S * 2), dark + (0,))
+    r = random.Random(11)
+
+    def blob(d, cx, cy, rad, fill, lobes=14, wob=0.25):
+        # contorno suave: soma de ondas com fase aleatória (`lobes` = quantas ondulações, `wob` = amplitude)
+        ph = [r.uniform(0, math.tau) for _ in range(3)]
+        amp = [r.uniform(0.5, 1.0) for _ in range(3)]
+        pts = []
+        for k in range(96):
+            a = k / 96 * math.tau
+            w = sum(amp[j] * math.sin(a * max(1, lobes // (j + 1)) + ph[j]) for j in range(3)) / 3
+            rr = rad * (1 + wob * w)
+            pts.append((cx + math.cos(a) * rr, cy + math.sin(a) * rr))
+        d.polygon(pts, fill=fill)
+
+    def tile(paint):
+        # desenhado em 2x e reduzido: borda lisa; o alfa continua acima/abaixo de 0,5 nos mesmos lugares
+        t = Image.new("RGBA", (S * 2, S * 2), dark + (0,))
+        paint(ImageDraw.Draw(t), S)
+        return t.resize((S, S), Image.LANCZOS)
+
+    def dot(d, x, y, rad, fill):
+        d.ellipse([x - rad, y - rad, x + rad, y + rad], fill=fill)
+
+    def jets(d, c, n, reach, width, fill, spread=math.tau, aim=0.0):
+        # jatos afinando para fora com uma gota na ponta (esguicho, respingo)
+        u = c / 64
+        for k in range(n):
+            a = aim + (k / n - 0.5) * spread + r.uniform(-0.2, 0.2) if spread < math.tau else k / n * math.tau + r.uniform(-0.25, 0.25)
+            ln = r.uniform(*reach) * c
+            w = r.uniform(*width) * u
+            for st in range(10):
+                f0, f1 = st / 10, (st + 1) / 10
+                d.line([(c + math.cos(a) * ln * f0, c + math.sin(a) * ln * f0),
+                        (c + math.cos(a) * ln * f1, c + math.sin(a) * ln * f1)], fill=fill, width=max(2, int(w * (1 - f0 * 0.8))))
+            dot(d, c + math.cos(a) * ln, c + math.sin(a) * ln, r.uniform(1.8, 3.5) * u, fill)
+
+    def spray(d, c):
+        # esguicho: miolo claro, jatos em volta e gotas soltas
+        u = c / 64
+        jets(d, c, 12, (0.55, 0.92), (4, 8), red + (255,))
+        for _ in range(18):
+            a, rr = r.uniform(0, math.tau), r.uniform(0.35, 0.92) * c
+            dot(d, c + math.cos(a) * rr, c + math.sin(a) * rr, r.uniform(1.4, 3.2) * u, red + (255,))
+        blob(d, c, c, c * 0.34, red + (255,), 7, 0.25)
+        blob(d, c - 2 * u, c - 2 * u, c * 0.19, light + (255,), 5, 0.2)
+
+    def splat(d, c):
+        # respingo: mancha com pontas (o sangue chega de um lado e espirra para o outro) e gotas satélite
+        u = c / 64
+        jets(d, c, 9, (0.5, 0.88), (3, 6), dark + (255,), spread=2.2, aim=-math.pi / 2)
+        jets(d, c, 6, (0.3, 0.5), (4, 7), dark + (255,))
+        for _ in range(20):
+            a, rr = r.uniform(0, math.tau), r.uniform(0.45, 0.94) * c
+            dot(d, c + math.cos(a) * rr, c + math.sin(a) * rr, r.uniform(1.2, 3.8) * u, dark + (255,))
+        blob(d, c, c, c * 0.4, dark + (255,), 6, 0.22)
+        blob(d, c - 3 * u, c - 3 * u, c * 0.24, red + (255,), 5, 0.2)
+
+    def drops(d, c):
+        # gotas redondas do rastro, cada uma com respingos pequenos
+        u = c / 64
+        for _ in range(4):
+            x, y = c + r.uniform(-0.5, 0.5) * c, c + r.uniform(-0.5, 0.5) * c
+            dr = r.uniform(5, 11) * u
+            blob(d, x, y, dr, dark + (255,), 5, 0.12)
+            dot(d, x - dr * 0.2, y - dr * 0.25, dr * 0.45, red + (255,))
+            for _ in range(4):
+                a, dd = r.uniform(0, math.tau), dr * r.uniform(1.3, 1.9)
+                dot(d, x + math.cos(a) * dd, y + math.sin(a) * dd, r.uniform(1.0, 2.2) * u, dark + (255,))
+
+    def pool(d, c):
+        # poça: borda ondulada larga, anel escuro e centro avermelhado com um brilho molhado
+        u = c / 64
+        blob(d, c, c, c * 0.8, dark + (255,), 6, 0.1)
+        for _ in range(5):
+            a = r.uniform(0, math.tau)
+            blob(d, c + math.cos(a) * c * 0.62, c + math.sin(a) * c * 0.62, c * r.uniform(0.18, 0.28), dark + (255,), 4, 0.15)
+        blob(d, c, c, c * 0.6, (100, 6, 8, 255), 5, 0.1)
+        blob(d, c - 7 * u, c - 9 * u, c * 0.12, (150, 40, 38, 255), 3, 0.25)
+
+    for i, fn in enumerate((spray, splat, drops, pool)):
+        img.paste(tile(fn), ((i % 2) * S, (i // 2) * S))
+    return img
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for name, fn in (("concrete", concrete), ("wall", wall), ("crate", crate), ("hazard", hazard), ("chest", chest),
                      ("chest_shotgun", chest_shotgun), ("bullet_holes", bullet_holes),
                      ("grass", grass), ("dirt", dirt), ("bark", bark), ("leaves", leaves), ("rock", rock),
-                     ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx)):
+                     ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx),
+                     ("blood_fx", blood_fx)):
         fn().save(OUT / f"{name}.png")
         print(OUT / f"{name}.png")
 

@@ -278,9 +278,11 @@ def build_hand_claws(mb, s):
 
 
 # ------------------------------------------------------------------ montagem
-def _self_union(bm, bone_names):
+def _self_union(bm, bone_names, keep_bones=()):
     """Funde as peças que se cruzam (coxa no tronco, braço no peito, dedos no pé) numa superfície só: booleana
-    exata do Blender em modo "self" (sem operando). UV, materiais e pesos dos ossos são carregados para a malha nova."""
+    exata do Blender em modo "self" (sem operando). UV, materiais e pesos dos ossos são carregados para a malha nova.
+    `keep_bones`: vértices presos só a esses ossos não são suavizados nas juntas (detalhe pequeno, como as cristas
+    da cabeça do alossauro, sumiria)."""
     me = bpy.data.meshes.new("RaptorFuse")
     bm.to_mesh(me)
     bm.free()
@@ -304,11 +306,13 @@ def _self_union(bm, bone_names):
     bpy.data.meshes.remove(fused)
     bpy.data.collections.remove(empty)
     seam = _fill_weights(out)
-    _round_seams(out, seam)
+    keep = [bone_names.index(b) for b in keep_bones]
+    dl = out.verts.layers.deform.active
+    _round_seams(out, seam, skip=lambda v: any(v[dl].get(g, 0.0) >= 0.99 for g in keep))
     return out
 
 
-def _round_seams(bm, seam, rings=2, passes=4):
+def _round_seams(bm, seam, rings=2, passes=4, skip=None):
     """Arredonda a quina viva onde uma peça sai da outra: suaviza os vértices da linha de encontro e mais `rings`
     voltas de vizinhos (puxa a quina para fora, como um filete de pele), e deixa as normais lisas em tudo."""
     sel = set(seam)
@@ -316,6 +320,8 @@ def _round_seams(bm, seam, rings=2, passes=4):
     for _ in range(rings):
         edge = {o for v in edge for e in v.link_edges for o in (e.other_vert(v),)} - sel
         sel |= edge
+    if skip:
+        sel = {v for v in sel if not skip(v)}
     for _ in range(passes):
         bmesh.ops.smooth_vert(bm, verts=list(sel), factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
     for e in bm.edges:

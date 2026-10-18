@@ -6,7 +6,8 @@ extends CharacterBody3D
 ## alarme (`spot` -> `on_alarm` em todo o grupo "enemies": os outros vêm caçar o lugar, "!") e reage à sua maneira
 ## (`_on_spotted`). Perdida de vista, caça o último lugar onde ela estava e depois procura por perto antes de voltar à
 ## patrulha. Quem herda: `in_combat()` (estados de luta), `_play()` (animações), `_anim_speed()`, `_on_spotted()`,
-## e chama `_enemy_ready()`, `_tick()` e `_calm_state()` no seu `_physics_process`.
+## `take_hit()` e `wound()` (ferido, deixa rastro de sangue: Blood.Trail), e chama `_enemy_ready()`, `_tick()` e
+## `_calm_state()` no seu `_physics_process`. Tiro na cabeça: `take_headshot` (o dano já vem vezes `head_mult`).
 
 const GRAVITY := 18.0
 # percepção e patrulha
@@ -35,6 +36,7 @@ var turn_rate := 6.0
 var patrol_speed := 1.4
 var investigate_speed := 2.4
 var hunt_speed := 4.2
+var head_mult := 2.0  # o tiro na cabeça tira esta vez o dano normal (quem atira multiplica); 1 = sem headshot
 var aware := 0.0  # 0 = não notou nada, 1 = notou (viu ou ouviu)
 var alert_t := 0.0  # > 0: foi alertado (viu a presa ou ouviu o alarme de outro) e caça sem limite de cone
 var _t := 0.0
@@ -55,6 +57,7 @@ var _repath_t := 0.0
 var _stuck_t := 0.0
 var _stuck_n := 0
 var _marker: Label3D
+var _trail := Blood.Trail.new()
 
 
 ## Chamar no `_ready` de quem herda (depois de montar o corpo): indicador "?"/"!", grupo e ponto de partida.
@@ -115,6 +118,7 @@ func _tick(delta: float) -> void:
 	alert_t = maxf(alert_t - delta, 0.0)
 	if dead:
 		return
+	_trail.update(self, delta, wound())
 	if not in_combat():
 		_wake_on_alarm(delta)
 		_perceive(delta)
@@ -153,6 +157,21 @@ func _calm_state(delta: float) -> bool:
 		_:
 			return false
 	return true
+
+
+## Levou `amount` de dano vindo de `dir`, acertando em `at` (`head` = na cabeça). Quem herda implementa.
+func take_hit(_amount: int, _dir: Vector3, _at: Vector3, _head := false) -> void:
+	pass
+
+
+## Tiro na cabeça (o dano já vem multiplicado por `head_mult`).
+func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:
+	take_hit(amount, dir, at, true)
+
+
+## Quanto da vida já perdeu (0..1): ferido, sangra pelo caminho.
+func wound() -> float:
+	return 0.0
 
 
 ## De volta ao ponto de partida, calmo (ao reiniciar).

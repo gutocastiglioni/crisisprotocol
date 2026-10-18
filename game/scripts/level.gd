@@ -61,6 +61,8 @@ static func build(parent: Node) -> void:
 	# parede oeste com a porta para o pátio da mata (segunda sala) e o pátio em si
 	Yard.west_wall(parent)
 	Yard.build(parent)
+	# a pedreira, depois do portão do pátio: última sala (alossauro)
+	Arena.build(parent)
 	# colunas
 	for p in [Vector3(-5, 0, -4), Vector3(5, 0, -4), Vector3(-5, 0, 4), Vector3(5, 0, 4)]:
 		block(parent, Vector3(0.8, WALL_H, 0.8), p + Vector3.UP * WALL_H * 0.5, "wall", 0.75)

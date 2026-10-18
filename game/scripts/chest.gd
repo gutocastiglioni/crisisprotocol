@@ -91,6 +91,7 @@ func has_item() -> bool:
 
 
 func open() -> void:
+	Sfx.play(self, "chest_open", global_position + Vector3.UP * 0.6)
 	create_tween().tween_property(_lid, "rotation_degrees:x", LID_OPEN, OPEN_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 

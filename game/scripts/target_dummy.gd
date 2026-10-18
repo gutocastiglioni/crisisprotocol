@@ -1,6 +1,6 @@
 class_name TargetDummy
 extends StaticBody3D
-## Alvo de treino: o mesmo modelo, acinzentado. Leva 3 tiros e cai como ragdoll na direção do tiro.
+## Alvo de treino: o mesmo modelo, acinzentado. Leva 3 tiros (ou 1 na cabeça) e cai como ragdoll na direção do tiro.
 
 signal killed
 
@@ -10,6 +10,7 @@ signal killed
 var model: HeroineModel
 var health := 100
 var dead := false
+var head_mult := 4.0
 var _shape: CollisionShape3D
 var _spawn: Transform3D
 
@@ -48,6 +49,10 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(dir.normalized() * 14.0 + Vector3.UP * 2.5, at)
 	killed.emit()
+
+
+func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:
+	take_hit(amount, dir, at)
 
 
 func reset() -> void:

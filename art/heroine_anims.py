@@ -15,7 +15,7 @@ import bpy
 FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
-LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
+LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
          "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim")
 
 
@@ -71,6 +71,23 @@ CROUCH = {
     "UpperArm_R": (35, 0, -8), "LowerArm_R": (40, 0, 0),
     "UpperArm_L": (30, 0, -10), "LowerArm_L": (50, 0, 0),
 }
+
+
+# Atordoada pelo rugido do alossauro: curvada, joelhos dobrados, mãos tapando os ouvidos, cambaleando de um lado
+# para o outro (ciclo de 40 quadros).
+DAZED = {
+    "loc": (0, -0.10, 0),
+    "UpperLeg_L": (22, 0, 6), "LowerLeg_L": (-40, 0, 0), "Foot_L": (18, 0, 0),
+    "UpperLeg_R": (16, 0, 8), "LowerLeg_R": (-30, 0, 0), "Foot_R": (14, 0, 0),
+    "Spine": (16, 0, 0), "Chest": (8, 0, 0), "Neck": (6, 0, 0), "Head": (14, 0, 0),
+    "UpperArm_L": (62, 0, 44), "LowerArm_L": (132, 0, 0), "Hand_L": (-10, 0, 0),
+    "UpperArm_R": (64, 0, 38), "LowerArm_R": (136, 0, 0), "Hand_R": (-20, 0, 0),
+}
+
+
+def dazed_keys():
+    sway = lambda k: merge(DAZED, {"Spine": (0, 0, 4 * k), "Chest": (0, 0, 3 * k), "Head": (0, 10 * k, 4 * k)})
+    return [(0, sway(1)), (20, sway(-1)), (40, sway(1))]
 
 
 # Corrida de reação (Regina em Dino Crisis 2 / Syphon Filter): quase em pé, passadas curtas e rápidas, quique
@@ -211,6 +228,7 @@ def actions(sk):
         "ShotgunShoot": SG.shoot_keys(A, sk, rifle_aim),
         "Pickup": RF.pickup_keys(A, sk, hold),
         "Hit": [(0, IDLE), (3, HIT), (14, IDLE)],
+        "Dazed": dazed_keys(),
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],
     }
 

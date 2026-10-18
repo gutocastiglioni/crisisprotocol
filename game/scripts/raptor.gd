@@ -60,6 +60,7 @@ func _ready() -> void:
 	patrol_speed = 1.4
 	investigate_speed = 2.4
 	hunt_speed = 4.2
+	head_mult = 1.0  # cabeçudo: tiro na cabeça vale como no corpo (sem headshot)
 	_enemy_ready()
 
 
@@ -370,7 +371,7 @@ func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 
 
 # ------------------------------------------------------------------ dano
-func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
+func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 	if dead:
 		return
 	health = maxi(0, health - amount)
@@ -389,7 +390,12 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	_dur = 0.45
 
 
-## Morre virando ragdoll: tomba na direção do tiro, levando junto o embalo que tinha (salto, investida).
+func wound() -> float:
+	return 1.0 - float(health) / MAX_HEALTH
+
+
+## Morre virando ragdoll: tomba na direção do tiro, levando junto o embalo que tinha (salto, investida); a poça de
+## sangue cresce embaixo do corpo.
 func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	_release(-global_basis.z * 2.0)
 	dead = true
@@ -400,6 +406,7 @@ func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	var carry := Vector3(velocity.x, maxf(velocity.y, 0.0), velocity.z)
 	velocity = Vector3.ZERO
 	model.start_ragdoll(carry + flat * 1.8, flat * 30.0, at)
+	Blood.pool(model.ragdoll.bodies["Spine"], 2.4)
 	_update_marker()
 	killed.emit()
 

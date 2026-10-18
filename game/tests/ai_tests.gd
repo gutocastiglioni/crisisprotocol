@@ -352,12 +352,14 @@ func test_main_scene_patrols() -> void:
 	check(main.soldiers.size() == Soldier.GUARDS.size(), "cena principal: soldados de guarda no galpão", str(main.soldiers.size()))
 	for sd: Soldier in main.soldiers:
 		check(absf(sd.global_position.x) < 13.0 and absf(sd.global_position.z) < 13.0, "soldado começa dentro do galpão", str(sd.global_position))
-	check(rs.size() == Yard.POSTS.size(), "cena principal: um raptor por posto do pátio", str(rs.size()))
+	check(rs.size() == Yard.POSTS.size() + Arena.POSTS.size(), "cena principal: um raptor por posto (pátio e pedreira)", str(rs.size()))
 	var start := []
 	for r: Raptor in rs:
 		start.append(r.global_position)
 		check(r.global_position.x < -13.0, "raptor começa no pátio (fora do galpão)", str(r.global_position))
-	var moved := [0.0, 0.0, 0.0]
+	var moved := []
+	moved.resize(rs.size())
+	moved.fill(0.0)
 	var sold_moved := 0.0
 	var sold_start: Vector3 = main.soldiers[0].global_position
 	var alerted := false
@@ -372,6 +374,6 @@ func test_main_scene_patrols() -> void:
 		check(moved[k] > 4.0, "raptor %d patrulha de verdade" % k, "%.1f m" % moved[k])
 		check(rs[k].global_position.y > -0.5, "raptor %d não caiu do mundo" % k, str(rs[k].global_position))
 	check(sold_moved > 3.0, "soldado faz a ronda de verdade", "%.1f m" % sold_moved)
-	check(not alerted, "a heroína parada na entrada não é notada por ninguém (raptors do pátio nem guardas do galpão)")
+	check(not alerted, "a heroína parada na entrada não é notada por ninguém (raptors, alossauro nem guardas do galpão)")
 	main.queue_free()
 	await t.process_frame

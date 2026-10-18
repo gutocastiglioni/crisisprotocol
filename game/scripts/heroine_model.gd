@@ -2,7 +2,9 @@ class_name HeroineModel
 extends Node3D
 ## Modelo da heroína: materiais PS1, árvore de animação (corpo + fuzil/mira/tiro na parte de cima), armas
 ## (pistola, M16 e escopeta em malhas à parte: só a da mão aparece; a telha da escopeta desliza no bombeamento)
-## e ragdoll.
+## e ragdoll. Os sons do corpo saem daqui (Sfx), para quem usa o modelo (heroína, guerrilheiro, alvo): tiro da arma da
+## mão, telha, troca de arma, pancada, queda do ragdoll, cambalhota/pulo/aterrissagem/borda/subida e os passos, que
+## tocam quando um pé desce até o chão (altura do osso Foot_*), no volume do jeito de andar e no tipo de chão.
 
 ## a escopeta bombeou (a telha chegou para trás): sai o cartucho em `at` com velocidade `vel`
 signal shell_ejected(at: Vector3, vel: Vector3)
@@ -13,7 +15,7 @@ const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 
 const LOOPS := [
 	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
-	"Fall", "Hang", "RifleHold", "RifleAim",
+	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed",
 ]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
@@ -23,7 +25,7 @@ const STATES := {
 	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
 	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
-	"death": "Death",
+	"death": "Death", "dazed": "Dazed",
 }
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
 const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r"]
@@ -38,6 +40,18 @@ const WEAPONS := {"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"],
 const LONG_GUNS := ["m16", "shotgun"]
 ## janela de ejeção da escopeta em relação ao centro da telha em repouso (lado direito, atrás, em cima; m)
 const SHELL_PORT := Vector3(0.02, 0.018, 0.21)
+## passo: o pé (osso Foot_*, em relação aos pés do corpo) subiu acima de STEP_UP e voltou abaixo de STEP_DOWN (m);
+## apoiado ele fica em ~0,08 e no ar passa de 0,13 em todos os ciclos de andar. Volume (dB) de cada jeito de andar.
+const STEP_UP := 0.115
+const STEP_DOWN := 0.095
+const STEP_DB := {
+	"walk": -6.0, "run": 0.0, "strafe_l": -7.0, "strafe_r": -7.0,
+	"crouch_walk": -13.0, "crouch_strafe_l": -13.0, "crouch_strafe_r": -13.0,
+}
+const AIR := ["jump", "fall"]
+const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem
+## som ao entrar no estado
+const STATE_SOUNDS := {"roll": "roll", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
@@ -62,6 +76,11 @@ var _pump: Node3D
 var _pump_rest: Transform3D
 var _pump_t := -1.0  # segundos desde o tiro da escopeta (-1 = parada)
 var _ejected := false
+var _pump_sounds := 0  # 1 = já tocou a ida da telha, 2 = a volta
+var _foot_bones: Array[int] = []
+var _foot_up := [false, false]
+var _air_t := 0.0
+var _quiet := true  # montando (_ready): a primeira arma na mão não faz barulho
 
 
 func _ready() -> void:
@@ -87,6 +106,8 @@ func _ready() -> void:
 	ragdoll = Ragdoll.create(skeleton)
 	ragdoll.hit_owner = get_parent()
 	set_weapon(weapon)
+	_foot_bones = [skeleton.find_bone("Foot_L"), skeleton.find_bone("Foot_R")]
+	_quiet = false
 
 
 func _apply_materials(root: Node) -> void:
@@ -201,6 +222,23 @@ func _process(delta: float) -> void:
 	_carry = move_toward(_carry, carry, delta * 6.0)
 	tree.set("parameters/carry/blend_amount", _carry)
 	_update_pump(delta)
+	_air_t = _air_t + delta if state in AIR else 0.0
+	_footsteps()
+
+
+## Passo: um pé que estava no ar desceu até o chão (só nos estados de andar).
+func _footsteps() -> void:
+	if not STEP_DB.has(state):
+		_foot_up = [false, false]
+		return
+	for i in 2:
+		var foot := skeleton.global_transform * skeleton.get_bone_global_pose(_foot_bones[i]).origin
+		var h := foot.y - global_position.y
+		if h > STEP_UP:
+			_foot_up[i] = true
+		elif h < STEP_DOWN and _foot_up[i]:
+			_foot_up[i] = false
+			Sfx.step(self, foot, STEP_DB[state])
 
 
 ## Bombeamento: a telha segue o mesmo caminho que a mão esquerda faz na animação ShotgunShoot
@@ -213,6 +251,13 @@ func _update_pump(delta: float) -> void:
 	var f := _pump_t * Moves.fps()
 	var back := pump_offset(f)
 	_pump.transform = _pump_rest * Transform3D(Basis(), Vector3(0, 0, back))  # -Z local = para a frente (cano)
+	# a telha começou a ir para trás / começou a voltar (o som arrasta e bate no fim do curso)
+	if _pump_sounds == 0 and back > float(d.stroke) * 0.05:
+		_pump_sounds = 1
+		Sfx.play(_pump, "shotgun_pump_back")
+	elif _pump_sounds == 1 and _ejected and back < float(d.stroke) * 0.95:
+		_pump_sounds = 2
+		Sfx.play(_pump, "shotgun_pump_fwd")
 	if not _ejected and back >= float(d.stroke) * 0.95:
 		_ejected = true
 		var port: Transform3D = (_pump.get_parent() as Node3D).global_transform * _pump_rest
@@ -241,6 +286,10 @@ func set_state(s: String, speed_scale := 1.0) -> void:
 		tree.set("parameters/%s_speed/scale" % s, speed_scale)
 	if s == state:
 		return
+	if state in AIR and not s in AIR and not s in STATE_SOUNDS and _air_t > LAND_AIR_TIME:
+		Sfx.play(self, "land")
+	if STATE_SOUNDS.has(s) and not (s == "jump" and state in AIR):
+		Sfx.play(self, STATE_SOUNDS[s])
 	state = s
 	tree.set("parameters/base/transition_request", s)
 
@@ -260,6 +309,8 @@ func play_from(s: String, sec: float) -> void:
 
 ## Arma na mão ("pistol", "m16" ou "shotgun"): mostra a malha dela e usa as poses de mira/tiro dela.
 func set_weapon(w: String) -> void:
+	if w != weapon and not _quiet and not holstered:
+		Sfx.play(self, "weapon_switch", global_position + Vector3.UP * 1.1)
 	weapon = w
 	var k := 1.0 if w in LONG_GUNS else 0.0
 	tree.set("parameters/aim_pose/blend_amount", k)
@@ -304,13 +355,16 @@ func is_aimed() -> bool:
 
 func shoot() -> void:
 	tree.set("parameters/shoot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	Sfx.play(self, weapon + "_shot", muzzle_position())
 	if weapon == "shotgun":
 		_pump_t = 0.0
 		_ejected = false
+		_pump_sounds = 0
 
 
 func hit() -> void:
 	tree.set("parameters/hit/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	Sfx.play(self, "impact_flesh", global_position + Vector3.UP * 1.2)
 	_stop_pump()  # o golpe tira a mão da telha (a animação do tiro é cortada)
 
 
@@ -323,7 +377,12 @@ func is_weapon_visible(w: String) -> bool:
 	return _meshes[w] != null and _meshes[w].visible
 
 
+## Liga o ragdoll (golpe `impulse` em `at`): com golpe, pancada e o corpo batendo no chão logo depois; sem golpe
+## (presa na boca do raptor) os sons são dele.
 func start_ragdoll(impulse: Vector3, at: Variant = null) -> void:
+	if impulse != Vector3.ZERO and not is_ragdoll():
+		Sfx.play(self, "impact_flesh", at if at is Vector3 else global_position + Vector3.UP * 1.2)
+		Sfx.play(self, "body_fall", null, 0.0, 1.0, 0.5)
 	_stop_pump()
 	aim_pitch.influence = 0.0
 	tree.active = false
@@ -332,6 +391,7 @@ func start_ragdoll(impulse: Vector3, at: Variant = null) -> void:
 
 ## Ragdoll com o corpo todo voando a `vel` (arremessada por um golpe).
 func fling_ragdoll(vel: Vector3, at: Variant = null) -> void:
+	Sfx.play(self, "body_fall", null, 0.0, 1.0, 0.7)
 	_stop_pump()
 	aim_pitch.influence = 0.0
 	tree.active = false

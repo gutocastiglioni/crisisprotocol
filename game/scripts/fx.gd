@@ -1,7 +1,7 @@
 class_name Fx
 ## Efeitos curtos do tiro, diferentes para cada arma e cada superfície: clarão no cano (pistola: quadrado médio;
 ## M16: pequeno com a língua de fogo para a frente; escopeta: grande, com língua larga e fumaça), traçante,
-## impacto (sangue, poeira de concreto, lascas de madeira ou faíscas no metal), decalque do buraco de bala no
+## impacto (sangue, ver Blood; poeira de concreto, lascas de madeira ou faíscas no metal), decalque do buraco de bala no
 ## cenário e cápsula ejetada (latão da pistola/M16, cartucho vermelho da escopeta).
 
 const HOLES := preload("res://assets/textures/bullet_holes.png")
@@ -158,13 +158,10 @@ static func tracer(parent: Node, from: Vector3, to: Vector3, kind := "pistol") -
 ## Impacto em `at` com a normal da superfície: carne (sangue) ou cenário (`surface` = chave de SURFACES).
 static func impact(parent: Node, at: Vector3, flesh: bool, normal := Vector3.UP, surface := "concrete") -> void:
 	if flesh:
-		var blood := _quad(0.12, Color(0.75, 0.08, 0.06))
-		_temp(parent, blood, at, 0.08)
-		for i in 3:
-			var v := normal * randf_range(0.5, 1.5) + Vector3(randf_range(-0.8, 0.8), randf_range(0.0, 0.8), randf_range(-0.8, 0.8))
-			_particle(parent, at, v, 0.035, Color(0.55, 0.03, 0.02), 0.3)
+		Blood.splash(parent, at, -normal, normal, 0.7)
 		return
 	var s: Dictionary = SURFACES.get(surface, SURFACES.concrete)
+	Sfx.play(parent as Node3D, "impact_metal" if s.metal else ("impact_wood" if surface == "crate" else "impact_concrete"), at)
 	_temp(parent, _quad(0.09, Color(1.0, 0.95, 0.75), BURST, true), at + normal * 0.01, 0.03)
 	for i in 2:
 		var v := normal * randf_range(0.4, 0.9) + Vector3(randf_range(-0.2, 0.2), 0.15, randf_range(-0.2, 0.2))
@@ -294,6 +291,7 @@ static func casing(parent: Node, at: Vector3, vel: Vector3, kind := "brass") -> 
 			p.y = floor_y
 			state.landed = true
 			mi.global_basis = Basis(Vector3.UP, randf() * TAU)  # deitada (o comprimento é o Z da caixa)
+			Sfx.play(mi, "casing_" + kind, p)
 		else:
 			mi.global_basis = Basis(axis, t * 25.0)
 		mi.global_position = p

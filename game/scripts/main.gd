@@ -5,6 +5,10 @@ extends Node3D
 ##   armas:  --shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump  (tiros: --at=segundos)
 ##   raptor:  --shot=raptor_idle|raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead
 ##            (câmera de revisão em volta dele; --yaw=graus gira a câmera; --playercam usa a câmera dela)
+##   sangue:  --shot=soldier_headshot|soldier_wounded|raptor_blood  (esguicho/poça: --at=segundos)
+##   alossauro:  --shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end
+##               (na pedreira; --yaw, --playercam)
+##   pedreira:  --shot=arena (a câmera dela olhando a sala da entrada; --pos=x,z[,graus] para outro ponto)
 ##   --pitch=graus inclina a câmera dela junto com --yaw (> 0 = para cima; mirando, a arma acompanha)
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
 
@@ -13,6 +17,8 @@ const MOVE_SHOTS := [
 	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
 ]
+const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
+const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
 const HELP := "WASD mover  SHIFT andar  MOUSE-D mirar  MOUSE-E atirar\nESPACO cambalhota  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  R reiniciar  F1 ajuda  F2 PS1/PS2"
 
 var player: Player
@@ -21,12 +27,21 @@ var chest: Chest
 var chests: Array[Chest] = []
 var raptors: Array[Raptor] = []
 var soldiers: Array[Soldier] = []
+var allosaurus: Allosaurus
+var _hud_daze: Label
+var _end: Control
+var _end_stats: Label
+var _play_t := 0.0  # tempo de jogo até o fim (tela de fim)
+var _end_t := -1.0  # > 0: contando para mostrar a tela de fim
+var ended := false
 var _hud: CanvasLayer
 var _post: ColorRect
 var _hud_health: Label
 var _hud_help: Label
 var _hud_weapon: Label
 var _hud_stealth: Label
+var _hud_headshot: Label
+var _headshot_t := 0.0
 var _prompt: Control
 var _prompt_text: Label
 var _crosshair: Label
@@ -69,17 +84,15 @@ func _ready() -> void:
 	sg.rotation.y = atan2(3.0, 3.4)
 	add_child(sg)
 	chests.append(sg)
-	# os velociraptors ficam no pátio da mata (segunda sala, pela porta oeste), cada um patrulhando a sua rota
-	for post in Yard.POSTS:
+	# os velociraptors ficam no pátio da mata (segunda sala, pela porta oeste) e na pedreira (última sala, junto com o
+	# alossauro), cada um patrulhando a sua rota
+	for post in Yard.POSTS + Arena.POSTS:
 		var r := Raptor.new()
-		r.target = player
-		r.position = post.pos
-		var first: Vector3 = post.route[1] - post.pos
-		r.rotation.y = atan2(-first.x, -first.z)
-		for p in post.route:
-			r.route.append(p)
-		add_child(r)
+		_place(r, post)
 		raptors.append(r)
+	allosaurus = Allosaurus.new()
+	_place(allosaurus, Arena.ALLO)
+	allosaurus.killed.connect(func() -> void: _end_t = END_DELAY)
 	# soldados de guarda no galpão, cada um com a sua ronda (alarme em comum com os raptors: grupo "enemies")
 	for g in Soldier.GUARDS:
 		var sd := Soldier.new()
@@ -92,14 +105,29 @@ func _ready() -> void:
 		add_child(sd)
 		soldiers.append(sd)
 	Yard.bake_nav(self)
+	var sound := Soundscape.new()
+	sound.target = player
+	add_child(sound)
 	_build_post()
 	_build_hud()
 	player.health_changed.connect(func(v: int) -> void: _hud_health.text = "VIDA %d" % v)
+	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
 	apply_gfx(Gfx.mode)
 	_parse_args()
 	if _capture == "":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_tree().create_timer(10.0).timeout.connect(func() -> void: _hud_help.visible = false)
+
+
+## Põe o inimigo no começo da rota, olhando para o próximo ponto, com a rota dele.
+func _place(e: Enemy, post: Dictionary) -> void:
+	e.target = player
+	e.position = post.pos
+	var first: Vector3 = post.route[1] - post.pos
+	e.rotation.y = atan2(-first.x, -first.z)
+	for p in post.route:
+		e.route.append(p)
+	add_child(e)
 
 
 func _build_post() -> void:
@@ -125,6 +153,10 @@ func _build_hud() -> void:
 	_hud_weapon.size.x = 64
 	_hud_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_hud_stealth = _label(layer, "", Vector2.ZERO)
+	# aviso de tiro na cabeça, logo abaixo da mira
+	_hud_headshot = _label(layer, "HEADSHOT", Vector2.ZERO)
+	_hud_headshot.add_theme_color_override("font_color", Color(1.0, 0.25, 0.2))
+	_hud_headshot.visible = false
 	_prompt = _build_prompt(layer)
 	# mira numa camada sem escala: ancorada no centro, a escala do HUD (apply_gfx) a jogaria para o canto
 	var cross_layer := CanvasLayer.new()
@@ -140,7 +172,49 @@ func _build_hud() -> void:
 	_crosshair.visible = false
 	# no topo, logo abaixo da vida: embaixo ficava por cima das pernas dela em telas 4:3
 	_hud_help = _label(layer, HELP, Vector2(6, 16))
+	# atordoada pelo rugido do alossauro: aviso piscando acima do centro
+	_hud_daze = _label(layer, "ATORDOADA", Vector2.ZERO)
+	_hud_daze.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_hud_daze.visible = false
+	_end = _build_end(layer)
 	add_child(layer)
+
+
+## Tela de fim (o alossauro caiu): faixa escura no meio com "FIM", o tempo e os tiros, e como jogar de novo.
+func _build_end(layer: CanvasLayer) -> Control:
+	var box := Control.new()
+	box.visible = false
+	var band := ColorRect.new()
+	band.color = Color(0, 0, 0, 0.72)
+	box.add_child(band)
+	var title := _label(box, "FIM", Vector2.ZERO)
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(1.0, 0.3, 0.25))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.name = "Title"
+	_end_stats = _label(box, "", Vector2.ZERO)
+	_end_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layer.add_child(box)
+	return box
+
+
+func show_end() -> void:
+	ended = true
+	_end_t = -1.0
+	var t := int(_play_t)
+	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d\n\nR PARA JOGAR DE NOVO" % [t / 60, t % 60, player.shots_fired, player.health]
+	_end.visible = true
+
+
+## Centraliza a tela de fim e o aviso de atordoada na área do HUD (320x240 ampliado, qualquer proporção).
+func _layout_overlays(area: Vector2) -> void:
+	_hud_daze.position = Vector2(roundf((area.x - _hud_daze.size.x) * 0.5), roundf(area.y * 0.32))
+	var band: ColorRect = _end.get_child(0)
+	band.position = Vector2(0, area.y * 0.5 - 40)
+	band.size = Vector2(area.x, 80)
+	var title: Label = _end.get_node("Title")
+	title.position = Vector2(roundf((area.x - title.size.x) * 0.5), area.y * 0.5 - 38)
+	_end_stats.position = Vector2(roundf((area.x - _end_stats.size.x) * 0.5), area.y * 0.5 - 6)
 
 
 ## Aviso de interação embaixo, no centro: triângulo verde (o botão do controle) + "PEGAR <arma> (E)".
@@ -220,12 +294,19 @@ func reset_all() -> void:
 	for c in chests:
 		c.reset()
 	Fx.clear_decals()
+	Blood.clear()
 	for d in dummies:
 		d.reset()
 	for r in raptors:
 		r.reset()
 	for sd in soldiers:
 		sd.reset()
+	allosaurus.reset()
+	ended = false
+	_end_t = -1.0
+	_end.visible = false
+	_play_t = 0.0
+	player.shots_fired = 0
 
 
 # ------------------------------------------------------------------ captura de tela para revisão
@@ -270,6 +351,18 @@ func _parse_args() -> void:
 			sd.process_mode = Node.PROCESS_MODE_DISABLED
 	if _shot.begins_with("raptor_"):
 		_setup_raptor_shot()
+	elif _shot.begins_with("allo_"):
+		_setup_allo_shot()
+	elif _shot == "arena":
+		# da entrada da pedreira (logo depois do portão), olhando para dentro
+		if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
+			player.global_position = Vector3(-60, 0, -3)
+			player.rotation.y = PI * 0.5
+			player.reset_physics_interpolation()
+		player.camera_rig.yaw = player.rotation.y
+		allosaurus.process_mode = Node.PROCESS_MODE_DISABLED
+		for r in raptors:
+			r.process_mode = Node.PROCESS_MODE_DISABLED
 	elif _shot == "face":
 		# close do rosto (--yaw gira em volta dela: 0 = de frente)
 		_review_cam = Camera3D.new()
@@ -299,7 +392,19 @@ func _process(delta: float) -> void:
 	var area := get_viewport().get_visible_rect().size / _hud.scale
 	_hud_weapon.position = Vector2(area.x - _hud_weapon.size.x - 6, 4)
 	_update_stealth_hud(area)
+	_headshot_t = maxf(_headshot_t - delta, 0.0)
+	_hud_headshot.visible = _headshot_t > 0.0
+	_hud_headshot.position = Vector2(roundf((area.x - _hud_headshot.size.x) * 0.5), roundf(area.y * 0.5) + 10)
 	_prompt.position = Vector2(roundf((area.x - _prompt.size.x) * 0.5), area.y - 34)
+	# atordoada: o aviso pisca enquanto dura
+	_hud_daze.visible = player.is_dazed() and fmod(_play_t, 0.5) < 0.32
+	_layout_overlays(area)
+	if not ended:
+		_play_t += delta
+	if _end_t > 0.0:
+		_end_t -= delta
+		if _end_t <= 0.0:
+			show_end()
 	if _capture == "":
 		return
 	var prev := _t
@@ -316,6 +421,8 @@ func _process(delta: float) -> void:
 		_review_cam.look_at(head)
 	elif _review_cam and _shot.begins_with("raptor_"):
 		_raptor_shot(at)
+	elif _shot.begins_with("allo_"):
+		_allo_shot(at)
 	if _shot.begins_with("soldier"):
 		_soldier_shot(at)
 	if _shot in MOVE_SHOTS:
@@ -437,7 +544,8 @@ func _move_shot(at: Callable) -> void:
 				_review_cam.look_at(hands)
 
 
-## Revisão do soldado: de frente para ela, a 4 m (soldier = ele a vê e atira; soldier_dead = leva um tiro e cai).
+## Revisão do soldado: de frente para ela, a 4 m (soldier = ele a vê e atira; soldier_dead = leva um tiro e cai;
+## soldier_headshot = ela acerta a cabeça dele; soldier_wounded = ferido, luta e deixa rastro de sangue).
 func _setup_soldier_shot() -> void:
 	for d in dummies:
 		d.visible = false
@@ -459,9 +567,19 @@ func _setup_soldier_shot() -> void:
 
 func _soldier_shot(at: Callable) -> void:
 	var sd := soldiers[0]
-	if at.call(0.1):
+	if _shot == "soldier_headshot":
+		if at.call(0.1):
+			Input.action_press("aim")
+		if _t < 0.6 and not sd.dead:
+			player.camera_rig.look_at_point(sd.model.ragdoll.bodies["Head"].global_position)
+		if at.call(0.6):
+			player.fire()
+	elif at.call(0.1):
 		if _shot == "soldier_dead":
 			sd.take_hit(999, Vector3.BACK, sd.global_position + Vector3.UP)
+		elif _shot == "soldier_wounded":
+			player.health = 1000  # só para a revisão: ela aguenta os tiros dele enquanto ele anda sangrando
+			sd.take_hit(45, Vector3.BACK, sd.global_position + Vector3.UP * 1.2)
 		else:
 			sd.spot()
 	if _review_cam:
@@ -511,6 +629,14 @@ func _raptor_shot(at: Callable) -> void:
 			"raptor_leap": r.start_leap()
 			"raptor_charge": r.start_charge()
 			"raptor_dead": r.take_hit(999, Vector3.FORWARD, r.global_position)
+			"raptor_blood": Input.action_press("aim")
+	if _shot == "raptor_blood":
+		# tiros de pistola no tronco até cair (esguicho, respingos, poça)
+		if not r.dead and _t < 3.5:
+			player.camera_rig.look_at_point(r.model.ragdoll.bodies["Chest"].global_position)
+		for k in 5:
+			if at.call(0.7 + k * 0.35) and not r.dead:
+				player.fire()
 	if _player_cam:
 		# um pouco de lado: atrás dela, em linha reta, o corpo dela tapa o raptor
 		player.camera_rig.yaw = player.rotation.y + (0.6 if is_nan(_yaw) else _yaw)
@@ -525,6 +651,59 @@ func _raptor_shot(at: Callable) -> void:
 	var yaw := deg_to_rad(160.0) if is_nan(_yaw) else _yaw
 	_review_cam.global_position = mid + Vector3(sin(yaw), 0.0, cos(yaw)) * dist + Vector3.UP * 1.3
 	_review_cam.look_at(mid + Vector3.UP * 0.8)
+
+
+## Revisão do alossauro: no meio da pedreira, ele olhando para +X, ela à frente na distância de cada golpe.
+func _setup_allo_shot() -> void:
+	var a := allosaurus
+	a.route.clear()
+	for r in raptors:
+		r.process_mode = Node.PROCESS_MODE_DISABLED
+	a.global_position = Vector3(-80, 0, -3)
+	a.rotation.y = -PI * 0.5
+	var fwd := Vector3.RIGHT
+	var left := Vector3.FORWARD  # olhando para +X, a esquerda dele é -Z
+	var her := {
+		"stomp": fwd * 2.6, "bite": fwd * 4.2, "roar": fwd * 9.0, "roar_at": fwd * 7.0, "idle": fwd * 14.0,
+		"headbutt": fwd * 2.2 + left * 2.2, "tail": -fwd * 4.5 + left * 1.5, "dead": fwd * 8.0, "end": fwd * 8.0,
+	}
+	player.global_position = a.global_position + her.get(_shot.trim_prefix("allo_"), fwd * 8.0)
+	player.rotation.y = PI * 0.5
+	player.reset_physics_interpolation()
+	a.reset_physics_interpolation()
+	player.camera_rig.yaw = 0.0
+	_review_cam = Camera3D.new()
+	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	_review_cam.fov = 55.0
+	add_child(_review_cam)
+	_review_cam.current = not _player_cam
+
+
+func _allo_shot(at: Callable) -> void:
+	var a := allosaurus
+	if at.call(0.15):
+		match _shot:
+			"allo_roar": a.start_roar()
+			"allo_roar_at": a.start_roar_at()
+			"allo_headbutt": a.start_headbutt()
+			"allo_tail": a.start_tail()
+			"allo_stomp": a.start_stomp()
+			"allo_bite": a.start_bite()
+			"allo_dead", "allo_end": a.take_hit(9999, Vector3.FORWARD, a.global_position + Vector3.UP * 2.5)
+	if _shot == "allo_end" and at.call(0.2):
+		_end_t = 0.3  # na revisão a tela de fim não espera o corpo cair
+	if _player_cam:
+		player.camera_rig.yaw = player.rotation.y + (0.6 if is_nan(_yaw) else _yaw)
+		return
+	var vp := get_viewport().get_visible_rect().size
+	_review_cam.keep_aspect = Camera3D.KEEP_WIDTH if vp.y > vp.x else Camera3D.KEEP_HEIGHT
+	var her := player.camera_focus()
+	var him: Vector3 = a.model.ragdoll.bodies["Hips"].global_position * Vector3(1, 0, 1) if a.dead else a.global_position - a.global_basis.z * 1.2
+	var mid := him.lerp(her, 0.4)
+	var dist := 8.0 + 0.4 * him.distance_to(her)
+	var yaw := deg_to_rad(155.0) if is_nan(_yaw) else _yaw
+	_review_cam.global_position = mid + Vector3(sin(yaw), 0.0, cos(yaw)) * dist + Vector3.UP * 2.6
+	_review_cam.look_at(mid + Vector3.UP * 1.6)
 
 
 func _save_and_quit() -> void:

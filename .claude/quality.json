@@ -6,7 +6,7 @@
   ],
   "commands": {
     "unit": "node tools/run_godot_tests.mjs",
-    "assets": "python tools/make_textures.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py"
+    "assets": "python tools/make_textures.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_sounds.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py"
   },
   "hook": [
     "unit"

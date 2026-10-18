@@ -4,7 +4,8 @@ class_name Yard
 ## árvores, arbustos, samambaias, pedras, troncos caídos e touceiras de capim alto (grupo "cover": agachada
 ## ali dentro, ela é vista de bem menos longe). É onde ficam os velociraptors (POSTS), cada um com a sua rota
 ## de patrulha. Tudo o que bloqueia fica na camada 1 (como o galpão); a malha de navegação dos raptors sai de lá
-## (bake_nav). Texturas em tools/make_level_textures.py.
+## (bake_nav). Texturas em tools/make_level_textures.py. O portão do fundo fica aberto: dá na pedreira (Arena), a
+## última sala.
 
 const TEX := {
 	"grass": preload("res://assets/textures/grass.png"),
@@ -25,6 +26,7 @@ const Z_HALF := 18.0
 ## Eixo da estrada (de terra batida), da porta até o portão.
 const ROAD := [Vector2(-13.5, -2.5), Vector2(-26, -2.5), Vector2(-34, -9.5), Vector2(-45, -9.5), Vector2(-50, -3.0), Vector2(-54, -3.0)]
 const ROAD_W := 4.0
+const GATE_GAP := 4.4  # vão aberto na parede do fundo, no portão (largura)
 ## Onde cada raptor começa e a rota de patrulha dele (pontos em chão livre, longe das árvores).
 const POSTS := [
 	{"pos": Vector3(-24, 0, -2.5), "route": [Vector3(-24, 0, -2.5), Vector3(-31.6, 0, -7.4), Vector3(-42, 0, -9.5), Vector3(-31.6, 0, -7.4)]},
@@ -71,9 +73,9 @@ static func build(parent: Node) -> void:
 	_mats.clear()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260418
-	var cx := (X_NEAR + X_FAR - 14.0) * 0.5
-	var len_x := X_NEAR - X_FAR + 14.0
-	# chão da clareira (e um pouco além da mata, para nunca aparecer o vazio)
+	var cx := (X_NEAR + X_FAR - 1.6) * 0.5
+	var len_x := X_NEAR - X_FAR + 1.6
+	# chão da clareira (dos lados, um pouco além da mata, para nunca aparecer o vazio; no fundo, até a pedreira)
 	_box(parent, Vector3(len_x, 0.4, Z_HALF * 2.0 + 14.0), Vector3(cx, -0.2, 0), "grass", 0.5)
 	_road(parent)
 	_boundary(parent)
@@ -137,7 +139,14 @@ static func _boundary(parent: Node) -> void:
 		_wall_box(parent, Vector3(len_x(), 6.0, 1.0), Vector3((X_NEAR + far_x) * 0.5, 3.0, s * (Z_HALF + 0.5)))
 		# a parede do galpão continua até o canto da clareira
 		_box(parent, Vector3(0.4, Level.WALL_H, Z_HALF - Level.SIZE * 0.5 + 0.5), Vector3(X_NEAR, Level.WALL_H * 0.5, s * (Level.SIZE * 0.5 + (Z_HALF - Level.SIZE * 0.5 + 0.5) * 0.5 - 0.25)), "wall", 0.5)
-	_wall_box(parent, Vector3(1.0, 6.0, Z_HALF * 2.0 + 2.0), Vector3(far_x - 0.5, 3.0, 0))
+	# parede do fundo em dois pedaços: o vão do portão fica livre para a pedreira
+	var gz: float = ROAD[ROAD.size() - 1].y
+	var z0 := -Z_HALF - 1.0
+	var z1 := Z_HALF + 1.0
+	var g0 := gz - GATE_GAP * 0.5
+	var g1 := gz + GATE_GAP * 0.5
+	_wall_box(parent, Vector3(1.0, 6.0, g0 - z0), Vector3(far_x - 0.5, 3.0, (z0 + g0) * 0.5))
+	_wall_box(parent, Vector3(1.0, 6.0, z1 - g1), Vector3(far_x - 0.5, 3.0, (g1 + z1) * 0.5))
 	# duas fileiras de árvores nas três bordas (a de fora é só cenário)
 	var x := X_NEAR - 3.0
 	while x > far_x - 1.0:
@@ -148,9 +157,13 @@ static func _boundary(parent: Node) -> void:
 		x -= rng.randf_range(2.4, 3.0)
 	var z := -Z_HALF + 2.0
 	while z < Z_HALF - 1.5:
+		# nada na frente do portão (ele abre para a pedreira)
+		if absf(z - gz) < GATE_GAP:
+			z += rng.randf_range(2.4, 3.0)
+			continue
+		# (atrás desta fileira já é a pedreira: sem a segunda fileira de enfeite)
 		_tree(parent, Vector3(far_x + 1.0 + rng.randf_range(-0.4, 0.4), 0, z), rng.randf_range(8.0, 10.5), rng.randf_range(2.2, 3.0), rng, true)
-		_tree(parent, Vector3(far_x - 3.0 + rng.randf_range(-0.6, 0.6), 0, z + 1.2), rng.randf_range(9.0, 11.5), rng.randf_range(2.6, 3.4), rng, false)
-		if absf(z - ROAD[ROAD.size() - 1].y) > 3.2:
+		if absf(z - gz) > 3.2:
 			_bush(parent, Vector3(far_x + 2.2, 0, z + 1.2), rng.randf_range(0.8, 1.2), rng)
 		z += rng.randf_range(2.4, 3.0)
 
@@ -387,40 +400,50 @@ static func _grass_patch(parent: Node, center: Vector3, radius: float, rng: Rand
 		_card_pair(patch, Vector3(o.x, 0, o.y), "grass_card", rng.randf_range(1.1, 1.5), rng.randf() * PI)
 
 
+## Portão de ferro aberto: as duas folhas giradas para dentro da pedreira, presas nos pilares.
 static func _gate(parent: Node) -> void:
 	var gz: float = ROAD[ROAD.size() - 1].y
 	var gx := X_FAR + 0.9
 	for s in [-1, 1]:
 		_prop(parent, _bm(Vector3(0.32, 3.2, 0.32)), Vector3(gx, 1.6, gz + s * 2.4), "wall", 1.5)
-	for y in [0.5, 1.2, 1.9, 2.6]:
-		_prop(parent, _bm(Vector3(0.08, 0.08, 4.8)), Vector3(gx, y, gz), "wall", 2.0)
-	for k in range(-2, 3):
-		_prop(parent, _bm(Vector3(0.06, 2.2, 0.06)), Vector3(gx, 1.6, gz + k * 0.9), "wall", 2.0)
+		var leaf := Node3D.new()
+		parent.add_child(leaf)
+		leaf.position = Vector3(gx, 0, gz + s * 2.25)
+		leaf.rotation.y = s * deg_to_rad(-75.0)
+		for y in [0.5, 1.2, 1.9, 2.6]:
+			_prop(leaf, _bm(Vector3(0.08, 0.08, 2.3)), Vector3(0, y, -s * 1.15), "wall", 2.0)
+		for k in 3:
+			_prop(leaf, _bm(Vector3(0.06, 2.2, 0.06)), Vector3(0, 1.6, -s * (0.35 + k * 0.8)), "wall", 2.0)
 
 
 ## Postes de luz na beira da estrada: luz fria esverdeada, sem sombra (só os do galpão fazem, ver Gfx.set_mode).
 static func _lamps(parent: Node) -> void:
 	for p: Vector3 in LAMPS:
-		_box(parent, Vector3(0.22, 3.4, 0.22), p + Vector3.UP * 1.7, "wall", 1.5)
-		_prop(parent, _bm(Vector3(0.7, 0.14, 0.4)), p + Vector3(0, 3.45, 0), "wall", 2.0)
-		var glow := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2(0.55, 0.3)
-		glow.mesh = q
-		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.albedo_color = Color(0.85, 1.0, 0.8)
-		glow.material_override = m
-		glow.rotation_degrees.x = 90.0
-		glow.position = p + Vector3(0, 3.37, 0)
-		parent.add_child(glow)
-		var o := OmniLight3D.new()
-		o.position = p + Vector3(0, 3.0, 0)
-		o.light_color = Color(0.7, 0.95, 0.7)
-		o.light_energy = 1.8
-		o.omni_range = 13.0
-		o.omni_attenuation = 1.2
-		parent.add_child(o)
+		lamp(parent, p)
+
+
+## Um poste com a lâmpada acesa (o pátio e a pedreira usam).
+static func lamp(parent: Node, p: Vector3) -> void:
+	_box(parent, Vector3(0.22, 3.4, 0.22), p + Vector3.UP * 1.7, "wall", 1.5)
+	_prop(parent, _bm(Vector3(0.7, 0.14, 0.4)), p + Vector3(0, 3.45, 0), "wall", 2.0)
+	var glow := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(0.55, 0.3)
+	glow.mesh = q
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.85, 1.0, 0.8)
+	glow.material_override = m
+	glow.rotation_degrees.x = 90.0
+	glow.position = p + Vector3(0, 3.37, 0)
+	parent.add_child(glow)
+	var o := OmniLight3D.new()
+	o.position = p + Vector3(0, 3.0, 0)
+	o.light_color = Color(0.7, 0.95, 0.7)
+	o.light_energy = 1.8
+	o.omni_range = 13.0
+	o.omni_attenuation = 1.2
+	parent.add_child(o)
 
 
 # ------------------------------------------------------------------ blocos e navegação
@@ -443,6 +466,8 @@ static func _prop(parent: Node, mesh: Mesh, pos: Vector3, tex: String, scale := 
 static func _box(parent: Node, size: Vector3, pos: Vector3, tex: String, scale := 0.5) -> StaticBody3D:
 	var body := _wall_box(parent, size, pos)
 	body.set_meta("surface", "wall" if tex == "wall" else "concrete")
+	if tex == "grass":
+		body.set_meta("step", "grass")  # passos na grama (Sfx.step)
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size

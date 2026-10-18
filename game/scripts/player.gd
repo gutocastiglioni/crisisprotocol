@@ -5,12 +5,16 @@ extends CharacterBody3D
 ## pegar armas no baú e trocar de arma, atirar (raio a partir da câmera; cada arma com cadência, dispersão, chumbos,
 ## coice e efeitos próprios, deixando buraco de bala no cenário), levar dano, ser empurrada, ser mordida no braço por um raptor
 ## (vira ragdoll pendurada na boca dele e é sacudida, lutando: soca a cara dele e chuta; apertar botões
-## luta mais rápido e solta antes) e virar ragdoll ao morrer.
+## luta mais rápido e solta antes) e virar ragdoll ao morrer. Tiro que passa pela cabeça (parte "Head" do ragdoll de quem
+## levou) é headshot: dano multiplicado por `head_mult` do alvo e `take_headshot` no lugar de `take_hit` (alvo com
+## `head_mult` 1 ou sem ele, como o raptor cabeçudo, não tem headshot). Ferida, sangra
+## (esguicho a cada golpe, rastro de gotas, poça ao morrer: ver Blood).
 ## Furtividade: `visibility()` (0..1) diz o quanto ela aparece para os raptors (agachada, devagar, parada ou no capim
 ## alto = menos) e os passos, a cambalhota e os tiros fazem barulho que eles ouvem (`make_noise`).
 
 signal health_changed(value: int)
 signal died
+signal headshot(who: Node)
 
 # andando, agachada e mirando, a velocidade é a dos ciclos de passo (Moves.speed): o pé não escorrega
 const RUN_SPEED := 4.4
@@ -71,7 +75,9 @@ var _fly_t := 0.0
 var _fly_dir := Vector3.FORWARD
 var _knock := Vector3.ZERO
 var _stun := 0.0
+var _daze := 0.0  # > 0: atordoada pelo rugido do alossauro (sem controle, mãos nos ouvidos)
 var stealth: PlayerStealth
+var _trail := Blood.Trail.new()
 
 
 func _ready() -> void:
@@ -99,6 +105,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	stealth.update(delta)
+	if not dead and not grabbed:
+		_trail.update(self, delta, 1.0 - health / 100.0)
 	if grabbed:
 		_held(delta)
 		return
@@ -114,6 +122,9 @@ func _physics_process(delta: float) -> void:
 		_down_t -= delta
 		if _down_t <= 0.0:
 			_get_up()
+		return
+	if _daze > 0.0:
+		_dazed(delta)
 		return
 	_shot_cd -= delta
 	_hip_aim_t -= delta
@@ -343,7 +354,11 @@ func fire() -> void:
 	for who: Node in hits:
 		if is_instance_valid(who) and not who.get("dead"):
 			var h: Dictionary = hits[who]
-			who.take_hit(h.damage, h.dir, h.at)
+			if h.head and who.has_method("take_headshot"):
+				who.take_headshot(h.damage, h.dir, h.at)
+				headshot.emit(who)
+			else:
+				who.take_hit(h.damage, h.dir, h.at)
 
 
 ## Direção aleatória num cone de `degrees` em volta de `dir` (distribuição uniforme no disco).
@@ -357,31 +372,59 @@ func _spread_dir(dir: Vector3, degrees: float) -> Vector3:
 	return (dir + side * cos(a) * r + up * sin(a) * r).normalized()
 
 
-## Um projétil acertou: soma o dano no alvo (`hits`), empurra corpo caído ou marca o cenário.
+## Um projétil acertou: soma o dano no alvo (`hits`; na cabeça, vezes o `head_mult` dele), empurra corpo caído ou
+## marca o cenário. Carne atingida esguicha sangue na direção do tiro.
 func _pellet_hit(hit: Dictionary, dir: Vector3, stats: Dictionary, hits: Dictionary) -> void:
 	var col: Object = hit.collider
 	var parent := get_parent()
 	var dist := (hit.position as Vector3).distance_to(global_position)
 	var half := float(stats.range) * 0.5
 	var falloff := clampf(1.0 - (dist - half) / half, 0.3, 1.0)
+	var wound := float(stats.damage) / DAMAGE * falloff  # tamanho do esguicho (1 = pistola de perto)
 	var who: Node = null
+	var head := false
 	if col is PhysicalBone3D:
 		who = Ragdoll.owner_of(col)
+		head = (col as PhysicalBone3D).bone_name == "Head" and _has_headshot(who)
 		if not (who and who.has_method("take_hit") and not who.get("dead")):
 			# corpo já caído: o tiro empurra a parte atingida
 			Ragdoll.push(col, dir * float(stats.push), hit.position)
 			who = null
-		Fx.impact(parent, hit.position, true, hit.normal)
+		Blood.splash(parent, hit.position, dir, hit.normal, wound, head)
 	elif col.has_method("take_hit"):
 		who = col
-		Fx.impact(parent, hit.position, true, hit.normal)
+		head = _has_headshot(col) and body_part(col, hit.position, dir) == "Head"
+		Blood.splash(parent, hit.position, dir, hit.normal, wound, head)
 	else:
 		Fx.impact(parent, hit.position, false, hit.normal, (col as Node).get_meta("surface", "concrete"))
 		Fx.decal(col, hit.position, hit.normal, float(stats.hole) * randf_range(0.85, 1.15), int(stats.pellets) > 1)
 	if who:
-		var h: Dictionary = hits.get(who, {"damage": 0, "dir": dir, "at": hit.position})
-		h.damage += maxi(1, roundi(float(stats.damage) * falloff))
+		var h: Dictionary = hits.get(who, {"damage": 0, "dir": dir, "at": hit.position, "head": false})
+		var mult: float = float(who.get("head_mult")) if head else 1.0
+		h.damage += maxi(1, roundi(float(stats.damage) * falloff * mult))
+		if head and not h.head:
+			h.head = true
+			h.at = hit.position  # o golpe do ragdoll vai na cabeça
 		hits[who] = h
+
+
+## Quem tem tiro na cabeça: `head_mult` acima de 1 (o raptor, cabeçudo, não tem).
+static func _has_headshot(who: Object) -> bool:
+	if who == null:
+		return false
+	var mult: Variant = who.get("head_mult")
+	return mult != null and float(mult) > 1.0
+
+
+## Parte do corpo de `who` por onde passa o tiro que bateu na cápsula dele em `at` (nome do osso, "" = nenhuma): a
+## cápsula cobre o corpo todo, então o raio segue mais um pouco só contra as partes do ragdoll (que acompanham a
+## animação enquanto ele está vivo).
+func body_part(who: Object, at: Vector3, dir: Vector3) -> String:
+	var q := PhysicsRayQueryParameters3D.create(at - dir * 0.05, at + dir * 0.8, Ragdoll.LAYER, model.ragdoll.body_rids())
+	var h := get_world_3d().direct_space_state.intersect_ray(q)
+	if h and h.collider is PhysicalBone3D and Ragdoll.owner_of(h.collider) == who:
+		return (h.collider as PhysicalBone3D).bone_name
+	return ""
 
 
 ## Ponto que a câmera segue: os pés da cápsula viva, ou o quadril do ragdoll (caída ou na boca do raptor).
@@ -397,16 +440,45 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 		return
 	health = maxi(0, health - amount)
 	health_changed.emit(health)
+	Blood.splash(get_parent(), at, dir, -dir, amount / 20.0)
 	if health == 0:
 		die(dir * 9.0 + Vector3.UP * 2.0, at)
 	else:
 		model.hit()
 
 
+## Rugido do alossauro: atordoada por `time` segundos (não fere). Golpe, mordida ou arremesso acabam com isso.
+func daze(time: float) -> void:
+	if dead or grabbed or _down_t > 0.0:
+		return
+	moves.cancel()
+	crouching = false
+	aiming = false
+	_daze = maxf(_daze, time)
+	camera_rig.shake(0.1, 0.6)
+
+
+func is_dazed() -> bool:
+	return _daze > 0.0
+
+
+func _dazed(delta: float) -> void:
+	_daze -= delta
+	aiming = false
+	model.set_aim(false)
+	model.set_state("dazed")
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	velocity.x = 0.0
+	velocity.z = 0.0
+	move_and_slide()
+
+
 ## Golpe que empurra (investida, salto, rabada): perde o controle por um instante.
 func knockback(push: Vector3) -> void:
 	if dead or grabbed:
 		return
+	_daze = 0.0
 	moves.cancel()
 	crouching = false
 	_knock = Vector3(push.x, 0.0, push.z)
@@ -424,6 +496,7 @@ func launch(vel: Vector3, at: Variant = null) -> void:
 	crouching = false
 	aiming = false
 	_stun = 0.0
+	_daze = 0.0
 	_shape.set_deferred("disabled", true)
 	_down_t = DOWN_TIME + 0.5
 	camera_rig.shake(0.15, 0.4)
@@ -460,6 +533,7 @@ func grab(by: Node3D) -> void:
 		return
 	grabbed = true
 	grabber = by
+	_daze = 0.0
 	struggle = 0
 	_fight = 0.0
 	_held_t = 0.0
@@ -494,6 +568,10 @@ func _held(delta: float) -> void:
 		return
 	var b: Dictionary = model.ragdoll.bodies
 	var mouth: Vector3 = grabber.model.mouth_position()
+	var body_bone: Variant = grabber.get("grab_bone")
+	if body_bone is String:
+		_held_body(delta, b, mouth, body_bone)
+		return
 	Ragdoll.drag(b[BITTEN_BONE], mouth, 25.0, 18.0)
 	camera_rig.shake(0.08, 0.1)
 	_held_t += delta
@@ -530,6 +608,33 @@ func _held(delta: float) -> void:
 		Ragdoll.drag(b["LowerLeg_" + leg[0]], tucked.lerp(kick, k) + lateral, 5.0, 4.0)
 
 
+## Agarrada pelo corpo (alossauro): atravessada na boca dele, presa pela cintura (`bone`); quadril e pernas pendem de um
+## lado, peito e cabeça do outro. Viva, soca o focinho dele com as duas mãos e chuta (mesmos botões de se debater).
+func _held_body(delta: float, b: Dictionary, mouth: Vector3, bone: String) -> void:
+	Ragdoll.drag(b[bone], mouth, 25.0, 18.0)
+	camera_rig.shake(0.1, 0.1)
+	_held_t += delta
+	if dead:
+		return
+	for a in ["shoot", "roll", "aim", "crouch"]:
+		if Input.is_action_just_pressed(a):
+			struggle += 1
+	_fight += delta * TAU / maxf(0.26, 0.5 - struggle * 0.02)
+	var side: Vector3 = grabber.global_basis.x
+	var fwd: Vector3 = -grabber.global_basis.z
+	var hips := mouth + side * 0.45 - Vector3.UP * 0.35
+	var chest := mouth - side * 0.4 + Vector3.UP * 0.05
+	Ragdoll.drag(b["Hips"], hips, 6.0, 8.0)
+	Ragdoll.drag(b["Chest"], chest, 6.0, 8.0)
+	Ragdoll.drag(b["Head"], chest - side * 0.3 + Vector3.UP * 0.2, 4.0, 3.0)
+	var snout := mouth - fwd * 0.5 + Vector3.UP * 0.35  # focinho dele, por cima da boca
+	for arm in [["LowerArm_R", 0.0], ["LowerArm_L", PI]]:
+		Ragdoll.drag(b[arm[0]], chest.lerp(snout, 0.5 + 0.5 * sin(_fight + arm[1])), 9.0, 7.0)
+	for leg in [["L", 0.0], ["R", PI]]:
+		var k := 0.5 + 0.5 * sin(_fight * 0.8 + leg[1])
+		Ragdoll.drag(b["LowerLeg_" + leg[0]], hips + side * (0.25 + 0.2 * k) - Vector3.UP * (0.45 - 0.3 * k), 5.0, 4.0)
+
+
 func _get_up() -> void:
 	var hips: Vector3 = model.ragdoll.bodies["Hips"].global_position
 	model.stop_ragdoll()
@@ -546,10 +651,12 @@ func die(impulse: Vector3, at: Variant = null) -> void:
 	# mordida: o corpo continua preso na boca até o raptor largar
 	dead = true
 	_down_t = 0.0
+	_daze = 0.0
 	aiming = false
 	moves.cancel()
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(impulse, at)
+	Blood.pool(model.ragdoll.bodies["Chest"], 1.0)
 	died.emit()
 
 
@@ -565,6 +672,7 @@ func respawn() -> void:
 	grabbed = false
 	grabber = null
 	_stun = 0.0
+	_daze = 0.0
 	_down_t = 0.0
 	_fly_t = 0.0
 	_rising = false

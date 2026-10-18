@@ -64,6 +64,7 @@ func _ready() -> void:
 	patrol_speed = Moves.speed("walk")
 	investigate_speed = 1.8
 	hunt_speed = Player.RUN_SPEED
+	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
 	_enemy_ready()
 
 
@@ -233,18 +234,17 @@ func _fire() -> void:
 			Fx.impact(parent, end, false, far.normal, str(far.collider.get_meta("surface", "concrete")))
 	Fx.tracer(parent, muzzle, end, WEAPON)
 	if hit_her:
-		Fx.impact(parent, chest, true, -dir)
-		target.take_hit(DAMAGE, dir, chest)
+		target.take_hit(DAMAGE, dir, chest)  # o sangue sai no take_hit dela
 	fired.emit()
 
 
 # ------------------------------------------------------------------ dano
-func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
+func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 	if dead:
 		return
 	health -= amount
 	if health <= 0:
-		die(dir, at)
+		die(dir, at, head)
 		return
 	if not in_combat() and _has_target():
 		_raise_alarm()  # levou tiro sem tê-la notado: já sabe onde ela está e avisa os outros
@@ -253,14 +253,22 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	model.set_aim(true)
 
 
-func die(dir := Vector3.ZERO, at: Variant = null) -> void:
+func wound() -> float:
+	return 1.0 - float(maxi(health, 0)) / MAX_HEALTH
+
+
+## Cai em ragdoll na direção do tiro (na cabeça, o tranco vai nela e joga a cabeça para trás); a poça cresce embaixo.
+func die(dir := Vector3.ZERO, at: Variant = null, head := false) -> void:
 	dead = true
 	state = "dead"
 	_t = 0.0
 	collision_layer = 0
 	_shape.set_deferred("disabled", true)
 	velocity = Vector3.ZERO
-	model.start_ragdoll(dir.normalized() * 14.0 + Vector3.UP * 2.5, at)
+	model.start_ragdoll(dir.normalized() * (20.0 if head else 14.0) + Vector3.UP * 2.5, at)
+	Blood.pool(model.ragdoll.bodies["Chest"], 1.1)
+	if head:
+		Blood.pool(model.ragdoll.bodies["Head"], 0.6, Blood.POOL_DELAY + 0.4)
 	_update_marker()
 	killed.emit()
 

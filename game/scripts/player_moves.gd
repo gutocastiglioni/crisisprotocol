@@ -284,6 +284,7 @@ func _pickup() -> void:
 		# as mãos chegaram no fuzil: ele sai do baú e passa para as mãos dela
 		_got_item = true
 		p.give_weapon(_chest.take_item())
+		Sfx.play(p.model, "weapon_pickup", p.global_position + Vector3.UP * 0.8)
 	if f >= _frames:
 		mode = ""
 		p.model.set_state("idle")
