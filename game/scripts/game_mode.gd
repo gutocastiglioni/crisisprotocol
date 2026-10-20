@@ -30,9 +30,9 @@ const PROFILES := {
 }
 
 ## Munição que ela tem ao começar (e ao reiniciar), a que vem junto ao pegar a arma no baú e o máximo que carrega.
-const START_AMMO := {"pistol": 10, "m16": 0, "shotgun": 0, "m79": 0}
-const WEAPON_AMMO := {"pistol": 0, "m16": 15, "shotgun": 5, "m79": 4}
-const AMMO_CAP := {"pistol": 40, "m16": 90, "shotgun": 20, "m79": 10}
+const START_AMMO := {"pistol": 10, "m16": 0, "shotgun": 0, "m79": 0, "sniper": 0}
+const WEAPON_AMMO := {"pistol": 0, "m16": 15, "shotgun": 5, "m79": 4, "sniper": 5}
+const AMMO_CAP := {"pistol": 40, "m16": 90, "shotgun": 20, "m79": 10, "sniper": 15}
 
 ## Valores das armas que mudam em "survival" (os do "arcade" estão em Player.WEAPON_STATS). Além dos de lá: `aim_speed` =
 ## velocidade máxima enquanto o botão de mirar está apertado (m/s; 0 = o movimento trava sozinho, ela só gira a mira); `lock`/
@@ -46,6 +46,7 @@ const SURVIVAL_WEAPONS := {
 	"shotgun": {"cooldown": 1.1, "shake": 0.2, "kick": 0.09, "move_spread": 3.0, "aim_speed": 0.0, "lock": 0.6, "lock_slow": 0.0},
 	# M79: pesada, um tiro por vez (quebra o cano para recarregar): anda devagar mirando e o coice a segura no lugar
 	"m79": {"cooldown": 1.9, "shake": 0.16, "kick": 0.11, "move_spread": 0.0, "aim_speed": 1.0, "lock": 0.8, "lock_slow": 0.0},
+	"sniper": {"cooldown": 1.3, "shake": 0.10, "kick": 0.06, "move_spread": 3.5, "aim_speed": 1.2, "lock": 0.45, "lock_slow": 0.3},
 }
 ## o que as armas têm no "arcade" para as chaves acima
 const HANDLING_DEFAULTS := {"kick": 0.0, "move_spread": 0.0, "aim_speed": 99.0, "lock": 0.0, "lock_slow": 1.0}

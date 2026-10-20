@@ -18,6 +18,7 @@ const GRAVITY := Vector3(0, -9.8, 0)
 const FLASH := {
 	"pistol": {"size": 0.26, "sprite": BURST, "tongue": Vector2(0.0, 0.0), "color": Color(1.0, 0.85, 0.35), "light": 2.5, "range": 5.0, "life": 0.05, "smoke": 0},
 	"m16": {"size": 0.24, "sprite": STAR, "tongue": Vector2(0.24, 0.035), "color": Color(1.0, 0.7, 0.3), "light": 1.8, "range": 4.0, "life": 0.045, "smoke": 0},
+	"sniper": {"size": 0.45, "sprite": STAR, "tongue": Vector2(0.5, 0.05), "color": Color(1.0, 0.8, 0.4), "light": 3.8, "range": 7.0, "life": 0.06, "smoke": 2},
 	"shotgun": {"size": 0.5, "sprite": BURST, "tongue": Vector2(0.45, 0.11), "color": Color(1.0, 0.78, 0.42), "light": 4.5, "range": 7.5, "life": 0.07, "smoke": 4},
 	"m79": {"size": 0.5, "sprite": BURST, "tongue": Vector2(0.3, 0.16), "color": Color(1.0, 0.72, 0.38), "light": 3.5, "range": 6.0, "life": 0.07, "smoke": 6},
 }
@@ -25,6 +26,7 @@ const FLASH := {
 const TRACER := {
 	"pistol": [0.012, Color(1.0, 0.9, 0.6), 0.04],
 	"m16": [0.01, Color(1.0, 0.72, 0.38), 0.035],
+	"sniper": [0.016, Color(1.0, 0.85, 0.45), 0.06],
 	"shotgun": [0.005, Color(1.0, 0.92, 0.75), 0.03],
 }
 ## superfície (meta "surface" do corpo atingido, ver Level.block): poeira, faíscas, mossa de metal e cor do decalque

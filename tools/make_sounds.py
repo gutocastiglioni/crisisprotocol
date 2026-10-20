@@ -53,6 +53,12 @@ def m16_shot():
                    [(0.09, 0.2, 1800), (0.19, 0.08, 1100)], 2.0)
 
 
+
+def sniper_shot():
+    # Estalo hipersônico agudo + estrondo grave de alta energia + eco reverberante longo
+    return gunshot("sniper_shot", 1.8, 0.002, 2200, 4800, 0.045, (160, 45), 0.12, 700, 0.55, 0.32,
+                   [(0.12, 0.28, 1200), (0.28, 0.16, 850), (0.45, 0.1, 550)], 2.5)
+
 def shotgun_shot():
     return gunshot("shotgun_shot", 1.4, 0.006, 900, 2000, 0.07, (130, 40), 0.15, 550, 0.45, 0.26,
                    [(0.14, 0.25, 1000), (0.3, 0.12, 700)], 2.4)
@@ -381,6 +387,7 @@ SOUNDS = {
     "pistol_shot": pistol_shot,
     "m16_shot": m16_shot,
     "shotgun_shot": shotgun_shot,
+    "sniper_shot": sniper_shot,
     "shotgun_pump_back": shotgun_pump_back,
     "shotgun_pump_fwd": shotgun_pump_fwd,
     "weapon_switch": weapon_switch,

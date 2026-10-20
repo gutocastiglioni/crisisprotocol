@@ -23,6 +23,7 @@ import heroine_m79  # noqa: E402
 import heroine_mesh  # noqa: E402
 import heroine_moves  # noqa: E402
 import heroine_rifle  # noqa: E402
+import heroine_sniper  # noqa: E402
 import heroine_rig  # noqa: E402
 import heroine_shotgun  # noqa: E402
 import heroine_body  # noqa: E402
@@ -33,6 +34,7 @@ GLB = ROOT / "game/assets/characters/heroine.glb"
 CHEST_GLB = ROOT / "game/assets/characters/m16.glb"
 CHEST_SHOTGUN_GLB = ROOT / "game/assets/characters/shotgun.glb"
 CHEST_M79_GLB = ROOT / "game/assets/characters/m79.glb"
+CHEST_SNIPER_GLB = ROOT / "game/assets/characters/sniper.glb"
 MOVES_JSON = ROOT / "game/assets/characters/heroine_moves.json"
 BLEND = ART / "heroine.blend"
 
@@ -130,6 +132,7 @@ def main():
     heroine_rig.make_muzzle(rig, "RifleMuzzle", heroine_rifle.muzzle_position())
     heroine_rig.make_muzzle(rig, "ShotgunMuzzle", heroine_shotgun.muzzle_position())
     heroine_rig.make_muzzle(rig, "M79Muzzle", heroine_m79.muzzle_position())
+    heroine_rig.make_muzzle(rig, "SniperMuzzle", heroine_sniper.muzzle_position())
     heroine_rig.make_pump(rig)
     acts = heroine_anims.build_actions(rig)
     stats(body, rig, acts)
@@ -138,6 +141,7 @@ def main():
     export_chest_weapon("M16Chest", heroine_rifle.build_rifle, CHEST_GLB)
     export_chest_weapon("ShotgunChest", heroine_shotgun.build_shotgun, CHEST_SHOTGUN_GLB)
     export_chest_weapon("M79Chest", heroine_m79.build_m79, CHEST_M79_GLB)
+    export_chest_weapon("SniperChest", heroine_sniper.build_sniper, CHEST_SNIPER_GLB)
     write_moves(MOVES_JSON)
 
 

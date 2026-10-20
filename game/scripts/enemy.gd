@@ -43,6 +43,11 @@ var hunt_speed := 4.2
 var head_mult := 2.0  # o tiro na cabeça tira esta vez o dano normal (quem atira multiplica); 1 = sem headshot
 var can_stealth := false  # aceita abate furtivo pelas costas (soldado e velociraptor; alossauro nunca)
 var _stealth_locked := false  # travado no lugar enquanto recebe o golpe furtivo ou crítico
+@export var drop_kind := ""
+@export var drop_is_weapon := false
+@export var drop_amount := 0
+@export var drop_chance := 1.0
+var _dropped := false
 var aware := 0.0  # 0 = não notou nada, 1 = notou (viu ou ouviu)
 var alert_t := 0.0  # > 0: foi alertado (viu a presa ou ouviu o alarme de outro) e caça com cone mais aberto e alcance maior
 var _t := 0.0
@@ -240,6 +245,16 @@ func _reset_enemy() -> void:
 	_alarm_delay = -1.0
 	_lost_t = 0.0
 	_path = PackedVector3Array()
+	_dropped = false
+
+
+## Solta item ao morrer (arma ou munição). Devolve o Pickup instanciado ou null.
+func drop_loot() -> Pickup:
+	if _dropped or drop_kind == "" or randf() > drop_chance:
+		return null
+	_dropped = true
+	var p := get_parent()
+	return Pickup.spawn_drop(p, global_position + Vector3.UP * 0.8, drop_kind, drop_amount, drop_is_weapon) if p else null
 
 
 # ------------------------------------------------------------------ IA: percepção, patrulha e alarme

@@ -35,6 +35,11 @@ var _landed := false  # pulinho: já tocou a aterrissagem
 var _enemy: Node3D
 var _hit_done := false
 var _hit_frame := 0.0
+var _ladder: Ladder
+var _ladder_y := 0.0
+var _ladder_sound_y := 0.0
+const CLIMB_SPEED := 1.3
+const RUNG_SOUND_DIST := 0.3
 
 
 func _init(player: Player) -> void:
@@ -60,11 +65,12 @@ func update(delta: float) -> void:
 		"climb", "mantle": _follow()
 		"pickup": _pickup()
 		"assassinate", "crit_strike": _strike_move(delta)
+		"ladder": _ladder_climb(delta)
 
 
 ## Interrompe a ação (golpe, mordida, morte, reinício). Pegando a arma antes das mãos chegarem nela, a arma fica.
 func cancel() -> void:
-	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike"] or (mode == "pickup" and not _got_item):
+	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike", "ladder"] or (mode == "pickup" and not _got_item):
 		p.model.holster(false)
 	if is_instance_valid(_enemy):
 		_enemy.stealth_lock(false)
@@ -331,7 +337,7 @@ func drop() -> void:
 	p.reset_physics_interpolation()
 	mode = ""
 	p.model.holster(false)
-	p.model.set_state("fall")
+	p.model.play("fall")
 
 
 func _start_climb(from_frame: float) -> void:
@@ -437,3 +443,109 @@ func _strike_move(delta: float) -> void:
 		mode = ""
 		p.model.holster(false)
 		p.model.set_state("idle")
+
+
+# ------------------------------------------------------------------ escada (subir e descer)
+func start_ladder(ladder: Ladder, at_top := false) -> void:
+	mode = "ladder"
+	t = 0.0
+	_ladder = ladder
+	p.crouching = false
+	p.aiming = false
+	p.velocity = Vector3.ZERO
+	p.model.set_aim(false)
+	p.model.holster(true)
+	_fwd = ladder.ladder_fwd
+	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
+	if at_top:
+		_ladder_y = ladder.height
+	else:
+		_ladder_y = 0.15
+	_ladder_sound_y = _ladder_y
+	_update_ladder_pos()
+	p.model.play("ladder_idle")
+
+
+func _ladder_climb(delta: float) -> void:
+	if _ladder == null or not is_instance_valid(_ladder):
+		mode = ""
+		p.model.holster(false)
+		return
+	
+	if Input.is_action_pressed("jump") or Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("roll"):
+		_ladder_drop()
+		return
+	
+	var wish := p.move_wish()
+	var dir := 0.0
+	if Input.is_action_pressed("move_forward"):
+		dir = 1.0
+	elif Input.is_action_pressed("move_back"):
+		dir = -1.0
+	elif wish.dot(_fwd) > 0.25:
+		dir = 1.0
+	elif wish.dot(_fwd) < -0.25:
+		dir = -1.0
+	
+	if dir > 0.0:
+		# Subir escada
+		_ladder_y += CLIMB_SPEED * delta
+		p.model.set_state("ladder_up", 1.2)
+		if absf(_ladder_y - _ladder_sound_y) >= RUNG_SOUND_DIST:
+			_ladder_sound_y = _ladder_y
+			Sfx.play(p.model, "climb")
+		if _ladder_y >= _ladder.height:
+			_ladder_dismount_top()
+			return
+	elif dir < 0.0:
+		# Descer escada
+		_ladder_y -= CLIMB_SPEED * delta
+		p.model.set_state("ladder_down", 1.2)
+		if absf(_ladder_y - _ladder_sound_y) >= RUNG_SOUND_DIST:
+			_ladder_sound_y = _ladder_y
+			Sfx.play(p.model, "climb")
+		if _ladder_y <= 0.08:
+			_ladder_dismount_bottom()
+			return
+	else:
+		p.model.set_state("ladder_idle")
+	
+	_update_ladder_pos()
+
+
+func _update_ladder_pos() -> void:
+	var ladder_pos := _ladder.global_position + _ladder.ladder_out * 0.22
+	p.global_position = Vector3(ladder_pos.x, _ladder.global_position.y + _ladder_y, ladder_pos.z)
+	p.velocity = Vector3.ZERO
+	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
+
+
+func _ladder_dismount_top() -> void:
+	p.global_position = _ladder.top_pos + _ladder.ladder_fwd * 0.6
+	p.global_position.y = _ladder.global_position.y + _ladder.height
+	p.velocity = Vector3.ZERO
+	mode = ""
+	p.model.holster(false)
+	p.model.set_state("idle")
+	Sfx.play(p.model, "land")
+	_ladder = null
+
+
+func _ladder_dismount_bottom() -> void:
+	p.global_position = _ladder.bottom_pos + _ladder.ladder_out * 0.45
+	p.global_position.y = _ladder.global_position.y
+	p.velocity = Vector3.ZERO
+	mode = ""
+	p.model.holster(false)
+	p.model.set_state("idle")
+	Sfx.play(p.model, "land")
+	_ladder = null
+
+
+func _ladder_drop() -> void:
+	p.global_position += _ladder.ladder_out * 0.3
+	p.reset_physics_interpolation()
+	mode = ""
+	p.model.holster(false)
+	p.model.play("fall")
+	_ladder = null

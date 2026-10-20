@@ -31,7 +31,7 @@ if (!godot) {
   console.error('Godot 4 não encontrado: instale (winget install GodotEngine.GodotEngine) ou defina GODOT_BIN.');
   process.exit(1);
 }
-const opts = { cwd: game, encoding: 'utf8', timeout: 300_000 };
+const opts = { cwd: game, encoding: 'utf8', timeout: 300_000, maxBuffer: 16 * 1024 * 1024 };
 const imp = spawnSync(godot, ['--headless', '--import', '--path', '.'], opts);
 if (imp.status !== 0) {
   const why = imp.error?.message ?? `código ${imp.status}, sinal ${imp.signal}`;

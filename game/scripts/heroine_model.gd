@@ -15,7 +15,7 @@ const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 
 const LOOPS := [
 	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
-	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed",
+	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed", "LadderUp", "LadderDown", "LadderIdle",
 ]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
@@ -27,10 +27,10 @@ const STATES := {
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
 	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
 	"assassinate": "Assassinate", "crit_strike": "CritStrike",
-	"death": "Death", "dazed": "Dazed",
+	"death": "Death", "dazed": "Dazed", "ladder_up": "LadderUp", "ladder_down": "LadderDown", "ladder_idle": "LadderIdle",
 }
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
-const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r"]
+const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "ladder_up", "ladder_down"]
 ## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
@@ -39,10 +39,10 @@ const CARRY := [
 ## arma: [malha, marcador do cano]
 const WEAPONS := {
 	"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"], "shotgun": ["Shotgun", "ShotgunMuzzle"],
-	"m79": ["M79", "M79Muzzle"],
+	"m79": ["M79", "M79Muzzle"], "sniper": ["Sniper", "SniperMuzzle"],
 }
 ## armas longas: pose de carregar, mira e pegar do fuzil (escopeta e M79 têm o cabo e a telha nos mesmos pontos)
-const LONG_GUNS := ["m16", "shotgun", "m79"]
+const LONG_GUNS := ["m16", "shotgun", "m79", "sniper"]
 ## janela de ejeção da escopeta em relação ao centro da telha em repouso (lado direito, atrás, em cima; m)
 const SHELL_PORT := Vector3(0.02, 0.018, 0.21)
 ## passo: o pé (osso Foot_*, em relação aos pés do corpo) subiu STEP_UP acima da altura dele em repouso e voltou a
@@ -61,7 +61,7 @@ const QUICK := ["dodge_l", "dodge_r", "dodge_back", "assassinate", "crit_strike"
 const XFADE := 0.15
 const QUICK_XFADE := 0.05
 ## som ao entrar no estado
-const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab"}
+const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0

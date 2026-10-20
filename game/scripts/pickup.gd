@@ -9,10 +9,18 @@ const PICK_RANGE := 0.9
 const BODY_SCALE := 1.5  # maiores que o real: no pátio escuro precisam aparecer de longe
 const BOX := Vector3(0.36, 0.2, 0.24)
 const KIT := Vector3(0.38, 0.24, 0.28)
+## Modelos 3D das armas para drops de armas no chão
+const WEAPON_SCENES := {
+	"m16": preload("res://assets/characters/m16.glb"),
+	"shotgun": preload("res://assets/characters/shotgun.glb"),
+	"m79": preload("res://assets/characters/m79.glb"),
+	"sniper": preload("res://assets/characters/sniper.glb"),
+}
+const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 ## faixa de cada tipo (a cor diz a arma de longe)
 const COLORS := {
 	"pistol": Color(1.0, 0.85, 0.25), "m16": Color(1.0, 0.5, 0.15), "shotgun": Color(1.0, 0.25, 0.2),
-	"m79": Color(0.45, 1.0, 0.3),
+	"m79": Color(0.45, 1.0, 0.3), "sniper": Color(0.2, 0.8, 1.0),
 	"health": Color(1.0, 0.15, 0.12),
 }
 ## onde ficam: galpão (as armas dos baús já trazem a munição delas), pátio da mata (na beira da estrada, longe das árvores)
@@ -34,9 +42,24 @@ const LAYOUT := [
 var kind := "pistol"
 var amount := 6
 var taken := false
+var is_weapon := false
+var is_drop := false
 var _home := Vector3.ZERO
 var _body: Node3D
 var _t := 0.0
+
+
+## Cria um item dropado de inimigo no mundo com queda suave até o chão.
+static func spawn_drop(parent: Node, from_pos: Vector3, item_kind: String, item_amount: int, as_weapon: bool = false) -> Pickup:
+	var p := Pickup.new()
+	p.kind = item_kind
+	p.amount = item_amount
+	p.is_weapon = as_weapon
+	p.is_drop = true
+	p.position = from_pos
+	parent.add_child(p)
+	p.fall_to_ground(from_pos)
+	return p
 
 
 ## Põe todos os itens de `LAYOUT` em `parent`.
@@ -58,12 +81,58 @@ func _ready() -> void:
 	_home = position
 	_t = fposmod(position.x * 1.7 + position.z * 0.9, TAU)  # cada um balança numa fase
 	_body = Node3D.new()
-	_body.scale = Vector3.ONE * BODY_SCALE
+	_body.scale = Vector3.ONE * (1.15 if is_weapon else BODY_SCALE)
 	add_child(_body)
-	if kind == "health":
+	if is_weapon and kind in WEAPON_SCENES:
+		_build_weapon()
+	elif kind == "health":
 		_build_kit()
 	else:
 		_build_box()
+
+
+## Queda suave até o chão ao dropar de um inimigo.
+func fall_to_ground(from: Vector3) -> void:
+	global_position = from
+	var space := get_world_3d().direct_space_state if is_inside_tree() else null
+	var floor_y := maxf(0.0, from.y - 1.0)
+	if space:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from + Vector3.UP * 0.2, from + Vector3.DOWN * 4.0, 1))
+		if hit:
+			floor_y = hit.position.y
+	_home = Vector3(from.x, floor_y, from.z)
+	var tw := create_tween()
+	tw.tween_property(self, "global_position:y", floor_y, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func() -> void:
+		global_position.y = floor_y
+		Sfx.play(self, "casing_brass", global_position))
+
+
+## Malha 3D da arma girando com aura colorida e beacon visual.
+func _build_weapon() -> void:
+	var scene: PackedScene = WEAPON_SCENES[kind]
+	var inst: Node3D = scene.instantiate()
+	var holder := Node3D.new()
+	holder.add_child(inst)
+	var aabb := AABB()
+	var first := true
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		var m := ShaderMaterial.new()
+		m.shader = Gfx.shader()
+		m.set_shader_parameter("albedo_tex", ATLAS)
+		m.set_shader_parameter("rim", 0.4)
+		mi.material_override = m
+		var maabb := mi.get_aabb()
+		if first:
+			aabb = maabb
+			first = false
+		else:
+			aabb = aabb.merge(maabb)
+	inst.position = -aabb.get_center() + Vector3(0, 0.08, 0)
+	_body.add_child(holder)
+	var c: Color = COLORS.get(kind, Color.WHITE)
+	_glow(Vector3(0.5, 0.012, 0.5), Vector3(0, 0.01, 0), c)
+	_glow(Vector3(0.06, 0.22, 0.06), Vector3(0, 0.11, 0), c)
 
 
 func _box(size: Vector3, pos: Vector3, tex: String, tint: Color) -> void:
@@ -112,8 +181,8 @@ func _build_kit() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	# só no jogo de sobrevivência (no arcade a munição não acaba e o item não existe)
-	visible = GameMode.pickups() and not taken
+	# no arcade só armas aparecem; no survival caixas e armas
+	visible = (is_weapon or GameMode.pickups()) and not taken
 	if not visible:
 		return
 	_t += delta
@@ -123,13 +192,24 @@ func _physics_process(delta: float) -> void:
 	if player == null:
 		return
 	var d := player.global_position - global_position
-	if Vector2(d.x, d.z).length() < PICK_RANGE and absf(d.y) < 1.2 and player.collect(kind, amount):
-		taken = true
-		visible = false
-		Sfx.play(self, "weapon_pickup", global_position + Vector3.UP * 0.3)
+	if Vector2(d.x, d.z).length() < PICK_RANGE and absf(d.y) < 1.2:
+		var ok := false
+		if is_weapon:
+			ok = player.collect_weapon(kind, amount)
+		else:
+			ok = player.collect(kind, amount)
+		if ok:
+			taken = true
+			visible = false
+			Sfx.play(self, "weapon_pickup", global_position + Vector3.UP * 0.3)
+			if is_drop:
+				queue_free()
 
 
-## Volta ao lugar, de novo para pegar (reinício).
+## Volta ao lugar, de novo para pegar (reinício) ou limpa se for drop de inimigo.
 func reset() -> void:
+	if is_drop:
+		queue_free()
+		return
 	taken = false
 	position = _home

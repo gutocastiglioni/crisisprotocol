@@ -405,6 +405,11 @@ def build_weapon(bone_names, kind):
         import heroine_rifle
 
         heroine_m79.build_m79(mb, heroine_rifle.grip_rest(), {"Hand_R": 1})
+    elif kind == "sniper":
+        import heroine_rifle
+        import heroine_sniper
+
+        heroine_sniper.build_sniper(mb, heroine_rifle.grip_rest(), {"Hand_R": 1})
     else:
         import heroine_rifle
 

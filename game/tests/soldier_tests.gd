@@ -13,6 +13,7 @@ func run(runner: SceneTree) -> void:
 	await test_soldier_backs_off()
 	await test_shared_alarm()
 	await test_soldier_loses_target()
+	await test_soldier_drops()
 
 
 func _spawn_soldier(player_pos: Vector3, soldier_pos := Vector3.ZERO, yaw := PI) -> Array:
@@ -275,3 +276,64 @@ func test_soldier_loses_target() -> void:
 			searched = true
 			break
 	check(searched, "chega e procura", s.state)
+
+
+func test_soldier_drops() -> void:
+	GameMode.set_mode(GameMode.SURVIVAL)
+	var pr := await _spawn_soldier(Vector3(0, 0, -6))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	p.reset_loadout()
+	check(p.weapons == ["pistol"], "comeca apenas com pistola")
+	s.take_hit(100, Vector3.BACK, s.global_position + Vector3.UP)
+	await t._frames(10)
+	check(s.dead and s.model.holstered, "soldado morre e solta a arma da mao")
+	var drops := w.find_children("*", "Pickup", true, false)
+	check(drops.size() >= 1, "soldado dropa item no mundo", str(drops.size()))
+	var drop: Pickup = drops[0]
+	check(drop.is_weapon and drop.kind == "m16" and drop.amount == 15, "drop e o fuzil M16 com 15 balas")
+	# Jogadora passa por cima e pega a arma
+	p.global_position = drop.global_position
+	await t._frames(5)
+	check("m16" in p.weapons and p.weapon() == "m16", "jogadora pegou o fuzil dropado do soldado")
+	check(p.ammo_of("m16") == 15, "jogadora recebeu as 15 balas da arma dropada", str(p.ammo_of("m16")))
+	# Segundo soldado dropa municao
+	var s2 := Soldier.new()
+	s2.position = Vector3(5, 0, 0)
+	s2.drop_is_weapon = false
+	s2.drop_kind = "shotgun"
+	s2.drop_amount = 6
+	s2.target = p
+	w.add_child(s2)
+	s2.take_hit(100, Vector3.BACK, s2.global_position + Vector3.UP)
+	await t._frames(10)
+	var drops2 := w.find_children("*", "Pickup", true, false)
+	var ammo_drop: Pickup = null
+	for d in drops2:
+		if not d.is_weapon and d.kind == "shotgun":
+			ammo_drop = d
+			break
+	check(ammo_drop != null and ammo_drop.amount == 6, "segundo soldado dropou caixa de municao de escopeta")
+	p.global_position = ammo_drop.global_position
+	await t._frames(5)
+	check(p.ammo_of("shotgun") == 6, "jogadora coletou a municao dropada", str(p.ammo_of("shotgun")))
+	# Sniper dropa o rifle Sniper
+	var sn := Sniper.new()
+	sn.position = Vector3(-5, 0, 0)
+	sn.target = p
+	w.add_child(sn)
+	sn.take_hit(100, Vector3.BACK, sn.global_position + Vector3.UP)
+	await t._frames(10)
+	check(sn.dead and sn.model.holstered, "sniper morre e solta o fuzil de precisao")
+	var drops3 := w.find_children("*", "Pickup", true, false)
+	var sniper_drop: Pickup = null
+	for d in drops3:
+		if d.is_weapon and d.kind == "sniper":
+			sniper_drop = d
+			break
+	check(sniper_drop != null and sniper_drop.amount == 5, "sniper dropou o fuzil Sniper com 5 balas")
+	p.global_position = sniper_drop.global_position
+	await t._frames(5)
+	check("sniper" in p.weapons and p.weapon() == "sniper", "jogadora pegou o rifle Sniper dropado")
+	check(p.ammo_of("sniper") == 5, "jogadora recebeu municao do Sniper", str(p.ammo_of("sniper")))

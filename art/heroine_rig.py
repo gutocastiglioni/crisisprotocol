@@ -69,7 +69,7 @@ def make_weapons(rig, image_path):
     image = bpy.data.images.load(str(image_path))
     image.pack()
     body = make_material("HeroineBody", image, double_sided=False)
-    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79")):
+    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79"), ("Sniper", "sniper")):
         part = _skinned_object(rig, name, heroine_mesh.build_weapon(S.BONE_NAMES, kind), [body])
         for poly in part.data.polygons:
             poly.use_smooth = False  # arma: arestas duras
@@ -82,7 +82,7 @@ def make_mesh_object(rig, image_path):
     body = make_material("HeroineBody", image, double_sided=False)
     hair = make_material("HeroineHair", image, double_sided=True)
     obj = _skinned_object(rig, "Heroine", heroine_mesh.build_all(S.BONE_NAMES), [body, hair])
-    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79")):
+    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79"), ("Sniper", "sniper")):
         part = _skinned_object(rig, name, heroine_mesh.build_weapon(S.BONE_NAMES, kind), [body])
         for poly in part.data.polygons:
             poly.use_smooth = False  # arma: arestas duras

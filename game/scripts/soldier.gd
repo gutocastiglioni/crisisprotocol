@@ -68,6 +68,10 @@ func _ready() -> void:
 	patrol_speed = Moves.speed("walk")
 	investigate_speed = 1.8
 	hunt_speed = Player.RUN_SPEED
+	if drop_kind == "":
+		drop_kind = "m16"
+		drop_is_weapon = true
+		drop_amount = 15
 	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
 	can_stealth = true
 	_enemy_ready()
@@ -296,6 +300,9 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false) -> void:
 	collision_layer = 0
 	_shape.set_deferred("disabled", true)
 	velocity = Vector3.ZERO
+	if drop_is_weapon and model:
+		model.holster(true)
+	drop_loot()
 	model.start_ragdoll(dir.normalized() * (20.0 if head else 14.0) + Vector3.UP * 2.5, at)
 	Blood.pool(model.ragdoll.bodies["Chest"], 1.1)
 	if head:
@@ -307,6 +314,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false) -> void:
 func reset() -> void:
 	model.stop_ragdoll()
 	model.set_weapon(WEAPON)
+	model.holster(false)
 	_reset_enemy()
 	health = MAX_HEALTH
 	collision_layer = 2

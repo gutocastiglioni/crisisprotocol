@@ -1,218 +1,514 @@
-"""Guerrilheiro encapuzado (milícia): homem de moletom com o capuz levantado por cima de uma balaclava preta,
-colete com bolsas de carregador, luvas, calça cargo larga e coturno. Mesmo esqueleto (heroine_spec) e mesmas
-animações da heroína, mas a malha é toda daqui, com medidas de homem e roupa folgada:
-  - tronco: moletom reto e largo (sem cintura), bainha com aba sobre a calça, bolso canguru e peitoral leves;
-  - capuz: casca aberta na frente (material de dois lados), mais alto e largo que a cabeça, caindo sobre os ombros;
-  - cabeça: crânio de homem (os anéis da heroína mais largos), coberto pela balaclava pintada (olhos e boca);
-  - braços: mangas largas com punho canelado, mão de luva maior; pernas: calça reta com bolso cargo, barra
-    embolada sobre o cano do coturno, coturno de bico largo.
-Os anéis seguem as medidas da heroína antes do ajuste de perna (heroine_spec.remap_z é aplicado pelo MeshBuilder),
-para baterem com os ossos. Atlas: guerrilla_atlas.py (pintado por tools/make_guerrilla_texture.py).
+import heroine_mesh as M
+"""Guerrilheiro encapuzado (milícia) construído sobre o modelo base em art/base_body/ (art/heroine_body.py):
+mesmo esqueleto adaptado às juntas reais (heroine_spec.use_joints) e mesmas animações da heroína, mas com o corpo
+remodelado para anatomia masculina e roupa tática folgada:
+  - braços longos (+6.8 cm) alinhados às laterais do tronco (sem sobrepor as costas);
+  - tronco em V com peitoral masculino e moletom reto;
+  - nádegas masculinas anatômicas sob a calça cargo e cavalo baixo com braguilha reta;
+  - balaclava preta tática cobrindo boca e queixo com abertura horizontal limpa para os olhos 3D;
+  - capuz tático arredondado sem furos, com arco suave na testa e gola contínua sobre os ombros.
 """
 import math
+from pathlib import Path
 
-from mathutils import Vector
+import bmesh
+import bpy
+from mathutils import Matrix, Vector
 
 import guerrilla_atlas
-import heroine_head
-import heroine_mesh as M
+import guerrilla_legacy
+import heroine_body as HB
+import heroine_outfit as HO
+import heroine_rig
 import heroine_spec as S
+from heroine_hair import SURF, _surfaces
 
-X, Y, Z = M.X, M.Y, M.Z
-R = M.R
-
-# ------------------------------------------------------------------ tronco (moletom; embaixo, o começo da calça)
-# (z, centro y, rx, ry): do gancho até a base do pescoço. A bainha é um degrau: 0.905 (calça, por dentro) -> 0.907 (aba)
-TORSO = [
-    (0.80, 0.000, 0.112, 0.088),
-    (0.84, 0.000, 0.148, 0.100),
-    (0.88, 0.004, 0.158, 0.106),
-    (0.905, 0.004, 0.150, 0.100),
-    (0.907, 0.002, 0.180, 0.125),
-    (0.95, 0.000, 0.178, 0.123),
-    (0.97, 0.000, 0.174, 0.119),
-    (1.03, 0.000, 0.172, 0.117),
-    (1.10, -0.004, 0.174, 0.116),
-    (1.18, -0.006, 0.182, 0.119),
-    (1.26, -0.006, 0.192, 0.123),
-    (1.32, -0.004, 0.198, 0.121),
-    (1.37, 0.000, 0.184, 0.113),
-    (1.41, 0.000, 0.168, 0.104),
-    (1.435, 0.000, 0.138, 0.094),
-    (1.455, 0.000, 0.108, 0.085),
-    (1.47, 0.000, 0.086, 0.079),
-]
+ART = Path(__file__).resolve().parent
+ATLAS_PATH = ART.parent / "game/assets/characters/guerrilla_atlas.png"
+TARGET_TRIS = 2750
+DROP_MATS = ("hair", "hair_2", "eyelash", "holster", "pouch")
+X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
+HEAD_RX, HEAD_RY = 1.08, 1.05
 
 
-def _torso_bones(z):
-    if z <= 0.97:
-        return {"Hips": 1}
-    if z < 1.05:
-        return {"Hips": 0.5, "Spine": 0.5}
-    if z < 1.13:
-        return {"Spine": 1}
-    if z < 1.17:
-        return {"Spine": 0.7, "Chest": 0.3}
-    if z < 1.23:
-        return {"Spine": 0.3, "Chest": 0.7}
-    if z < 1.46:
-        return {"Chest": 1}
-    return {"Chest": 0.5, "Neck": 0.5}
+def _pose_male(arm):
+    """Pose masculina: ombros naturais alinhados à lateral do tronco (sem sobrepor costas) e braços longos (+6.8 cm)."""
+    old_drop = HB.CLAVICLE_DROP
+    HB.CLAVICLE_DROP = math.radians(1.5)
+    try:
+        HB._pose(arm)
+    finally:
+        HB.CLAVICLE_DROP = old_drop
+    for side, k in (("left", 1), ("right", -1)):
+        down = Vector((k * math.sin(S.ARM_SPREAD), 0.0, -math.cos(S.ARM_SPREAD)))
+        clav = arm.pose.bones[f"arm {side} shoulder 1"]
+        # desloca o ombro levemente para frente em Y para não sobrepor o dorso nas costas
+        clav.matrix = Matrix.Translation(Vector((k * 0.012, -0.032, 0.0))) @ clav.matrix
+        bpy.context.view_layer.update()
+        fore = arm.pose.bones[f"arm {side} elbow"]
+        fore.matrix = Matrix.Translation(down * 0.033) @ fore.matrix
+        bpy.context.view_layer.update()
+        hand = arm.pose.bones[f"arm {side} wrist"]
+        hand.matrix = Matrix.Translation(down * 0.035) @ hand.matrix
+        bpy.context.view_layer.update()
 
 
-def _volume(th, z):
-    """Volume além da elipse (th: 0 = costas, pi = frente): bolso canguru, peitoral e escápulas, discretos."""
-    v = M._lobe(th, z, math.pi, 1.00, 0.010, 0.55, 0.045)
-    for k in (1, -1):
-        v += M._lobe(th, z, math.pi - k * 0.5, 1.28, 0.008, 0.4, 0.06)
-        v += M._lobe(th, z, k * 0.6, 1.32, 0.008, 0.4, 0.06)
-    return v
+def _drop_extras(mesh):
+    """Remove cabelos, cílios, coldre/tiras e bolsas femininas, mantendo apenas o tronco de costume."""
+    drop = {i for i, sl in enumerate(mesh.material_slots) if sl.material.name.removeprefix("Body_") in DROP_MATS}
+    costume_idx = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_costume")
+    bm = bmesh.new()
+    bm.from_mesh(mesh.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index in drop], context="FACES")
+    c_faces = [f for f in bm.faces if f.material_index == costume_idx]
+    seen, comps = set(), []
+    for f in c_faces:
+        if f in seen:
+            continue
+        q, comp = [f], []
+        seen.add(f)
+        while q:
+            cur = q.pop()
+            comp.append(cur)
+            for v in cur.verts:
+                for lf in v.link_faces:
+                    if lf.material_index == costume_idx and lf not in seen:
+                        seen.add(lf)
+                        q.append(lf)
+        comps.append(comp)
+    if len(comps) > 1:
+        main_comp = set(max(comps, key=len))
+        bmesh.ops.delete(bm, geom=[f for f in c_faces if f not in main_comp], context="FACES")
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    bm.to_mesh(mesh.data)
+    bm.free()
+    for sl in mesh.material_slots:
+        if sl.material and sl.material.name == "Body_eye":
+            node = next(n for n in sl.material.node_tree.nodes if n.type == "TEX_IMAGE")
+            img = bpy.data.images.load(str(HB.SRC / "eye.png"))
+            img.pack()
+            node.image = img
+    order = ("skin", "costume", "face", "eye")
+    mats = {sl.material.name.removeprefix("Body_"): sl.material for sl in mesh.material_slots if sl.material}
+    old_names = {i: sl.material.name.removeprefix("Body_") for i, sl in enumerate(mesh.material_slots)}
+    new_idx = {k: i for i, k in enumerate(order)}
+    poly_mats = [new_idx.get(old_names.get(p.material_index, "skin"), 0) for p in mesh.data.polygons]
+    mesh.data.materials.clear()
+    for k in order:
+        mesh.data.materials.append(mats[k])
+    for p, mi in zip(mesh.data.polygons, poly_mats):
+        p.material_index = mi
 
 
-def build_torso(mb):
-    rings = []
-    for z, y, rx, ry in TORSO:
-        w = _torso_bones(z)
-        push = {j: _volume(2 * math.pi * j / M.TORSO_SIDES, z) for j in range(M.TORSO_SIDES)}
-        deep = 1.1 if 0.95 < z < 1.44 else 1.0  # moletom folgado: mais fundo de perfil
-        rings.append(R((0, y, z), rx, ry * deep, w, push, frame=(X, Y), wfn=M._torso_weights(w, z)))
-    mb.loft(rings, "torso", M.TORSO_SIDES, v_by_z=True)
+def _male_torso_section(z, hip_z, neck_z):
+    """Seção transversal masculina: cintura reta, dorsal em V e trapézio suave."""
+    u = (z - hip_z) / max(neck_z - hip_z, 1e-4)
+    hem = 1.0 / (1.0 + math.exp(-(z - (hip_z - 0.085)) / 0.006))
+    v_taper = min(1.0, max(0.0, (u + 0.05) / 0.68))
+    trap_slope = 1.0 / (1.0 + math.exp((u - 0.78) / 0.075))
+    rx = (0.162 + 0.014 * hem + 0.022 * v_taper) * trap_slope + 0.078 * (1.0 - trap_slope)
+    pec = math.exp(-((u - 0.62) / 0.24) ** 2)
+    ry_f = (0.104 + 0.012 * hem + 0.020 * pec) * trap_slope + 0.074 * (1.0 - trap_slope)
+    upper_back = math.exp(-((u - 0.66) / 0.28) ** 2)
+    ry_b = (0.098 + 0.008 * hem + 0.018 * upper_back) * trap_slope + 0.074 * (1.0 - trap_slope)
+    yc = -0.005 * hem
+    return yc, rx, ry_f, ry_b
 
 
-# ------------------------------------------------------------------ cabeça, balaclava e capuz
-HEAD_RX, HEAD_RY = 1.07, 1.04  # crânio de homem: mais largo
+def _reshape_male(mesh, joints):
+    """Remodela para homem: ombros naturais, nádegas masculinas, calça cargo larga e cabeça protegida."""
+    her = HO._her_bones(joints)
+    names = {g.index: g.name for g in mesh.vertex_groups}
+    hip_z, knee_z = joints["hip"].z, joints["knee"].z
+    sh_z = joints["shoulder"].z
+    neck_z, head_z = joints["torso"]["Neck"][0].z, joints["torso"]["Head"][0].z
+    w_len = joints["upper_arm"] + joints["forearm"]
+    me = mesh.data
+    eye_slot = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_eye")
+    eye_zs = [me.vertices[vi].co.z for p in me.polygons if p.material_index == eye_slot for vi in p.vertices]
+    eye_z = sum(eye_zs) / max(len(eye_zs), 1)
+
+    for v in me.vertices:
+        w = {names[g.group]: g.weight for g in v.groups if g.weight > 0 and g.group in names}
+        p = v.co.copy()
+
+        # 1. tronco masculino em V suave
+        wt = w.get("Hips", 0.0) + w.get("Spine", 0.0) + w.get("Chest", 0.0)
+        wa_tot = sum(w.get(f"{b}_{s}", 0.0) for b in ("UpperArm", "LowerArm", "Hand") for s in ("L", "R"))
+        wl_tot = sum(w.get(f"{b}_{s}", 0.0) for b in ("UpperLeg", "LowerLeg", "Foot") for s in ("L", "R"))
+        if wt > 0.02 and p.z >= hip_z - 0.14 and p.z <= neck_z + 0.04:
+            yc, rx, ry_f, ry_b = _male_torso_section(p.z, hip_z, neck_z)
+            dx, dy = p.x, p.y - yc
+            th = math.atan2(dx, dy)
+            sx, cy = math.sin(th), math.cos(th)
+            ry = ry_f if cy < 0 else ry_b
+            denom = (abs(sx) / max(rx, 1e-4)) ** 2.15 + (abs(cy) / max(ry, 1e-4)) ** 2.15
+            r_env = denom ** (-1.0 / 2.15) if denom > 1e-8 else rx
+            tx, ty = r_env * sx, yc + r_env * cy
+            crotch_fade = min(1.0, max(0.0, (p.z - (hip_z - 0.13)) / 0.05))
+            top_fade = 1.0 / (1.0 + math.exp((p.z - (neck_z - 0.01)) / 0.018))
+            arm_fade = min(1.0, max(0.0, 1.0 - wa_tot * 1.15))
+            alpha = min(1.0, wt * 1.1) * crotch_fade * top_fade * arm_fade * (1.0 - 0.5 * wl_tot)
+            p.x = p.x + (tx - p.x) * alpha
+            p.y = p.y + (ty - p.y) * alpha
+
+        # 2. quadril masculino: afunilamento dos trocanteres (elimina formato violão/pera feminino)
+        if hip_z - 0.18 < p.z < hip_z + 0.06:
+            hip_taper = math.exp(-((p.z - (hip_z - 0.05)) / 0.08) ** 2)
+            p.x *= (1.0 - 0.12 * hip_taper * (1.0 - 0.4 * wl_tot))
+
+        # 3. cabeça/pescoço: retração da nuca/crânio para folga total do capuz
+        wh, wn = w.get("Head", 0.0), w.get("Neck", 0.0)
+        if wh > 0.01 or wn > 0.01:
+            yc = -0.010 if p.z > head_z else -0.005
+            if p.y < yc - 0.015:
+                jaw = wh * max(0.0, min(1.0, (eye_z - p.z) / 0.065)) * max(0.0, 1.0 - abs(p.z - (eye_z - 0.04)) / 0.06)
+                p.x *= 1.0 + wh * (HEAD_RX - 1.0 + 0.18 * jaw) + wn * 0.14
+                p.y = yc + (p.y - yc) * (1.0 + wh * (HEAD_RY - 1.0 + 0.10 * jaw) + wn * 0.12)
+                if wh > 0.5 and p.y < yc - 0.04:
+                    brow = math.exp(-((p.z - (eye_z + 0.016)) / 0.014) ** 2) * math.exp(-((p.x) / 0.055) ** 2)
+                    p.y -= 0.007 * brow
+                    p.z -= 0.003 * brow
+            else:
+                p.x *= 0.90
+                p.y = yc + (p.y - yc) * 0.90
+
+        # 4. braços masculinos: mangas de moletom posicionadas na lateral do corpo
+        for s, k in (("L", 1), ("R", -1)):
+            wa = w.get(f"UpperArm_{s}", 0.0) + w.get(f"LowerArm_{s}", 0.0) + w.get(f"Hand_{s}", 0.0)
+            w_delt = wa + (w.get("Chest", 0.0) if k * p.x > 0.11 and p.z > sh_z - 0.10 else 0.0)
+            if w_delt > 0.02:
+                sh, ht = her[f"UpperArm_{s}"][0], her[f"Hand_{s}"][1]
+                u_dir = (ht - sh).normalized()
+                d_along = (p - sh).dot(u_dir)
+                if -0.045 <= d_along <= w_len:
+                    axis = sh + u_dir * max(0.0, d_along)
+                    rad = p - axis
+                    r_cur = rad.length
+                    if r_cur > 1e-5:
+                        t = min(1.0, max(0.0, d_along / max(w_len, 1e-4)))
+                        cuff = math.exp(-((t - 0.96) / 0.05) ** 2)
+                        r_want = 0.064 * (1.0 - 0.16 * t) + 0.006 * math.sin(math.pi * t) - 0.014 * cuff
+                        blend = min(1.0, wa * 1.15) if d_along >= 0.0 else min(1.0, wa * 1.1) * max(0.0, 1.0 + d_along / 0.045)
+                        r_new = r_cur + (max(r_cur * 1.10, r_want) - r_cur) * blend
+                        p_new = axis + rad * (r_new / r_cur)
+                        # não permite que a manga avance sobre as costas além de y = 0.075
+                        if p_new.y > 0.075 and d_along < 0.18:
+                            p_new.y = 0.075 + (p_new.y - 0.075) * 0.35
+                        p = p_new
+                elif d_along > w_len and wa > 0.01:
+                    axis = sh + u_dir * d_along
+                    rad = p - axis
+                    p = axis + u_dir * ((d_along - w_len) * 0.14 * wa) + rad * (1.0 + 0.28 * wa)
+
+        # 5. pernas: calça cargo bem larga (baggy) idêntica ao modelo da Imagem 1
+        for s, k in (("L", 1), ("R", -1)):
+            wl = w.get(f"UpperLeg_{s}", 0.0) + w.get(f"LowerLeg_{s}", 0.0)
+            if (wl > 0.01 or (wt > 0.01 and p.z < hip_z - 0.02 and k * p.x >= -0.002)) and p.z < hip_z - 0.01 and k * p.x >= -0.008:
+                h0, k0 = her[f"UpperLeg_{s}"]
+                _, a0 = her[f"LowerLeg_{s}"]
+                leg_x = k * (abs(h0.x) * 0.94)
+                if p.z >= knee_z:
+                    f = min(1.0, max(0.0, (h0.z - p.z) / max(h0.z - k0.z, 1e-4)))
+                    cy = h0.lerp(k0, f).y * 0.35
+                    rx_w, ry_w = 0.118 - 0.008 * f, 0.124 - 0.008 * f
+                else:
+                    f = min(1.0, max(0.0, (k0.z - p.z) / max(k0.z - a0.z, 1e-4)))
+                    cy = k0.lerp(a0, f).y * 0.45
+                    blouse = math.exp(-((p.z - 0.225) / 0.032) ** 2)
+                    tuck = 1.0 / (1.0 + math.exp(-(p.z - 0.198) / 0.006))
+                    rx_w = (0.108 - 0.006 * f + 0.016 * blouse) * tuck + 0.058 * (1.0 - tuck)
+                    ry_w = (0.114 - 0.006 * f + 0.016 * blouse) * tuck + 0.062 * (1.0 - tuck)
+                dx, dy = p.x - leg_x, p.y - cy
+                th = math.atan2(dx, dy)
+                r_cur = math.hypot(dx, dy)
+                r_env = 1.0 / max(math.hypot(math.sin(th) / rx_w, math.cos(th) / ry_w), 1e-4)
+                blend = min(1.0, (wl + (0.5 * wt if p.z < hip_z else 0.0)) * 1.35)
+                r_new = r_cur + (max(r_cur * 1.12, r_env) - r_cur) * blend
+                if r_cur > 1e-5:
+                    tx = leg_x + math.sin(th) * r_new
+                    min_in = 0.002 + 0.005 * max(0.0, min(1.0, (hip_z - 0.08 - p.z) / 0.35))
+                    if k * tx < min_in:
+                        tx = k * min_in
+                    p.x = p.x + (tx - p.x) * blend
+                    p.y = p.y + (cy + math.cos(th) * r_new - p.y) * blend
+
+        # 6. pelve: virilha (gancho/braguilha) e nádegas masculinas anatômicas da referência militar (Imagem 2)
+        if hip_z - 0.22 < p.z < hip_z + 0.05:
+            # Virilha / braguilha frontal reta e limpa de calça de combate
+            if p.y < -0.01 and abs(p.x) < 0.065:
+                fly_fade = max(0.0, 1.0 - (abs(p.x) / 0.065) ** 2)
+                z_fade = math.exp(-((p.z - (hip_z - 0.08)) / 0.065) ** 2)
+                target_fy = -0.076
+                p.y = p.y + (target_fy - p.y) * 0.45 * fly_fade * z_fade
+
+            # Nádegas masculinas anatômicas sob a calça cargo (volume atlético suave, sem furos nem fendas)
+            elif p.y > 0.02 and abs(p.x) < 0.15:
+                dx = abs(p.x) - 0.065
+                dz = p.z - (hip_z - 0.055)
+                mound = math.exp(-((dx / 0.055) ** 2 + (dz / 0.070) ** 2))
+                target_by = 0.075 + 0.032 * mound
+                z_blend = min(1.0, max(0.0, (p.z - (hip_z - 0.19)) / 0.08))
+                p.y = max(p.y, target_by * z_blend)
+        v.co = p
 
 
-def build_head(mb):
-    head = {"Head": 1}
-    rings = [R((0, y, z), rx * HEAD_RX, ry * HEAD_RY, head, push or None, frame=(X, Y))
-             for z, y, rx, ry, push in heroine_head.HEAD]
-    mb.loft(rings, "head", heroine_head.SIDES, v_by_z=True)
-    neck = {"Neck": 1}
-    mb.loft([
-        R((0, -0.003, 1.43), 0.078, 0.072, {"Chest": 0.5, "Neck": 0.5}),
-        R((0, -0.005, 1.47), 0.064, 0.060, neck),
-        R((0, -0.008, 1.50), 0.060, 0.058, neck),
-        R((0, -0.012, 1.535), 0.058, 0.060, {"Neck": 0.5, "Head": 0.5}),
-    ], "neck", 8)
+def _guerrilla_texture(mesh, joints):
+    """Mapeia o atlas do guerrilheiro sobre a malha reconstruída."""
+    import numpy as np
+    from mathutils.interpolate import poly_3d_calc
+
+    bvh, obm, ouv, atlas, old = guerrilla_legacy.build_legacy_bvh(ATLAS_PATH)
+    ah, aw = atlas.shape[:2]
+    her = HO._her_bones(joints)
+    hip_h, neck_h = joints["hip"].z - 0.085, joints["torso"]["Neck"][0].z
+    hip_o, neck_o = 0.905, old["Neck"][0].z
+
+    def color(p, bone):
+        if bone in ("Hips", "Spine", "Chest", "Neck", "Head"):
+            th = math.atan2(abs(p.x), p.y)
+            tz = hip_o + (p.z - hip_h) * (neck_o - hip_o) / (neck_h - hip_h)
+            c, d = Vector((0.0, 0.0, min(1.52, max(0.81, tz)))), Vector((math.sin(th), math.cos(th), 0.0))
+        elif bone in her and bone in old:
+            h0, h1 = her[bone]
+            o0, o1 = old[bone]
+            dv = h1 - h0
+            f = min(1.08, max(-0.08, (p - h0).dot(dv) / dv.length_squared))
+            a, b = HO._frame(dv)
+            q = p - (h0 + dv * f)
+            th = math.atan2(q.dot(a), q.dot(b))
+            oa, ob = HO._frame(o1 - o0)
+            c, d = o0 + (o1 - o0) * f, oa * math.sin(th) + ob * math.cos(th)
+        else:
+            return None
+        hit, _, fi, _ = bvh.ray_cast(c, d.normalized(), 0.35)
+        if hit is None:
+            return None
+        face = obm.faces[fi]
+        wts = poly_3d_calc([v.co for v in face.verts], hit)
+        us = [lp[ouv].uv.x for lp in face.loops]
+        if max(us) - min(us) > 0.4:
+            us_unwrapped = [u + 1.0 if u < 0.5 else u for u in us]
+            u = sum(wt * u for wt, u in zip(wts, us_unwrapped)) % 1.0
+        else:
+            u = sum(wt * u for wt, u in zip(wts, us))
+        v = sum(wt * lp[ouv].uv.y for wt, lp in zip(wts, face.loops))
+        px, py = int(round(u * (aw - 1))) % aw, int(round((1.0 - v) * (ah - 1))) % ah
+        if bone in ("Hips", "Spine", "Chest") and px >= 254:
+            px = 250
+        return atlas[py, px]
+
+    names = {g.index: g.name for g in mesh.vertex_groups}
+    me = mesh.data
+    uvl = me.uv_layers.active.data
+    me.calc_loop_triangles()
+    for key in ('skin', 'costume'):
+        slot = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == f'Body_{key}')
+        node = next(n for n in mesh.material_slots[slot].material.node_tree.nodes if n.type == 'TEX_IMAGE')
+        img = node.image
+        w, h = img.size
+        src = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+        out = src.copy()
+        done = np.zeros((h, w), dtype=bool)
+        bone_of = {}
+        for tri in me.loop_triangles:
+            if tri.material_index != slot:
+                continue
+            pi = tri.polygon_index
+            if pi not in bone_of:
+                acc = {}
+                for vi in me.polygons[pi].vertices:
+                    for g in me.vertices[vi].groups:
+                        acc[names[g.group]] = acc.get(names[g.group], 0.0) + g.weight
+                bone_of[pi] = max(acc, key=acc.get)
+            bone = bone_of[pi]
+            if bone.startswith(('Head', 'Foot')):
+                continue
+            raw = np.array([[uvl[li].uv.x, uvl[li].uv.y] for li in tri.loops])
+            raw -= np.floor(raw.mean(axis=0))
+            pts = raw * np.array([w, h])
+            P = [me.vertices[vi].co.copy() for vi in tri.vertices]
+            x0, y0 = np.floor(pts.min(axis=0)).astype(int)
+            x1, y1 = np.ceil(pts.max(axis=0)).astype(int)
+            (ax, ay), (bx, by), (cx, cy) = pts
+            dd = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(dd) < 1e-9:
+                continue
+            for py in range(max(y0, 0), min(y1, h - 1) + 1):
+                for px in range(max(x0, 0), min(x1, w - 1) + 1):
+                    if done[py, px]:
+                        continue
+                    xs, ys = px + 0.5, py + 0.5
+                    l1 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / dd
+                    l2 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / dd
+                    l3 = 1 - l1 - l2
+                    if l1 < -0.02 or l2 < -0.02 or l3 < -0.02:
+                        continue
+                    q = P[0] * l1 + P[1] * l2 + P[2] * l3
+                    col = color(q, bone)
+                    if col is None:
+                        continue
+                    out[py, px, :3] = col[:3]
+                    done[py, px] = True
+        lum = src[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+        if done.any():
+            mean = float(lum[done].mean())
+            shade = np.clip(0.85 + 0.35 * (lum - mean) / max(mean, 1e-3), 0.65, 1.2)[..., None]
+            out[..., :3] = np.where(done[..., None], np.clip(out[..., :3] * shade, 0, 1), out[..., :3])
+        for _ in range(2):
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                sh = np.roll(done, (dy, dx), axis=(0, 1))
+                grow = sh & ~done
+                out[grow] = np.roll(out, (dy, dx), axis=(0, 1))[grow]
+                done = done | grow
+        new = bpy.data.images.new(f'tex_{key}_guerrilla', w, h, alpha=True)
+        new.pixels = out.ravel().tolist()
+        new.pack()
+        node.image = new
+    _paint_balaclava_face(mesh)
 
 
-# (z, centro y, rx, ry, meia abertura da frente em radianos, pesos): de cima dos ombros até o topo
-HOOD = [
-    (1.45, 0.024, 0.134, 0.120, 1.00, {"Chest": 0.6, "Neck": 0.4}),
-    (1.50, 0.014, 0.114, 0.118, 0.80, {"Neck": 0.7, "Head": 0.3}),
-    (1.55, 0.006, 0.108, 0.124, 0.66, {"Head": 1}),
-    (1.60, 0.002, 0.108, 0.128, 0.68, {"Head": 1}),
-    (1.65, 0.000, 0.108, 0.130, 0.66, {"Head": 1}),
-    (1.69, 0.000, 0.104, 0.128, 0.56, {"Head": 1}),
-    (1.715, 0.004, 0.094, 0.120, 0.30, {"Head": 1}),  # alto da abertura (aba sobre a testa)
-    (1.735, 0.008, 0.082, 0.108, 0.0, {"Head": 1}),  # daqui para cima fechado
-    (1.765, 0.014, 0.060, 0.082, 0.0, {"Head": 1}),
-    (1.79, 0.020, 0.030, 0.044, 0.0, {"Head": 1}),
-    (1.80, 0.022, 0.008, 0.012, 0.0, {"Head": 1}),
-]
+def _paint_balaclava_face(mesh):
+    """Balaclava preta tática: cobre boca e queixo, deixando uma fresta limpa para os olhos 3D reais."""
+    import numpy as np
+
+    me = mesh.data
+    uvl = me.uv_layers.active.data
+    eye_slot = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_eye")
+    face_slot = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_face")
+    eye_verts = [me.vertices[vi].co for p in me.polygons if p.material_index == eye_slot for vi in p.vertices]
+    el, er = [v for v in eye_verts if v.x > 0], [v for v in eye_verts if v.x < 0]
+    eye_l, eye_r = sum(el, Vector()) / max(len(el), 1), sum(er, Vector()) / max(len(er), 1)
+
+    node = next(n for n in mesh.material_slots[face_slot].material.node_tree.nodes if n.type == "TEX_IMAGE")
+    img = node.image
+    w, h = img.size
+    src = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+    lum = src[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    mean = max(float(lum.mean()), 1e-3)
+
+    yy, xx = np.mgrid[0:h, 0:w]
+    knit = np.full((h, w, 3), (24 / 255.0, 24 / 255.0, 27 / 255.0), dtype=np.float32)
+    v_stitch = ((xx + (yy // 2)) % 4 == 0)
+    knit[v_stitch] = (18 / 255.0, 18 / 255.0, 20 / 255.0)
+    knit[(yy % 6 == 0) & ~v_stitch] = (33 / 255.0, 33 / 255.0, 37 / 255.0)
+    shade = np.clip(0.82 + 0.30 * (lum - mean) / mean, 0.68, 1.22)[..., None]
+    out = src.copy()
+    out[..., :3] = np.clip(knit * shade, 0.0, 1.0)
+
+    rim_col = np.array([48 / 255.0, 48 / 255.0, 54 / 255.0], dtype=np.float32)
+    male_skin = np.array([156 / 255.0, 114 / 255.0, 88 / 255.0], dtype=np.float32)
+    male_brow = np.array([32 / 255.0, 24 / 255.0, 20 / 255.0], dtype=np.float32)
+
+    for tri in me.loop_triangles:
+        if tri.material_index != face_slot:
+            continue
+        P = [me.vertices[vi].co.copy() for vi in tri.vertices]
+        if min(p.y for p in P) > eye_l.y + 0.025:
+            continue
+        raw = np.array([[uvl[li].uv.x, uvl[li].uv.y] for li in tri.loops])
+        pts = (raw - np.floor(raw.mean(axis=0))) * np.array([w, h])
+        x0, y0 = np.floor(pts.min(axis=0)).astype(int)
+        x1, y1 = np.ceil(pts.max(axis=0)).astype(int)
+        (ax, ay), (bx, by), (cx, cy) = pts
+        dd = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(dd) < 1e-9:
+            continue
+        for py in range(max(y0, 0), min(y1, h - 1) + 1):
+            for px in range(max(x0, 0), min(x1, w - 1) + 1):
+                xs, ys = px + 0.5, py + 0.5
+                l1 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / dd
+                l2 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / dd
+                l3 = 1 - l1 - l2
+                if l1 < -0.02 or l2 < -0.02 or l3 < -0.02:
+                    continue
+                q = P[0] * l1 + P[1] * l2 + P[2] * l3
+                if q.y > eye_l.y + 0.018:
+                    continue
+                # Abertura tática horizontal contínua sobre os olhos (sem furo bizarro de boca)
+                slit_x = abs(q.x) / 0.046
+                slit_z = (q.z - eye_l.z) / (0.015 if q.z >= eye_l.z else 0.011)
+                de = math.hypot(slit_x, slit_z)
+                if de < 1.0:
+                    sh_f = float(np.clip(0.75 + 0.40 * lum[py, px], 0.55, 1.10))
+                    is_brow = q.z > eye_l.z + 0.005 and abs(q.x) > 0.010
+                    out[py, px, :3] = male_brow if is_brow else np.clip(male_skin * sh_f, 0.0, 1.0)
+                elif de < 1.25:
+                    out[py, px, :3] = np.clip(rim_col * shade[py, px], 0.0, 1.0)
+
+    new = bpy.data.images.new("face_guerrilla", w, h, alpha=True)
+    new.pixels = out.ravel().tolist()
+    new.pack()
+    node.image = new
 
 
-def build_hood(mb):
-    """Capuz levantado: aberto na frente (o rosto de balaclava aparece), dos dois lados (material do cabelo)."""
-    rings = [R((0, y, z), rx, ry, w, frame=(X, Y), arc=(-(math.pi - o), math.pi - o)) for z, y, rx, ry, o, w in HOOD]
-    mb.loft(rings, "hair", 12, mat=M.MAT_HAIR)
-    # cordões saindo da abertura e caindo no peito
-    for k in (1, -1):
-        mb.box(Vector((k * 0.046, -0.138, 1.40)), X, Y, (0.0045, 0.004, 0.065), "cord", {"Chest": 1})
+from guerrilla_props import make_boots, make_gear, make_hood  # noqa: F401
 
 
-# ------------------------------------------------------------------ braços e mãos
-def build_arm(mb, s):
-    ua, la, hand, chest = f"UpperArm_{s}", f"LowerArm_{s}", f"Hand_{s}", "Chest"
-    p = lambda d: S.arm_point(s, d)
-    UA, w0 = S.UPPER_ARM_LEN, S.UPPER_ARM_LEN + S.FOREARM_LEN
-    pu = lambda f: p(UA * f)
-    pl = lambda f: p(UA + S.FOREARM_LEN * f)
-    # manga larga de moletom (ombro arredondado, sem afinar muito até o punho)
-    mb.loft([
-        R(p(-0.038), 0.020, 0.024, {chest: 0.6, ua: 0.4}),
-        R(p(-0.026), 0.040, 0.046, {chest: 0.5, ua: 0.5}),
-        R(p(-0.008), 0.054, 0.060, {chest: 0.3, ua: 0.7}),
-        R(pu(0.08), 0.064, 0.066, {chest: 0.12, ua: 0.88}),
-        R(pu(0.30), 0.062, 0.064, {ua: 1}),
-        R(pu(0.60), 0.058, 0.060, {ua: 1}),
-        R(pu(0.85), 0.055, 0.056, {ua: 1}),
-        R(p(UA + 0.005), 0.052, 0.054, {ua: 0.5, la: 0.5}),
-    ], "sleeve_upper", 8)
-    mb.loft([
-        R(p(UA - 0.005), 0.053, 0.055, {ua: 0.5, la: 0.5}),
-        R(pl(0.30), 0.052, 0.054, {la: 1}),
-        R(pl(0.60), 0.049, 0.051, {la: 1}),
-        R(pl(0.80), 0.047, 0.048, {la: 1}),
-        R(p(w0 - 0.035), 0.040, 0.042, {la: 1}),
-        R(p(w0 - 0.012), 0.036, 0.038, {la: 0.8, hand: 0.2}),
-        R(p(w0 + 0.004), 0.031, 0.033, {la: 0.5, hand: 0.5}),
-    ], "sleeve_lower", 8)
-    # punho fechado de luva, maior que o dela
-    mb.loft([
-        R(p(w0), 0.028, 0.036, {hand: 0.6, la: 0.4}),
-        R(p(w0 + 0.03), 0.033, 0.052, {hand: 1}),
-        R(p(w0 + 0.062), 0.035, 0.056, {hand: 1}),
-        R(p(w0 + 0.088), 0.031, 0.050, {hand: 1}),
-        R(p(w0 + 0.104), 0.019, 0.036, {hand: 1}),
-    ], "hand", 6)
-    a, _ = M.ring_frame(S.side(S.ARM_DIR_L, s))
-    mb.box(p(w0 + 0.045) + Vector((0, -0.057, 0)), a, Y, (0.016, 0.013, 0.03), "hand", {hand: 1})
+def adapt_anims(anims):
+    """Adaptação das poses de animação para a postura de combate masculina."""
+    anims.RUN_LEAN = 7
+    anims.RUN_BODY = dict(anims.RUN_BODY, **{
+        "Spine": (8, 0, 0), "Chest": (4, 0, 0), "Neck": (-4, 0, 0), "Head": (-8, 0, 0),
+    })
+    anims.RUN_HALF = [
+        (f, ((loc[0] * 0.40, loc[1], loc[2]), (hips[0] * 0.70, hips[1] * 0.45), spine, chest, head, leg_l, leg_r,
+             (arm_l[0], arm_l[1] + 2, arm_l[2]), (arm_r[0], arm_r[1] + 2, arm_r[2])))
+        for f, (loc, hips, spine, chest, head, leg_l, leg_r, arm_l, arm_r) in anims.RUN_HALF
+    ]
+    anims.HIT = dict(anims.HIT, **{
+        "Spine": (-10, -4, 0), "Chest": (-16, 8, -3), "Head": (-24, 6, 0),
+        "UpperArm_L": (-16, 0, 18), "LowerArm_L": (14, 0, 0), "UpperArm_R": (-20, 0, 10),
+    })
 
 
-# ------------------------------------------------------------------ pernas e coturno
-def build_leg(mb, s):
-    k = 1 if s == "L" else -1
-    ul, ll, foot, hips = f"UpperLeg_{s}", f"LowerLeg_{s}", f"Foot_{s}", "Hips"
-    # calça cargo reta e larga
-    mb.loft([
-        R((k * 0.085, 0, 0.93), 0.098, 0.104, {hips: 0.5, ul: 0.5}),
-        R((k * 0.09, 0, 0.86), 0.096, 0.100, {hips: 0.2, ul: 0.8}),
-        R((k * 0.092, -0.003, 0.78), 0.089, 0.093, {ul: 1}),
-        R((k * 0.092, -0.006, 0.69), 0.082, 0.085, {ul: 1}),
-        R((k * 0.091, -0.008, 0.60), 0.075, 0.078, {ul: 1}),
-        R((k * 0.09, -0.01, 0.53), 0.069, 0.072, {ul: 1}),
-        R((k * 0.09, -0.01, 0.48), 0.067, 0.070, {ul: 0.5, ll: 0.5}),
-    ], "thigh", 8, v_by_z=True)
-    # canela; a barra embola em cima do cano do coturno (anel mais largo e depois um degrau para dentro)
-    mb.loft([
-        R((k * 0.09, -0.01, 0.51), 0.067, 0.070, {ul: 0.5, ll: 0.5}),
-        R((k * 0.09, -0.005, 0.45), 0.067, 0.069, {ll: 1}),
-        R((k * 0.09, 0.0, 0.38), 0.065, 0.067, {ll: 1}),
-        R((k * 0.09, 0.005, 0.30), 0.063, 0.065, {ll: 1}),
-        R((k * 0.09, 0.008, 0.24), 0.066, 0.068, {ll: 1}),
-        R((k * 0.09, 0.010, 0.215), 0.069, 0.071, {ll: 1}),
-        R((k * 0.09, 0.012, 0.205), 0.054, 0.058, {ll: 1}),
-        R((k * 0.09, 0.015, 0.15), 0.050, 0.056, {ll: 0.8, foot: 0.2}),
-        R((k * 0.09, 0.02, 0.10), 0.051, 0.058, {ll: 0.6, foot: 0.4}),
-        R((k * 0.09, 0.02, 0.08), 0.053, 0.060, {ll: 0.5, foot: 0.5}),
-    ], "shin", 8, v_by_z=True)
-    fr = (X, Z)
-    mb.loft([
-        R((k * 0.09, 0.075, 0.06), 0.050, 0.060, {ll: 0.3, foot: 0.7}, frame=fr),
-        R((k * 0.09, 0.0, 0.06), 0.055, 0.062, {foot: 1}, frame=fr),
-        R((k * 0.09, -0.09, 0.05), 0.057, 0.050, {foot: 1}, frame=fr),
-        R((k * 0.09, -0.165, 0.038), 0.050, 0.036, {foot: 1}, frame=fr),
-        R((k * 0.09, -0.195, 0.030), 0.034, 0.024, {foot: 1}, frame=fr),
-    ], "foot", 6)
-    # bolso cargo na lateral da coxa
-    mb.box(Vector((k * 0.176, -0.01, 0.70)), X, Y, (0.008, 0.05, 0.06), "cargo", {ul: 1})
+def prepare():
+    """Importa Mesh.fbx, aplica pose masculina com braços alinhados e exporta o corpo."""
+    bpy.ops.import_scene.fbx(filepath=str(HB.SRC / "Mesh.fbx"))
+    arm = next(o for o in bpy.context.selected_objects if o.type == "ARMATURE")
+    mesh = next(o for o in bpy.context.selected_objects if o.type == "MESH")
+    mesh.name = "Guerrilla"
+    HB._materials(mesh)
+    zs = [(mesh.matrix_world @ v.co).z for v in mesh.data.vertices]
+    arm.scale = (arm.scale.x * HB.HEIGHT / (max(zs) - min(zs)),) * 3
+    bpy.context.view_layer.update()
+    for o in bpy.data.objects:
+        o.select_set(o in (arm, mesh))
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    for b in arm.data.bones:
+        b.inherit_scale = "NONE"
+    _pose_male(arm)
+    HB._bake(mesh)
+    joints = HB._joints(arm)
+    world = mesh.matrix_world.copy()
+    mesh.parent = None
+    mesh.matrix_world = world
+    bpy.data.objects.remove(arm)
+    for o in bpy.data.objects:
+        o.select_set(o is mesh)
+    bpy.context.view_layer.objects.active = mesh
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    ground = min(v.co.z for v in mesh.data.vertices)
+    shift = Vector((0.0, -joints["hip"].y, -ground))
+    mesh.data.transform(Matrix.Translation(shift))
+    for k in ("shoulder", "hip", "knee", "ankle", "toe"):
+        joints[k] = joints[k] + shift
+    joints["torso"] = {k: (h + shift, t + shift) for k, (h, t) in joints["torso"].items()}
 
-
-def build_gear(mb):
-    # colete de peito simples: três bolsas de carregador
-    for x in (-0.066, 0.0, 0.066):
-        mb.box(Vector((x, -0.152, 1.235)), X, Y, (0.029, 0.017, 0.042), "pouch", {"Chest": 1})
-
-
-def build_all(bone_names):
-    mb = M.MeshBuilder(bone_names, atlas_module=guerrilla_atlas, remap=M._proportion)
-    build_torso(mb)
-    build_head(mb)
-    build_hood(mb)
-    for s in ("L", "R"):
-        build_arm(mb, s)
-        build_leg(mb, s)
-    build_gear(mb)
-    return mb
+    HB._merge_groups(mesh)
+    HO._flat_straps(mesh, joints)
+    _drop_extras(mesh)
+    _reshape_male(mesh, joints)
+    _surfaces(mesh)
+    HO._drop_feet(mesh)
+    _guerrilla_texture(mesh, joints)
+    old_target = HB.TARGET_TRIS
+    HB.TARGET_TRIS = TARGET_TRIS
+    try:
+        HB._decimate(mesh)
+    finally:
+        HB.TARGET_TRIS = old_target
+    for p in mesh.data.polygons:
+        p.use_smooth = True
+    return mesh, joints

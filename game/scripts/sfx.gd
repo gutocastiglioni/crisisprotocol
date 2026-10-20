@@ -10,6 +10,7 @@ const SOUNDS := {
 	"pistol_shot": {"n": 0, "db": 0.0, "unit": 6.0, "max": 80.0, "pitch": 0.05},
 	"m16_shot": {"n": 0, "db": -2.0, "unit": 6.0, "max": 80.0, "pitch": 0.06},
 	"shotgun_shot": {"n": 0, "db": 2.0, "unit": 7.0, "max": 90.0, "pitch": 0.04},
+	"sniper_shot": {"n": 0, "db": 3.0, "unit": 8.0, "max": 110.0, "pitch": 0.04},
 	"shotgun_pump_back": {"n": 0, "db": -6.0, "unit": 2.0, "max": 20.0, "pitch": 0.03},
 	"shotgun_pump_fwd": {"n": 0, "db": -5.0, "unit": 2.0, "max": 20.0, "pitch": 0.03},
 	"weapon_switch": {"n": 0, "db": -8.0, "unit": 1.5, "max": 12.0, "pitch": 0.05},

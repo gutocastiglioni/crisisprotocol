@@ -31,7 +31,7 @@ const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparec
 const RESTART_ACTIONS := ["reset", "interact", "roll", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -43,6 +43,8 @@ var inspect: Inspect
 var raptors: Array[Raptor] = []
 var soldiers: Array[Soldier] = []
 var allosaurus: Allosaurus
+var catwalk: Catwalk
+var sniper: Sniper
 var _hud_daze: Label
 var _end: Control
 var _end_stats: Label
@@ -127,6 +129,18 @@ func _ready() -> void:
 		if not player.dead and not game_over:
 			_end_t = END_DELAY)
 	player.died.connect(_on_player_died)
+	# área suspensa na parede traseira às costas da heroína (com escada)
+	catwalk = Catwalk.new()
+	add_child(catwalk)
+	
+	# inimigo guerrilheiro Sniper no mezanino às costas da heroína
+	sniper = Sniper.new()
+	sniper.target = player
+	sniper.position = Vector3(0, Catwalk.FLOOR_Y, 11.8)
+	sniper.rotation.y = PI  # olhando para frente do galpão (-Z)
+	sniper.route = [Vector3(-2.5, Catwalk.FLOOR_Y, 11.8), Vector3(2.5, Catwalk.FLOOR_Y, 11.8)]
+	add_child(sniper)
+	
 	# soldados de guarda no galpão, cada um com a sua ronda (alarme em comum com os raptors: grupo "enemies")
 	for g in Soldier.GUARDS:
 		var sd := Soldier.new()
@@ -348,6 +362,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			_restart_from_overlay()
 	elif event.is_action_pressed("reset"):
 		reset_all()
+	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_G or event.physical_keycode == KEY_G):
+		var sd: Soldier = soldiers[0] if not soldiers.is_empty() else null
+		if sd:
+			if sd.dead:
+				sd.reset()
+			sd.global_position = player.global_position - player.global_basis.z * 2.8
+			sd.rotation.y = player.rotation.y + PI
+			sd.reset_physics_interpolation()
+			sd.die(-player.global_basis.z, sd.global_position + Vector3.UP * 1.2)
+			show_notice("GUERRILHEIRO RAGDOLL (G para repetir)")
 	elif game_over and _is_restart_event(event):
 		_restart_from_overlay()
 	elif event.is_action_pressed("toggle_help"):
@@ -461,6 +485,9 @@ func reset_all() -> void:
 		r.reset()
 	for sd in soldiers:
 		sd.reset()
+	if is_instance_valid(sniper):
+		sniper.reset()
+		sniper.position = Vector3(0, Catwalk.FLOOR_Y, 11.8)
 	for pk: Pickup in get_tree().get_nodes_in_group("pickups"):
 		pk.reset()
 	allosaurus.reset()
@@ -471,6 +498,7 @@ func reset_all() -> void:
 	_end.visible = false
 	_notice_t = 0.0
 	_headshot_t = 0.0
+	_t = 0.0
 	_play_t = 0.0
 	player.shots_fired = 0
 
@@ -511,10 +539,12 @@ func _parse_args() -> void:
 			player.rotation.y = deg_to_rad(float(v[2])) if v.size() > 2 else 0.0
 			player.camera_rig.yaw = player.rotation.y
 			player.reset_physics_interpolation()
-	if _capture == "":
+	if _capture == "" and _shot == "idle":
 		return
 	_hud_help.visible = _shot == "idle"
-	if _shot.begins_with("soldier") or _shot == "assassinate_soldier":
+	if _shot == "idle_compare":
+		_setup_idle_compare()
+	elif _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_setup_soldier_shot()
 	else:
 		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
@@ -555,10 +585,13 @@ func _parse_args() -> void:
 
 
 func _process(delta: float) -> void:
+	if _crosshair == null:
+		return
 	_crosshair.visible = player.aiming and player.model.is_aimed()
 	var target := player.pick_target()
 	var door := player.pick_door() if target == null else null
-	_prompt.visible = target != null or door != null
+	var ladder := player.pick_ladder() if target == null and door == null else null
+	_prompt.visible = target != null or door != null or ladder != null
 	if target and target.is_locked():
 		# trancado: não diz o que tem dentro
 		_set_prompt(_prompt, "USAR CHAVE (E)" if player.has_key(target.lock) else "ABRIR (E)")
@@ -566,6 +599,9 @@ func _process(delta: float) -> void:
 		_set_prompt(_prompt, "PEGAR %s (E)" % Player.WEAPON_STATS[target.item].name)
 	elif door:
 		_set_prompt(_prompt, "%s (E)" % door.verb)
+	elif ladder:
+		var info: Dictionary = ladder.can_mount(player.global_position)
+		_set_prompt(_prompt, "DESCER ESCADA (E)" if info.get("at_top", false) else "SUBIR ESCADA (E)")
 	_update_weapon_hud()
 	# HUD ampliado (apply_gfx): arma no canto de cima à direita e aviso embaixo no centro, em qualquer proporção
 	var area := get_viewport().get_visible_rect().size / _hud.scale
@@ -600,7 +636,7 @@ func _process(delta: float) -> void:
 		_restart_from_overlay()
 	elif ended and InputMap.has_action("reset") and Input.is_action_just_pressed("reset"):
 		_restart_from_overlay()
-	if _capture == "":
+	if _capture == "" and _shot == "idle":
 		return
 	var prev := _t
 	_t += delta
@@ -669,7 +705,7 @@ func _process(delta: float) -> void:
 					player.camera_rig.look_at_point(dummies[0].model.ragdoll.bodies["Hips"].global_position)
 	if _shot in KEY_SHOTS:
 		_key_shot(at)
-	if _t >= _until:
+	if _capture != "" and _t >= _until:
 		_save_and_quit()
 
 
@@ -689,7 +725,7 @@ func _setup_key_shot() -> void:
 	player.rotation.y = spots[_shot][1]
 	player.reset_physics_interpolation()
 	player.camera_rig.yaw = player.rotation.y
-	if _shot in ["locked", "unlock", "key_get"]:
+	if _shot in ["locked", "unlock", "key_get"] and _capture != "":
 		inspect.on_shown = _save_and_quit
 	if _shot == "unlock":
 		player.add_key(locker.lock)
@@ -825,6 +861,10 @@ func _setup_soldier_shot() -> void:
 	sd.route.clear()
 	for other in soldiers.slice(1):
 		other.process_mode = Node.PROCESS_MODE_DISABLED
+	if _shot == "soldier_idle":
+		sd.sight_range = 0.0
+		sd.target = null
+		sd.model.holstered = true
 	sd.global_position = player.global_position + Vector3(0, 0, -1.6 if _shot == "assassinate_soldier" else -4.0)
 	sd.rotation.y = 0.0 if _shot == "assassinate_soldier" else PI
 	sd.reset_physics_interpolation()
@@ -855,16 +895,53 @@ func _soldier_shot(at: Callable) -> void:
 		elif _shot == "soldier_wounded":
 			player.health = 1000  # só para a revisão: ela aguenta os tiros dele enquanto ele anda sangrando
 			sd.take_hit(45, Vector3.BACK, sd.global_position + Vector3.UP * 1.2)
+		elif _shot == "soldier_idle":
+			pass
 		else:
 			sd.spot()
-	if _review_cam:
+	if _review_cam and _shot == "idle_compare":
+		var yaw := (0.0 if is_nan(_yaw) else _yaw)
+		var dist := 2.5
+		_review_cam.global_position = Vector3(sin(yaw), 0.0, cos(yaw)) * dist + Vector3.UP * 1.38
+		_review_cam.look_at(Vector3(0.0, 1.28, 0.0))
+	elif _review_cam:
 		var body: Vector3 = sd.model.ragdoll.bodies["Hips"].global_position * Vector3(1, 0, 1) if sd.dead else sd.global_position
-		var a := sd.rotation.y + PI + (deg_to_rad(25.0) if is_nan(_yaw) else _yaw)
-		_review_cam.global_position = body + Vector3(sin(a), 0.0, cos(a)) * (2.6 if not sd.dead else 2.2) + Vector3.UP * 1.45
-		_review_cam.look_at(body + Vector3.UP * (1.05 if not sd.dead else 0.2))
+		var a := sd.rotation.y + PI + (0.0 if is_nan(_yaw) else _yaw)
+		var is_idle := _shot == "soldier_idle"
+		_review_cam.fov = 30.0 if is_idle else 45.0
+		var dist := 2.2 if is_idle else (2.6 if not sd.dead else 2.2)
+		var cam_y := 1.38 if is_idle else (1.45 if not sd.dead else 1.45)
+		var target_y := 1.28 if is_idle else (1.05 if not sd.dead else 0.2)
+		_review_cam.global_position = body + Vector3(sin(a), 0.0, cos(a)) * dist + Vector3.UP * cam_y
+		_review_cam.look_at(body + Vector3.UP * target_y)
 
 
 ## Revisão do raptor: posiciona os dois, liga uma câmera própria e força o estado pedido.
+
+func _setup_idle_compare() -> void:
+	for d in dummies:
+		d.visible = false
+	var sd := soldiers[0]
+	sd.route.clear()
+	sd.sight_range = 0.0
+	sd.target = null
+	for other in soldiers.slice(1):
+		other.process_mode = Node.PROCESS_MODE_DISABLED
+	player.global_position = Vector3(-0.65, 0.0, 0.0)
+	player.rotation.y = PI
+	player.reset_physics_interpolation()
+	sd.global_position = Vector3(0.65, 0.0, 0.0)
+	sd.rotation.y = PI
+	sd.reset_physics_interpolation()
+	player.model.holstered = true
+	sd.model.holstered = true
+	_review_cam = Camera3D.new()
+	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	_review_cam.fov = 34.0
+	add_child(_review_cam)
+	_review_cam.current = true
+
+
 func _setup_raptor_shot() -> void:
 	var r := raptors[0]
 	for d in dummies:

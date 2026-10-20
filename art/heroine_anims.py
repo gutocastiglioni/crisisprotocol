@@ -16,7 +16,7 @@ FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
 LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
-         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim")
+         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle")
 
 
 def merge(*poses):
@@ -209,6 +209,48 @@ def actions(sk):
     hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
     dodge_l = M.dodge_side_keys(A, sk)
+    ladder_idle = {
+        "Spine": (5, 0, 0), "Chest": (5, 0, 0), "Neck": (10, 0, 0), "Head": (15, 0, 0),
+        "UpperArm_L": (100, 0, -8), "LowerArm_L": (35, 0, 0),
+        "UpperArm_R": (85, 0, -8), "LowerArm_R": (45, 0, 0),
+        "UpperLeg_L": (25, 0, 4), "LowerLeg_L": (-35, 0, 0), "Foot_L": (10, 0, 0),
+        "UpperLeg_R": (45, 0, 4), "LowerLeg_R": (-65, 0, 0), "Foot_R": (20, 0, 0),
+    }
+    ladder_idle_b = merge(ladder_idle, {"Chest": (3, 0, 0)})
+    ladder_step_a = {
+        "Spine": (4, 0, 0), "Chest": (6, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
+        "UpperArm_L": (115, 0, -10), "LowerArm_L": (25, 0, 0),
+        "UpperArm_R": (70, 0, -8), "LowerArm_R": (55, 0, 0),
+        "UpperLeg_L": (15, 0, 3), "LowerLeg_L": (-20, 0, 0), "Foot_L": (5, 0, 0),
+        "UpperLeg_R": (55, 0, 5), "LowerLeg_R": (-75, 0, 0), "Foot_R": (20, 0, 0),
+    }
+    ladder_step_trans_1 = {
+        "Spine": (4, 0, 0), "Chest": (5, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
+        "UpperArm_L": (90, 0, -9), "LowerArm_L": (40, 0, 0),
+        "UpperArm_R": (95, 0, -9), "LowerArm_R": (35, 0, 0),
+        "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-45, 0, 0), "Foot_L": (12, 0, 0),
+        "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-45, 0, 0), "Foot_R": (12, 0, 0),
+    }
+    ladder_step_b = {
+        "Spine": (4, 0, 0), "Chest": (6, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
+        "UpperArm_L": (70, 0, -8), "LowerArm_L": (55, 0, 0),
+        "UpperArm_R": (115, 0, -10), "LowerArm_R": (25, 0, 0),
+        "UpperLeg_L": (55, 0, 5), "LowerLeg_L": (-75, 0, 0), "Foot_L": (20, 0, 0),
+        "UpperLeg_R": (15, 0, 3), "LowerLeg_R": (-20, 0, 0), "Foot_R": (5, 0, 0),
+    }
+    ladder_step_trans_2 = {
+        "Spine": (4, 0, 0), "Chest": (5, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
+        "UpperArm_L": (95, 0, -9), "LowerArm_L": (35, 0, 0),
+        "UpperArm_R": (90, 0, -9), "LowerArm_R": (40, 0, 0),
+        "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-45, 0, 0), "Foot_L": (12, 0, 0),
+        "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-45, 0, 0), "Foot_R": (12, 0, 0),
+    }
+    ladder_up_keys = [
+        (0, ladder_step_a), (8, ladder_step_trans_1), (15, ladder_step_b), (23, ladder_step_trans_2), (30, ladder_step_a)
+    ]
+    ladder_down_keys = [
+        (0, ladder_step_a), (8, ladder_step_trans_2), (15, ladder_step_b), (23, ladder_step_trans_1), (30, ladder_step_a)
+    ]
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
@@ -228,6 +270,9 @@ def actions(sk):
         "Jump": M.jump_keys(A),
         "Fall": M.fall_keys(A),
         "Hang": M.hang_keys(A, sk),
+        "LadderUp": ladder_up_keys,
+        "LadderDown": ladder_down_keys,
+        "LadderIdle": [(0, ladder_idle), (30, ladder_idle_b), (60, ladder_idle)],
         "ClimbUp": M.climb_keys(A, sk),
         "Mantle": M.mantle_keys(A, sk),
         "RifleHold": [(0, hold), (30, hold_breath), (60, hold)],

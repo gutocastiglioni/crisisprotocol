@@ -50,6 +50,8 @@ const WEAPON_STATS := {
 	# lança-granadas: `damage` = pancada da granada que bate antes de armar (Grenade.ARM_DIST); a explosão é da Grenade
 	"m79": {"cooldown": 1.4, "damage": 60, "pellets": 1, "spread": 0.0, "bloom": 0.0, "max_spread": 0.0,
 		"range": 150.0, "shake": 0.1, "push": 30.0, "hole": 0.0, "casing": "none", "name": "M79", "grenade": true},
+	"sniper": {"cooldown": 1.1, "damage": 80, "pellets": 1, "spread": 0.0, "bloom": 0.0, "max_spread": 0.0,
+		"range": 120.0, "shake": 0.08, "push": 40.0, "hole": 0.09, "casing": "brass", "name": "SNIPER"},
 }
 const BLOOM_DECAY := 4.0  # graus por segundo
 const HEAD_HIT_RADIUS := 0.17  # tiro que passa a esta distância do centro da cabeça é na cabeça
@@ -198,6 +200,12 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("jump") and _jump(wish):
 			return
 		if Input.is_action_just_pressed("interact"):
+			var lad := pick_ladder()
+			if lad:
+				var info: Dictionary = lad.can_mount(global_position)
+				if info.get("can", false):
+					moves.start_ladder(lad, info.get("at_top", false))
+					return
 			var chest := pick_target()
 			if chest and chest.is_locked():
 				locked.emit(chest)
@@ -415,6 +423,19 @@ func collect(kind: String, amount: int) -> bool:
 	return true
 
 
+## Pega uma arma dropada: se ainda não tem, equipa e ganha a munição; se já tem, ganha munição.
+func collect_weapon(w: String, ammo_amount := -1) -> bool:
+	if dead or grabbed:
+		return false
+	if not w in weapons:
+		give_weapon(w)
+		return true
+	if not GameMode.limited_ammo():
+		return false
+	var grant: int = ammo_amount if ammo_amount > 0 else int(GameMode.WEAPON_AMMO.get(w, 15))
+	return collect(w, grant)
+
+
 ## Aviso para o HUD sem repetir a cada quadro (tiro segurado com a arma vazia).
 func _say(text: String) -> void:
 	if _say_cd > 0.0:
@@ -432,6 +453,8 @@ func give_weapon(w: String) -> void:
 		if GameMode.limited_ammo():
 			ammo[w] = ammo_of(w) + int(GameMode.WEAPON_AMMO[w])
 			notice.emit("%s +%d" % [WEAPON_STATS[w].name, GameMode.WEAPON_AMMO[w]])
+		else:
+			notice.emit(WEAPON_STATS[w].name)
 	model.set_weapon(w)
 	model.holster(false)
 
@@ -898,3 +921,21 @@ func respawn() -> void:
 	reset_physics_interpolation()
 	camera_rig.yaw = rotation.y
 	_shape.set_deferred("disabled", false)
+
+
+## Encontra a escada mais próxima que pode ser montada
+func pick_ladder(reach := 1.2) -> Ladder:
+	var best: Ladder = null
+	var best_d := reach
+	for node in get_tree().get_nodes_in_group("ladders"):
+		var lad := node as Ladder
+		if not lad:
+			continue
+		var info: Dictionary = lad.can_mount(global_position, reach)
+		if info.get("can", false):
+			var mount_point: Vector3 = lad.top_pos if info.get("at_top", false) else lad.bottom_pos
+			var d := global_position.distance_to(mount_point)
+			if d < best_d:
+				best = lad
+				best_d = d
+	return best
