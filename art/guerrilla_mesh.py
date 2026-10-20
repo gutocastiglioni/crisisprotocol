@@ -201,7 +201,7 @@ def _reshape_male(mesh, joints):
                     rad = p - axis
                     p = axis + u_dir * ((d_along - w_len) * 0.14 * wa) + rad * (1.0 + 0.28 * wa)
 
-        # 5. pernas: calça cargo bem larga (baggy) idêntica ao modelo da Imagem 1
+        # 5. pernas: calça cargo larga (baggy) com virilha e entrepernas calibrados por tr_guerilla.glb
         for s, k in (("L", 1), ("R", -1)):
             wl = w.get(f"UpperLeg_{s}", 0.0) + w.get(f"LowerLeg_{s}", 0.0)
             if (wl > 0.01 or (wt > 0.01 and p.z < hip_z - 0.02 and k * p.x >= -0.002)) and p.z < hip_z - 0.01 and k * p.x >= -0.008:
@@ -227,36 +227,43 @@ def _reshape_male(mesh, joints):
                 r_new = r_cur + (max(r_cur * 1.12, r_env) - r_cur) * blend
                 if r_cur > 1e-5:
                     tx = leg_x + math.sin(th) * r_new
-                    min_in = 0.002 + 0.005 * max(0.0, min(1.0, (hip_z - 0.08 - p.z) / 0.35))
-                    if k * tx < min_in:
-                        tx = k * min_in
+                    # Margem interna da entreperna calibrada pelo modelo tr_guerilla.glb
+                    in_seam = 0.006 + 0.018 * max(0.0, min(1.0, (hip_z - 0.10 - p.z) / 0.26))
+                    # Preenche o tecido interno da coxa em direção ao gancho para fechar o vão
+                    if k * (p.x - leg_x) < 0.0 and p.z >= knee_z:
+                        inner_t = max(0.0, min(1.0, (abs(leg_x) - k * p.x) / max(abs(leg_x), 1e-4)))
+                        tx_target = k * in_seam
+                        tx = tx + (tx_target - tx) * inner_t * 0.70 * min(1.0, wl * 1.2)
+                    if k * tx < in_seam:
+                        tx = k * in_seam
                     p.x = p.x + (tx - p.x) * blend
                     p.y = p.y + (cy + math.cos(th) * r_new - p.y) * blend
 
-        # 6. pelve: virilha anatômica masculina (braguilha e gancho com volume) e nádegas sob calça cargo
-        if hip_z - 0.22 < p.z < hip_z + 0.05:
-            # Virilha / braguilha masculina com volume anatômico autêntico (elimina o corte feminino para dentro)
+        # 6. pelve: virilha e bunda calibradas com exatidão pelas proporções de tr_guerilla.glb
+        if hip_z - 0.24 < p.z < hip_z + 0.05:
+            # Virilha / braguilha masculina com projeção anatômica de tr_guerilla.glb (Y ~ -0.160 descendo até -0.135)
             if p.y < -0.01 and abs(p.x) < 0.075:
-                # Perfil frontal masculino: braguilha vertical reta e volume da virilha
-                u_z = (p.z - (hip_z - 0.09)) / 0.070
-                z_fade = math.exp(-(u_z ** 2))
-                x_fade = max(0.0, 1.0 - (abs(p.x) / 0.075) ** 1.8)
-                groin_fade = z_fade * x_fade
-                # Projeção anatômica masculina da virilha (-0.104 na braguilha descendo suave até -0.085 no gancho)
-                target_fy = -0.104 + 0.020 * max(0.0, min(1.0, (hip_z - 0.06 - p.z) / 0.14))
-                p.y = min(p.y, target_fy * groin_fade + p.y * (1.0 - groin_fade))
-                # Garante que no gancho central (x < 0.040, z entre 0.81 e 0.91) a virilha não afunde para dentro
-                if abs(p.x) < 0.040 and p.z > hip_z - 0.18:
-                    min_groin_y = -0.088 + 0.012 * max(0.0, (hip_z - 0.12 - p.z) / 0.06)
-                    p.y = min(p.y, min_groin_y)
+                # Perfil frontal da braguilha militar
+                u_z = min(1.0, max(0.0, (hip_z - 0.06 - p.z) / 0.18))
+                # target_fy vai de -0.162 no topo até -0.135 no gancho (medidas de tr_guerilla.glb)
+                target_fy = -0.162 + 0.027 * u_z
+                fly_fade = max(0.0, 1.0 - (abs(p.x) / 0.075) ** 1.8)
+                z_fade = math.exp(-(((p.z - (hip_z - 0.09)) / 0.09) ** 2))
+                alpha_groin = fly_fade * z_fade
+                p.y = min(p.y, target_fy * alpha_groin + p.y * (1.0 - alpha_groin))
+                # Garante que o centro da virilha/gancho (x < 0.04) não recue para trás de -0.135
+                min_y = -0.155 + 0.020 * u_z
+                if abs(p.x) < 0.040 and p.z > hip_z - 0.22:
+                    p.y = min(p.y, min_y)
 
-            # Nádegas masculinas anatômicas sob a calça cargo (volume atlético suave, sem furos nem fendas)
-            elif p.y > 0.02 and abs(p.x) < 0.15:
+            # Bunda masculina anatômica sob a calça cargo (volume glúteo proeminente e contínuo de tr_guerilla.glb: Y ~ +0.130)
+            elif p.y > 0.02 and abs(p.x) < 0.16:
+                dz = p.z - (hip_z - 0.07)
                 dx = abs(p.x) - 0.065
-                dz = p.z - (hip_z - 0.055)
-                mound = math.exp(-((dx / 0.055) ** 2 + (dz / 0.070) ** 2))
-                target_by = 0.075 + 0.032 * mound
-                z_blend = min(1.0, max(0.0, (p.z - (hip_z - 0.19)) / 0.08))
+                mound = math.exp(-((dx / 0.055) ** 2 + (dz / 0.075) ** 2))
+                # Base de +0.095 subindo até +0.130 no ápice glúteo
+                target_by = 0.095 + 0.035 * mound
+                z_blend = min(1.0, max(0.0, (p.z - (hip_z - 0.22)) / 0.08))
                 p.y = max(p.y, target_by * z_blend)
         v.co = p
 
