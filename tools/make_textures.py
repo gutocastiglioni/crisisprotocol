@@ -266,6 +266,28 @@ def paint_shotgun():
     noise("shotgun_wood", 4)
 
 
+def paint_m79():
+    """M79: aço fosfatizado verde-escuro (arestas gastas mais claras) e madeira de nogueira clara com veios."""
+    x, y, w, h = rect("m79")
+    for j in range(h):
+        t = j / (h - 1)
+        c = (92, 98, 82) if t < 0.1 else ((24, 27, 22) if t > 0.88 else (48, 53, 44))
+        hline(x, x + w - 1, y + j, c)
+    d.rectangle([x, y, x + w - 1, y + h - 1], outline=(24, 27, 22))
+    noise("m79", 3)
+    x, y, w, h = rect("m79_wood")
+    rng = random.Random(79)
+    for j in range(h):
+        t = j / (h - 1)
+        base = (138, 92, 52) if 0.1 < t < 0.88 else ((166, 116, 68) if t <= 0.1 else (86, 54, 28))
+        hline(x, x + w - 1, y + j, base)
+    for k in range(6):
+        y0 = y + 5 + k * 4 + rng.randrange(2)
+        pts = [(x + i, y0 + round(1.2 * math.sin(i * 0.15 + k))) for i in range(0, w, 3)]
+        d.line(pts, fill=(104, 66, 34))
+    noise("m79_wood", 4)
+
+
 # ---------------------------------------------------------------- pernas e botas
 def paint_legs():
     x, y, w, h = rect("thigh")
@@ -342,12 +364,14 @@ def main():
     paint_shotgun()
     paint_legs()
     paint_gear()
+    paint_m79()  # por último: o ruído sorteado não muda o que já era pintado antes dela
     # corpo pintado em 256 e ampliado; rosto e cabelo pintados direto em 512 (atlas.TEX_SCALE)
     k = atlas.TEX_SCALE
     big = img.resize((atlas.SIZE * k, atlas.SIZE * k), Image.NEAREST).convert("RGBA")
     paint_clothes.detail(big)
     paint_face.paint_head(big)
     paint_face.paint_hair(big)
+    paint_face.paint_braid(big)
     # sem reduzir a paleta da textura inteira (rosto e cabelo perderiam tons); o corpo já vem com poucas cores
     final = paint_face.pad(big)
     out.parent.mkdir(parents=True, exist_ok=True)

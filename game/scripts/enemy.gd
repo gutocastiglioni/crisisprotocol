@@ -13,12 +13,16 @@ const GRAVITY := 18.0
 # percepção e patrulha
 const SIGHT_RANGE := 14.0
 const CLOSE_SIGHT := 2.5  # até aqui vê em volta toda, não só o cone
-const ALERT_SIGHT := 22.0  # alcance de quem já foi alertado (vê em volta, mas ela ainda pode se esconder)
+const ALERT_SIGHT := 22.0  # alcance de quem já foi alertado (vezes a visibilidade dela: agachada ou no capim ainda se esconde)
+const ALERT_FOV_BONUS := deg_to_rad(35.0)  # alertado olha mais para os lados, mas não vê nas costas (dá para escapar por trás)
+const COMBAT_SENSE := 5.0  # em combate, até aqui sabe onde ela está mesmo agachada (com nada no meio)
 const SUSPECT_AT := 0.3  # atenção a partir da qual para e olha
 const AWARE_DECAY := 0.3  # por segundo, sem nada de novo
-const ALERT_TIME := 25.0  # depois de alertado, fica caçando por este tempo
-const LOSE_TIME := 4.0  # em combate, sem ver a presa por este tempo = foi atrás do último lugar onde a viu
+const ALERT_TIME := 15.0  # depois de alertado, fica caçando por este tempo
+const LOSE_TIME := 3.0  # em combate, sem ver a presa por este tempo = foi atrás do último lugar onde a viu
 const SEARCH_TIME := 6.0
+const ASSASSINATE_RANGE := 2.2  # alcance do abate furtivo pelas costas
+const CRIT_RANGE := 2.5  # alcance do golpe crítico no inimigo caído
 
 @export var target: Player
 ## Pontos (no mundo) da patrulha, percorridos em ciclo. Vazio = fica parado de guarda.
@@ -37,8 +41,10 @@ var patrol_speed := 1.4
 var investigate_speed := 2.4
 var hunt_speed := 4.2
 var head_mult := 2.0  # o tiro na cabeça tira esta vez o dano normal (quem atira multiplica); 1 = sem headshot
+var can_stealth := false  # aceita abate furtivo pelas costas (soldado e velociraptor; alossauro nunca)
+var _stealth_locked := false  # travado no lugar enquanto recebe o golpe furtivo ou crítico
 var aware := 0.0  # 0 = não notou nada, 1 = notou (viu ou ouviu)
-var alert_t := 0.0  # > 0: foi alertado (viu a presa ou ouviu o alarme de outro) e caça sem limite de cone
+var alert_t := 0.0  # > 0: foi alertado (viu a presa ou ouviu o alarme de outro) e caça com cone mais aberto e alcance maior
 var _t := 0.0
 var _dur := 0.0
 var _spawn: Transform3D
@@ -112,13 +118,20 @@ func _enter(s: String, anim: String, blend := 0.15) -> void:
 
 ## Começo de cada passo de física: relógio do alerta, percepção (calmo) ou rastreio da presa (em luta).
 func _tick(delta: float) -> void:
-	if not is_on_floor():
-		velocity.y -= GRAVITY * delta
+	if _stealth_locked:
+		velocity = Vector3.ZERO
+		return
 	_t += delta
 	alert_t = maxf(alert_t - delta, 0.0)
 	if dead:
+		# morto não cai: o soldado sem colisor atravessaria o chão levando o ragdoll (filho do esqueleto dele) junto
+		velocity = Vector3.ZERO
 		return
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
 	_trail.update(self, delta, wound())
+	if state == "down":
+		return
 	if not in_combat():
 		_wake_on_alarm(delta)
 		_perceive(delta)
@@ -128,6 +141,9 @@ func _tick(delta: float) -> void:
 
 ## Estados calmos e de busca (iguais para todo inimigo). Devolve true se `state` era um deles.
 func _calm_state(delta: float) -> bool:
+	if _stealth_locked:
+		_stop(delta)
+		return true
 	match state:
 		"idle":
 			_stop(delta)
@@ -174,12 +190,50 @@ func wound() -> float:
 	return 0.0
 
 
+## Trava o inimigo no lugar durante a execução do abate furtivo ou golpe crítico.
+func stealth_lock(on: bool) -> void:
+	_stealth_locked = on
+	if on:
+		velocity = Vector3.ZERO
+
+
+## Abate furtivo disponível: vivo, fora de combate/alerta, aceita furtivo (soldado ou raptor) e ela está atrás/fora do cone a até ASSASSINATE_RANGE.
+func can_assassinate(p: Player) -> bool:
+	if not can_stealth or dead or in_combat() or state in ["down", "hunt"] or alert_t > 0.0:
+		return false
+	if not is_instance_valid(p) or p.dead:
+		return false
+	var to := _flat(p.global_position - global_position)
+	var d := to.length()
+	if d > ASSASSINATE_RANGE or d < 0.05:
+		return false
+	var local := global_basis.inverse() * to
+	var outside_cone := absf(angle_difference(rotation.y, atan2(-to.x, -to.z))) > fov_half
+	return not _sees_target() and local.z > -0.25 and outside_cone and _line_clear(p)
+
+
+## Golpe crítico disponível no inimigo caído no chão (implementado pelo velociraptor em estado "down").
+func can_crit_strike(_p: Player) -> bool:
+	return false
+
+
+## Recebe o abate furtivo silencioso pelas costas. Quem herda implementa.
+func assassinate(_dir: Vector3, _at: Variant = null) -> void:
+	pass
+
+
+## Recebe o golpe crítico enquanto está caído no chão. Quem herda implementa.
+func crit_strike(_dir: Vector3, _at: Variant = null) -> void:
+	pass
+
+
 ## De volta ao ponto de partida, calmo (ao reiniciar).
 func _reset_enemy() -> void:
 	global_transform = _spawn
 	reset_physics_interpolation()
 	velocity = Vector3.ZERO
 	dead = false
+	_stealth_locked = false
 	aware = 0.0
 	alert_t = 0.0
 	_route_i = 0
@@ -380,12 +434,12 @@ func _patrol(delta: float) -> void:
 func _sight_range() -> float:
 	var vis := target.visibility()
 	if alert_t > 0.0:
-		return ALERT_SIGHT * maxf(vis, 0.5)
+		return ALERT_SIGHT * vis
 	return sight_range * vis
 
 
 ## Vê a presa: dentro do alcance (menor se ela anda devagar, agachada ou no capim), no cone à frente
-## (alertado ou muito perto, em volta toda) e sem nada no meio.
+## (alertado, cone mais aberto; muito perto, em volta toda) e sem nada no meio.
 func _sees_target() -> bool:
 	if not _has_target():
 		return false
@@ -393,19 +447,20 @@ func _sees_target() -> bool:
 	var d := to.length()
 	if d > _sight_range():
 		return false
-	if alert_t <= 0.0 and d > CLOSE_SIGHT and absf(angle_difference(rotation.y, atan2(-to.x, -to.z))) > fov_half:
+	var behind := (global_basis.inverse() * to).z > -0.25
+	var half := fov_half + (ALERT_FOV_BONUS if alert_t > 0.0 else 0.0)
+	if (d > CLOSE_SIGHT or (behind and alert_t <= 0.0)) and absf(angle_difference(rotation.y, atan2(-to.x, -to.z))) > half:
 		return false
 	return _line_clear()
 
 
-## Em combate ele sabe onde ela está se estiver perto ou à vista; escondida e longe, perde o rastro.
+## Em combate ele sabe onde ela está se a vê: perto (COMBAT_SENSE) ou dentro do alcance de alertado, sempre com nada no
+## meio. Atrás de parede/caixa ou agachada no capim, longe, ele perde o rastro.
 func _combat_sees() -> bool:
 	if not _has_target():
 		return false
 	var d := _to_target().length()
-	if d < 5.0:
-		return true
-	return d < ALERT_SIGHT * maxf(target.visibility(), 0.5) and _line_clear()
+	return (d < COMBAT_SENSE or d < ALERT_SIGHT * target.visibility()) and _line_clear()
 
 
 ## Em combate: ela à vista zera o tempo sem vê-la e guarda o lugar onde está.
@@ -419,9 +474,11 @@ func _track_target(delta: float) -> void:
 		_lost_t += delta
 
 
-func _line_clear() -> bool:
+func _line_clear(who: Player = target) -> bool:
+	if not is_instance_valid(who):
+		return false
 	var eye := global_position + Vector3.UP * eye_height
-	var goal := target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	var goal := who.global_position + Vector3.UP * (0.8 if who.crouching else 1.2)
 	var q := PhysicsRayQueryParameters3D.create(eye, goal, 1)
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 

@@ -2,9 +2,10 @@ class_name Soldier
 extends Enemy
 ## Guerrilheiro inimigo (humano encapuzado com M16). Percepção, patrulha e alarme vêm de Enemy (o alarme também chama os raptors, e o
 ## grito de um raptor chama os soldados). Ao vê-la, ergue a arma ("alert", um instante para reagir) e entra em
-## combate ("engage"): mira nela, atira em rajadas de tiro instantâneo (acerta menos de longe, se ela está agachada ou
-## correndo; rolar esquiva) e se mexe: avança se está longe, recua se ela chega perto e anda de lado no resto. Sem vê-la
-## por LOSE_TIME vai ao último lugar onde a viu. Morre em ragdoll, como os alvos de treino.
+## combate ("engage"): mira nela, atira em rajadas longas de tiro instantâneo com descanso curto (acerta menos de longe,
+## se ela está agachada ou correndo, e cada tiro da rajada sobe mais que o anterior; rolar esquiva) e se mexe: avança se
+## está longe, recua se ela chega perto e anda de lado no resto. Ela some atrás de algo: ainda despeja SUPPRESS_TIME de
+## tiros onde ela estava (batem na cobertura). Sem vê-la por LOSE_TIME vai ao último lugar onde a viu. Morre em ragdoll, como os alvos de treino.
 
 signal killed
 signal fired
@@ -16,12 +17,14 @@ const MAX_HEALTH := 60
 const WEAPON := "m16"
 const DAMAGE := 7
 const FIRE_RANGE := 22.0  # alcance do tiro
-const ENGAGE_DIST := 12.0  # mais longe que isto, avança
+const ENGAGE_DIST := 10.0  # mais longe que isto, avança
 const KEEP_DIST := 5.0  # mais perto que isto, recua
-const REACT_TIME := 0.7  # entre vê-la e o primeiro tiro
-const BURST_SHOTS := [2, 4]
-const SHOT_GAP := 0.11
-const REST_TIME := [0.7, 1.5]
+const REACT_TIME := 0.45  # entre vê-la e o primeiro tiro
+const BURST_SHOTS := [4, 7]
+const SHOT_GAP := 0.1
+const REST_TIME := [0.3, 0.7]
+const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anterior vezes isto (o cano sobe)
+const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
 const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "engage", "hit"]
 ## Guardas do galpão: onde começam e a rota (pontos em chão livre, fora da vista de quem começa o jogo).
@@ -34,6 +37,7 @@ var model: HeroineModel
 var health := MAX_HEALTH
 var _shape: CollisionShape3D
 var _burst := 0
+var _burst_i := 0  # tiros já dados na rajada
 var _shot_t := 0.0
 var _rest := 0.0
 var _strafe := 1.0
@@ -65,6 +69,7 @@ func _ready() -> void:
 	investigate_speed = 1.8
 	hunt_speed = Player.RUN_SPEED
 	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
+	can_stealth = true
 	_enemy_ready()
 
 
@@ -124,7 +129,7 @@ func start_engage() -> void:
 	_enter("engage", "Idle", 0.1)
 	model.set_aim(true)
 	_burst = 0
-	_rest = 0.2
+	_rest = 0.1
 	_strafe_t = 0.0
 
 
@@ -163,21 +168,25 @@ func _engage(delta: float) -> void:
 			_strafe = -_strafe
 			dir = Vector3.ZERO
 	_move_aiming(dir, gait, delta)
-	# tiro: rajada de 2 a 4 e descanso, só com ela à vista e a arma já apontada
-	if not sees or not model.is_aimed():
-		return
+	# tiro: rajadas longas e descanso curto com ela à vista; recém-sumida, fogo de supressão onde ela estava
 	_shot_t -= delta
-	if _rest > 0.0:
-		_rest -= delta
-	elif _burst > 0:
-		if _shot_t <= 0.0:
-			_fire()
-			_burst -= 1
-			_shot_t = SHOT_GAP
-			if _burst == 0:
-				_rest = rng.randf_range(REST_TIME[0], REST_TIME[1])
-	elif dist < FIRE_RANGE:
+	_rest = maxf(_rest - delta, 0.0)
+	var suppress := not sees and _lost_t < SUPPRESS_TIME
+	if not (sees or suppress) or not model.is_aimed() or _rest > 0.0:
+		return
+	if _burst == 0:
+		var reach := dist if sees else _flat(_last_known - global_position).length()
+		if reach >= FIRE_RANGE:
+			return
 		_burst = rng.randi_range(BURST_SHOTS[0], BURST_SHOTS[1])
+		_burst_i = 0
+	if _shot_t <= 0.0:
+		_fire(sees)
+		_burst -= 1
+		_burst_i += 1
+		_shot_t = SHOT_GAP
+		if _burst == 0:
+			_rest = rng.randf_range(REST_TIME[0], REST_TIME[1])
 
 
 ## Anda na direção `dir` sem virar o corpo (continua mirando): para a frente/de costas ou de lado, no ritmo da animação.
@@ -197,20 +206,25 @@ func _move_aiming(dir: Vector3, gait: String, _delta: float) -> void:
 		model.set_state("walk", (1.0 if local.z < 0.0 else -1.0) * speed / Moves.speed("walk"))
 
 
-## Um tiro nela: acerta com chance que cai com a distância, se ela está agachada ou correndo; rolando, nunca.
-## Sem linha livre o tiro bate na parede.
-func _fire() -> void:
+## Um tiro nela: acerta com chance que cai com a distância, ao longo da rajada, se ela está agachada ou correndo;
+## rolando, nunca. Sem linha livre o tiro bate na parede. `at_her` = false: supressão, atira no último lugar onde a
+## viu (não acerta; bate na cobertura ou passa).
+func _fire(at_her := true) -> void:
 	shots_fired += 1
 	model.shoot()
 	var parent := get_parent()
 	var muzzle := model.muzzle_position()
 	var chest := target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	if not at_her:
+		chest = _last_known + Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.6, 1.3), rng.randf_range(-0.4, 0.4))
 	var dir := (chest - muzzle).normalized()
 	Fx.muzzle_flash(parent, muzzle, WEAPON, dir)
 	var space := get_world_3d().direct_space_state
 	var block := space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
 	var dist := muzzle.distance_to(chest)
-	var chance := clampf(0.8 - dist * 0.03, 0.15, 0.7)
+	var chance := clampf(0.8 - dist * 0.03, 0.15, 0.7) * pow(BURST_DECAY, _burst_i)
+	if not at_her:
+		chance = 0.0
 	if target.crouching:
 		chance *= 0.8
 	if Vector2(target.velocity.x, target.velocity.z).length() > 3.0:
@@ -234,7 +248,7 @@ func _fire() -> void:
 			Fx.impact(parent, end, false, far.normal, str(far.collider.get_meta("surface", "concrete")))
 	Fx.tracer(parent, muzzle, end, WEAPON)
 	if hit_her:
-		target.take_hit(DAMAGE, dir, chest)  # o sangue sai no take_hit dela
+		target.take_hit(GameMode.enemy_damage(DAMAGE), dir, chest)  # o sangue sai no take_hit dela
 	fired.emit()
 
 
@@ -256,6 +270,18 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 ## Tiro na cabeça de um humano é letal, qualquer arma e distância (a queda de dano com o alcance não salva ninguém).
 func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:
 	take_hit(maxi(amount, health), dir, at, true)
+
+
+## Abate furtivo silencioso pelas costas: mata na hora (100% da vida), esguicha sangue e cai em ragdoll sem dar alarme.
+func assassinate(dir := Vector3.ZERO, at: Variant = null) -> void:
+	if dead:
+		return
+	stealth_lock(false)
+	health = 0
+	var hit: Vector3 = at if at is Vector3 else global_position + Vector3.UP * 1.3
+	var d := dir.normalized() if dir.length() > 0.01 else -global_basis.z
+	Blood.splash(get_parent(), hit, d, -d, 1.2, true)
+	die(d, hit, false)
 
 
 func wound() -> float:
@@ -286,4 +312,5 @@ func reset() -> void:
 	collision_layer = 2
 	_shape.set_deferred("disabled", false)
 	_burst = 0
+	_burst_i = 0
 	_enter("idle", "Idle", 0.0)

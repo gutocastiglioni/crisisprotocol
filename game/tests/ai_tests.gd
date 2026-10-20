@@ -19,6 +19,7 @@ func run(runner: SceneTree) -> void:
 	await test_alarm_calls_others()
 	await test_damage_while_unaware_alarms()
 	await test_loses_target_and_gives_up()
+	await test_alerted_can_hide()
 	await test_yard_nav()
 	await test_main_scene_patrols()
 	await test_doors_seal_rooms()
@@ -275,6 +276,35 @@ func test_loses_target_and_gives_up() -> void:
 		if r.state == "idle":
 			break
 	check(r.state == "idle" and r.alert_t == 0.0 and r.aware == 0.0, "desiste e volta à guarda", "%s %.1f" % [r.state, r.alert_t])
+
+
+## Alertado (caçando/procurando) ele vê mais longe e mais para os lados, mas não nas costas, e agachada ela ainda se
+## esconde; em combate, parede no meio corta o rastro mesmo bem perto. Sem achá-la, esquece e volta à guarda.
+func test_alerted_can_hide() -> void:
+	var pr := await _spawn(Vector3(0, 0, 8))
+	var p: Player = pr[0]
+	var r: Raptor = pr[1]
+	p.crouching = true
+	r.alert_t = Enemy.ALERT_TIME
+	r.start_search()
+	var fought := false
+	for i in 480:
+		await t._frames(1)
+		fought = fought or r.state in Raptor.COMBAT
+	check(not fought, "alertado, procurando: agachada a 8 m na frente não é vista", r.state)
+	check(r.state == "idle" and r.alert_t == 0.0 and r.aware == 0.0, "não a acha: esquece e volta à guarda", "%s %.1f" % [r.state, r.alert_t])
+	# em pé atrás dele, parada: alertado não vê nas costas
+	pr = await _spawn(Vector3(0, 0, -6))
+	r = pr[1]
+	r.alert_t = Enemy.ALERT_TIME
+	await t._frames(90)
+	check(not r.state in Raptor.COMBAT and r.aware < 1.0, "alertado: não vê nas costas", "%s %.2f" % [r.state, r.aware])
+	# em combate, colada mas atrás de parede: perde o rastro
+	pr = await _spawn(Vector3(0, 0, 3))
+	r = pr[1]
+	_wall(pr[2], Vector3(0, 2, 1.5))
+	await t._frames(2)
+	check(not r._combat_sees(), "em combate a 3 m com parede no meio: não sabe onde ela está")
 
 
 func test_yard_nav() -> void:

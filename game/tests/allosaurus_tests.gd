@@ -203,7 +203,11 @@ func test_bite_grab_throw() -> void:
 	check(waist.global_position.distance_to(a.model.mouth_position()) < 0.6, "agarrada pelo corpo (cintura na boca dele)",
 		"%.2f m" % waist.global_position.distance_to(a.model.mouth_position()))
 	var arm: PhysicalBone3D = p.model.ragdoll.bodies[Player.BITTEN_BONE]
-	check(arm.global_position.distance_to(a.model.mouth_position()) > 0.3, "não é pelo braço (como o raptor)")
+	# a boca segura a cintura, não o braço: a cintura fica mais perto da boca que o antebraço (a distância absoluta
+	# depende do comprimento do braço de cada corpo)
+	var arm_d := arm.global_position.distance_to(a.model.mouth_position())
+	var waist_d := waist.global_position.distance_to(a.model.mouth_position())
+	check(arm_d > waist_d + 0.05, "não é pelo braço (como o raptor)", "antebraço %.2f m, cintura %.2f m" % [arm_d, waist_d])
 	var released := await _until(func() -> bool: return not p.grabbed, 150)
 	check(released and a.state in ["throw", "recover"], "solta arremessando", a.state)
 	check(p.health < 100 - Allosaurus.DAMAGE.throw, "sacudida e arremesso tiram vida", str(p.health))
@@ -296,12 +300,37 @@ func test_end_screen() -> void:
 	var a: Allosaurus = main.allosaurus
 	check(a != null and a.global_position.x < Arena.X_NEAR, "cena principal: alossauro na pedreira", str(a.global_position) if a else "-")
 	check(main.raptors.size() == Yard.POSTS.size() + Arena.POSTS.size(), "cena principal: raptors do pátio e da pedreira", str(main.raptors.size()))
-	check(not main.ended, "jogo começa sem a tela de fim")
+	check(not main.ended and not main.game_over, "jogo começa sem a tela de fim ou game over")
 	a.take_hit(Allosaurus.MAX_HEALTH, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
 	await t._frames(int((main.END_DELAY + 0.3) * 60.0))
-	check(main.ended and main._end.visible, "alossauro morto: tela de fim")
+	var title: Label = main._end.get_node("Title")
+	var shade: ColorRect = main._end.get_node("Shade")
+	check(main.ended and main._end.visible and title.text == "FIM" and not shade.visible, "alossauro morto: tela de fim")
 	main.reset_all()
 	await t._frames(2)
 	check(not main.ended and not main._end.visible and not a.dead, "R reinicia: sem tela de fim, alossauro vivo")
+	# Morte da heroína -> atraso para ver o ragdoll cair -> tela de Game Over -> recomeçar com E / Espaço / R
+	var p: Player = main.player
+	p.shots_fired = 7
+	p.take_hit(999, Vector3.BACK, p.global_position + Vector3.UP * 1.2)
+	await t._frames(10)
+	check(p.dead and not main.game_over and not main._end.visible, "morte: espera o corpo cair antes do Game Over")
+	await t._frames(int((main.GAME_OVER_DELAY + 0.2) * 60.0))
+	check(main.game_over and main._end.visible and title.text == "GAME OVER" and shade.visible, "após GAME_OVER_DELAY: tela de Game Over visível com fundo avermelhado", title.text)
+	check("VOCE MORREU" in main._end_stats.text and "TIROS 7" in main._end_stats.text, "tela de Game Over mostra VOCE MORREU e estatísticas", main._end_stats.text)
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(2)
+	check(not main.game_over and not main._end.visible and not p.dead and p.health == 100 and p.shots_fired == 0, "apertar E (interact) na tela de Game Over recomeça a partida")
+	# Morrer de novo e recomeçar com Espaço (roll)
+	p.take_hit(999, Vector3.BACK, p.global_position + Vector3.UP * 1.2)
+	await t._frames(int((main.GAME_OVER_DELAY + 0.3) * 60.0))
+	check(main.game_over and main._end.visible, "segunda morte mostra Game Over novamente")
+	Input.action_press("roll")
+	await t._frames(2)
+	Input.action_release("roll")
+	await t._frames(2)
+	check(not main.game_over and not p.dead and p.health == 100 and not p.rolling, "apertar Espaço (roll) na tela de Game Over recomeça sem sair rolando")
 	main.queue_free()
 	await t.process_frame

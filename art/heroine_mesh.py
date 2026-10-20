@@ -63,6 +63,8 @@ class MeshBuilder:
 
         Cada anel: {"c": centro, "rx", "ry", "w": {osso: peso}, "push": {j: metros}, "arc": (th0, th1)}.
         th = 0 aponta para b (costas), th = pi/2 para a (esquerda), th = pi para a frente.
+        Opcionais: "pts" (a posição de cada j) e "verts" (vértices que já existem: a peça continua de outra, sem
+        emenda). Devolve a grade de vértices (grid[anel][j]).
         """
         n = len(rings)
         frames = []
@@ -89,6 +91,12 @@ class MeshBuilder:
         for i, r in enumerate(rings):
             a, b = frames[i]
             th0, th1 = r.get("arc", arc) if open_ring else (0.0, 2 * math.pi)
+            if "verts" in r:
+                grid.append(list(r["verts"]))
+                continue
+            if "pts" in r:
+                grid.append([self._vert(r["pts"][j], r["w"]) for j in range(count)])
+                continue
             row = []
             for j in range(count):
                 th = th0 + (th1 - th0) * j / sides
@@ -117,7 +125,7 @@ class MeshBuilder:
                     mat,
                 )
         if open_ring:
-            return
+            return grid
         for idx, want_start in ((0, True), (n - 1, False)):
             if not caps[0 if want_start else 1]:
                 continue
@@ -128,6 +136,7 @@ class MeshBuilder:
             if ring_order != want_start:
                 order.reverse()
             self._face([grid[idx][j] for j in order], [self.atlas.uv(rect, j / sides, vs[idx]) for j in order], mat)
+        return grid
 
     def box(self, center, ax, ay, half, rect, weights, mat=MAT_BODY):
         """Caixa orientada (bolsos, coldre, pistola). half = meias-medidas ao longo de ax, ay, ax x ay."""
@@ -381,7 +390,7 @@ def build_all(bone_names):
 
 
 def build_weapon(bone_names, kind):
-    """Pistola, fuzil ou escopeta (sem a telha) numa malha à parte (o Godot mostra só a arma em uso), presa à mão
+    """Pistola, fuzil, escopeta (sem a telha) ou M79 numa malha à parte (o Godot mostra só a arma em uso), presa à mão
     direita."""
     mb = MeshBuilder(bone_names)
     if kind == "pistol":
@@ -391,6 +400,11 @@ def build_weapon(bone_names, kind):
         import heroine_shotgun
 
         heroine_shotgun.build_shotgun(mb, heroine_rifle.grip_rest(), {"Hand_R": 1}, pump=False)
+    elif kind == "m79":
+        import heroine_m79
+        import heroine_rifle
+
+        heroine_m79.build_m79(mb, heroine_rifle.grip_rest(), {"Hand_R": 1})
     else:
         import heroine_rifle
 

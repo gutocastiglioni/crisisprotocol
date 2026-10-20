@@ -129,6 +129,14 @@ def weapon_pickup():
     return finish(x, 0.85)
 
 
+def dry_fire():
+    # arma vazia: o cão cai no vazio (um clique seco e um segundo, mais fraco, do ferrolho)
+    r = rng_for("dry_fire")
+    dur = 0.2
+    x = metal_clack(r, dur, 0.0, 3300, 0.8) + metal_clack(r, dur, 0.06, 2300, 0.35)
+    return finish(x, 0.6)
+
+
 # ------------------------------------------------------------------ impactos
 def impact_concrete(i):
     r = rng_for(f"impact_concrete_{i}")
@@ -289,6 +297,85 @@ def chest_open():
     return finish(x, 0.85)
 
 
+# ------------------------------------------------------------------ M79, explosão, chave e cadeado
+def m79_shot():
+    # "thump": o lança-granadas não estala como fuzil; é um baque grave e oco, com o cano soando um pouco
+    r = rng_for("m79_shot")
+    dur = 1.1
+    t = tt(dur)
+    f = 45 + (130 - 45) * np.exp(-t / 0.03)
+    boom = sweep(dur, f) * decay(dur, 0.12, 0.002)
+    body = lp(noise(r, dur), 900) * decay(dur, 0.05, 0.001)
+    crack = hp(noise(r, dur), 1500) * decay(dur, 0.003, 0.0002) * 0.35
+    ring = modes(dur, [620, 1150, 1840], [0.15, 0.1, 0.06], [0.18, 0.1, 0.05], 0.0, r)
+    x = boom * 1.2 + body * 0.7 + crack + ring
+    return finish(soft_clip(echo(x, [(0.12, 0.2, 900), (0.27, 0.08, 600)]), 1.8), 0.95)
+
+
+def explosion():
+    # granada de 40 mm: estalo, estrondo grave que desce, ronco longo e terra/estilhaços caindo
+    r = rng_for("explosion")
+    dur = 2.8
+    t = tt(dur)
+    crack = hp(noise(r, dur), 800) * decay(dur, 0.012, 0.0003)
+    f = 28 + (75 - 28) * np.exp(-t / 0.08)
+    boom = sweep(dur, f) * decay(dur, 0.35, 0.002)
+    rumble = lp(noise(r, dur), 280) * decay(dur, 0.8, 0.01)
+    mid = lp(noise(r, dur), 1600) * decay(dur, 0.12, 0.002)
+    debris = lp(crackle(r, dur, 60, 0.15, 1.6), 3500) * 0.35
+    x = crack * 0.8 + boom * 1.4 + rumble * 1.2 + mid * 0.8 + debris
+    return finish(soft_clip(echo(x, [(0.18, 0.35, 600), (0.42, 0.2, 400), (0.8, 0.1, 300)]), 2.6), 0.97)
+
+
+def key_drop():
+    # chavinha de latão batendo no concreto e quicando
+    r = rng_for("key_drop")
+    dur = 0.5
+    out = np.zeros(n_of(dur))
+    at, amp = 0.0, 1.0
+    for _ in range(3):
+        freqs = [f * r.uniform(0.94, 1.06) for f in (2600, 4100, 5900)]
+        out += modes(dur, freqs, [0.06, 0.04, 0.025], [1.0, 0.6, 0.35], at, r) * amp
+        out += hp(noise(r, dur), 2500) * decay(dur, 0.002, 0.0001, at) * amp * 0.4
+        at += r.uniform(0.07, 0.12) * amp + 0.03
+        amp *= 0.45
+    return finish(out, 0.7)
+
+
+def lock_rattle():
+    # puxou o cadeado trancado: a haste bate na argola algumas vezes
+    r = rng_for("lock_rattle")
+    dur = 0.55
+    x = bp(noise(r, dur), 2400, 1.5) * bell(dur, 0.0, 0.1, 0.35) * 0.12
+    for at in (0.0, 0.07, 0.13, 0.21, 0.3):
+        x += metal_clack(r, dur, at, r.uniform(1400, 2200), r.uniform(0.5, 1.0))
+    return finish(x, 0.8)
+
+
+def unlock():
+    # a chave entra e gira (cliques), a haste do cadeado salta e ele cai no chão
+    r = rng_for("unlock")
+    dur = 1.4
+    x = bp(noise(r, dur), 3000, 1.2) * bell(dur, 0.0, 0.08, 0.16) * 0.15  # chave entrando
+    x += metal_clack(r, dur, 0.18, 3200, 0.5) + metal_clack(r, dur, 0.27, 2900, 0.6)
+    x += metal_clack(r, dur, 0.36, 1800, 1.1)  # haste salta
+    x += modes(dur, [880, 1640, 2500], [0.09, 0.06, 0.04], [0.8, 0.5, 0.3], 1.0, r)  # cadeado no chão
+    x += thud(r, dur, 1.0, 400, 0.03, 0.6)
+    x += modes(dur, [1000, 1900], [0.05, 0.03], [0.3, 0.2], 1.12, r)
+    return finish(x, 0.85)
+
+
+def item_get():
+    # pegou um item: arpejo curto e limpo (aviso de interface)
+    r = rng_for("item_get")
+    dur = 1.1
+    x = np.zeros(n_of(dur))
+    for k, (at, f) in enumerate([(0.0, 523.25), (0.08, 659.25), (0.16, 783.99), (0.24, 1046.5)]):
+        tau = 0.5 if k == 3 else 0.18
+        x += modes(dur, [f, f * 2.0, f * 3.0], [tau, tau * 0.6, tau * 0.3], [1.0, 0.25, 0.08], at, r)
+    return finish(x, 0.6)
+
+
 # ------------------------------------------------------------------ saída
 SOUNDS = {
     "pistol_shot": pistol_shot,
@@ -298,7 +385,14 @@ SOUNDS = {
     "shotgun_pump_fwd": shotgun_pump_fwd,
     "weapon_switch": weapon_switch,
     "weapon_pickup": weapon_pickup,
+    "dry_fire": dry_fire,
     "chest_open": chest_open,
+    "m79_shot": m79_shot,
+    "explosion": explosion,
+    "key_drop": key_drop,
+    "lock_rattle": lock_rattle,
+    "unlock": unlock,
+    "item_get": item_get,
     "roll": roll,
     "jump": jump,
     "land": land,

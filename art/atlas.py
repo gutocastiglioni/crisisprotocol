@@ -27,6 +27,9 @@ RECTS = {
     "rifle": (128, 128, 128, 32),
     "shotgun": (112, 192, 96, 32),
     "shotgun_wood": (112, 224, 96, 32),
+    "m79": (208, 192, 48, 32),
+    "m79_wood": (208, 224, 48, 32),
+    "braid": (0, 208, 64, 48),  # trança: u = volta do tubo (0 = lado de fora), v = comprimento (gomos alternados)
 }
 
 # Faixas de altura (z em metros) que cada peça vertical ocupa no seu retângulo.

@@ -8,6 +8,7 @@ func run(runner: SceneTree) -> void:
 	await test_guerrilla_asset()
 	await test_soldier_patrol_and_spot()
 	await test_soldier_shoots_and_misses()
+	await test_soldier_presses_fire()
 	await test_soldier_dies()
 	await test_soldier_backs_off()
 	await test_shared_alarm()
@@ -40,8 +41,9 @@ func test_guerrilla_asset() -> void:
 	var base_sk: Skeleton3D = base.find_children("*", "Skeleton3D", true, false)[0]
 	var base_names := []
 	for i in base_sk.get_bone_count():
-		base_names.append(base_sk.get_bone_name(i))
-	check(names == base_names, "guerrilheiro: mesmo esqueleto da heroína", str(names))
+		if not base_sk.get_bone_name(i).begins_with("Braid"):  # a trança dela é só dela
+			base_names.append(base_sk.get_bone_name(i))
+	check(names == base_names, "guerrilheiro: mesmo esqueleto da heroína (sem a trança)", str(names))
 	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
 	var base_ap: AnimationPlayer = base.find_children("*", "AnimationPlayer", true, false)[0]
 	var missing := []
@@ -139,6 +141,45 @@ func test_soldier_shoots_and_misses() -> void:
 	check(p.health == 100, "parede no meio: nenhum tiro chega", str(p.health))
 
 
+## Rajadas longas com descanso curto (sem pausas de segundos) e, quando ela some atrás de algo, um pouco de fogo de
+## supressão onde ela estava, que não a acerta.
+func test_soldier_presses_fire() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 8))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.health = 100000
+	var clock := [0]
+	var times: Array[int] = []
+	s.fired.connect(func() -> void: times.append(clock[0]))
+	s.start_engage()
+	for i in 360:
+		await t._frames(1)
+		clock[0] = i
+	var first := 0
+	while first + 1 < times.size() and times[first + 1] - times[first] < 12:
+		first += 1
+	var longest := 0
+	for i in range(1, times.size()):
+		longest = maxi(longest, times[i] - times[i - 1])
+	check(first + 1 >= Soldier.BURST_SHOTS[0], "rajada de pelo menos %d tiros" % Soldier.BURST_SHOTS[0], str(first + 1))
+	check(times.size() >= 15, "atira muito em 6 s", str(times.size()))
+	check(longest < 60, "nunca para mais de 1 s entre rajadas", "%d quadros" % longest)
+	check(not times.is_empty() and times[0] < 45, "primeiro tiro logo depois de vê-la", str(times[0] if times.size() else -1))
+	# ela some atrás de uma parede: ele ainda atira ali um pouco, sem acertar, e depois para
+	var hp := p.health
+	_wall(pr[2], Vector3(0, 2, 4))
+	await t._frames(2)
+	times.clear()
+	for i in 150:
+		await t._frames(1)
+		clock[0] = i
+	var early := times.filter(func(f: int) -> bool: return f < 70).size()
+	var late := times.filter(func(f: int) -> bool: return f >= 100).size()
+	check(early > 0, "perdeu de vista: fogo de supressão onde ela estava", str(times))
+	check(late == 0, "supressão acaba", str(times))
+	check(p.health == hp, "supressão bate na parede, não nela", str(hp - p.health))
+
+
 func test_soldier_dies() -> void:
 	var pr := await _spawn_soldier(Vector3(0, 0, -6))
 	var s: Soldier = pr[1]
@@ -153,6 +194,8 @@ func test_soldier_dies() -> void:
 	check(s.alert_level() == 0 and not s._marker.visible, "morto não alerta")
 	await t._frames(30)
 	check(is_finite(s.model.ragdoll.bodies["Hips"].global_position.y), "ragdoll sem NaN")
+	await t._frames(180)
+	check(s.global_position.y > -0.5 and s.model.skeleton.global_position.y > -0.5, "morto não afunda no chão (o corpo não some)", str(s.global_position))
 	s.reset()
 	await t._frames(3)
 	check(not s.dead and s.health == Soldier.MAX_HEALTH and s.collision_layer == 2 and not s.model.is_ragdoll(), "reset: de pé e vivo")

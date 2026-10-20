@@ -11,13 +11,24 @@ extends CharacterBody3D
 ## (esguicho a cada golpe, rastro de gotas, poça ao morrer: ver Blood).
 ## Furtividade: `visibility()` (0..1) diz o quanto ela aparece para os raptors (agachada, devagar, parada ou no capim
 ## alto = menos) e os passos, a cambalhota e os tiros fazem barulho que eles ouvem (`make_noise`).
+## Perfil de jogo (GameMode): no "survival" só atira mirando (botão de mirar apertado), com munição limitada
+## (`ammo`, sem recarga: o estoque de cada arma) e cada arma muda o movimento: pistola corre e atira, M16 anda e atira com
+## coice médio, escopeta tem de parar (`weapon_stats`). No "arcade" (o jogo de antes) nada disso vale.
+## M79: em vez do raio, lança uma granada (Grenade) em arco até o ponto da retícula, que explode em área.
+## Chaves (`keys`): pegas no chão (KeyItem); baú trancado (`Chest.lock`) não abre sem a chave dele: apertar interagir
+## nele avisa o main (`locked`), que mostra o cadeado de perto e, com a chave, destranca.
 
 signal health_changed(value: int)
 signal died
 signal headshot(who: Node)
+## aviso para o HUD ("SEM MUNICAO", "PARE PARA ATIRAR", "M16 +15")
+signal notice(text: String)
+## interagiu com um baú trancado (o main mostra o cadeado e, se ela tem a chave, destranca)
+signal locked(chest: Node)
 
 # andando, agachada e mirando, a velocidade é a dos ciclos de passo (Moves.speed): o pé não escorrega
 const RUN_SPEED := 4.4
+const SPRINT_SPEED := 4.2  # corrida forte do survival (SHIFT / L3): acima da corrida normal (3,5), longe de velocista
 const JUMP_SPEED := 4.6  # pulo normal (~0,6 m)
 const AIR_CONTROL := 2.0
 const COYOTE := 0.12  # sem chão por menos que isso ainda conta como no chão (degraus, quinas)
@@ -36,9 +47,15 @@ const WEAPON_STATS := {
 		"range": SHOT_RANGE, "shake": 0.035, "push": 20.0, "hole": 0.08, "casing": "brass", "name": "M16"},
 	"shotgun": {"cooldown": 0.8, "damage": 14, "pellets": 8, "spread": 4.5, "bloom": 0.0, "max_spread": 4.5,
 		"range": 24.0, "shake": 0.14, "push": 9.0, "hole": 0.06, "casing": "shell", "name": "ESCOPETA"},
+	# lança-granadas: `damage` = pancada da granada que bate antes de armar (Grenade.ARM_DIST); a explosão é da Grenade
+	"m79": {"cooldown": 1.4, "damage": 60, "pellets": 1, "spread": 0.0, "bloom": 0.0, "max_spread": 0.0,
+		"range": 150.0, "shake": 0.1, "push": 30.0, "hole": 0.0, "casing": "none", "name": "M79", "grenade": true},
 }
 const BLOOM_DECAY := 4.0  # graus por segundo
 const HEAD_HIT_RADIUS := 0.17  # tiro que passa a esta distância do centro da cabeça é na cabeça
+const DRY_FIRE_TIME := 0.5  # intervalo do clique da arma vazia
+const NOTICE_GAP := 0.8  # o mesmo aviso de "vazia"/"pare" no máximo a cada tanto
+const MAX_HEALTH := 100
 const PICK_RANGE := 0.9  # distância até o lugar de ajoelhar para poder pegar
 const HIP_AIM_TIME := 0.6
 const SHOT_MASK := 1 | 2 | Ragdoll.LAYER
@@ -54,14 +71,22 @@ var crouching := false
 var aiming := false
 var dead := false
 var rolling := false
+var hopping := false  # pulinho de esquiva (survival), na parte invulnerável
 var shots_fired := 0
 var weapons: Array[String] = ["pistol"]
+## chaves pegas (id de KeyItem / Chest.lock); usar a chave a tira daqui
+var keys: Array[String] = []
+## munição de cada arma (só vale com GameMode.limited_ammo)
+var ammo := GameMode.START_AMMO.duplicate()
 var moves: PlayerMoves
 var _shape: CollisionShape3D
 var _air_t := 0.0
 var _jumping := false
 var _shot_cd := 0.0
 var _hip_aim_t := 0.0
+var _lock_t := 0.0  # depois do tiro: o movimento fica preso/lento por um instante (coice)
+var _roll_cd := 0.0
+var _say_cd := 0.0
 var _bloom := 0.0  # dispersão extra de tiros seguidos (graus)
 var _spawn: Transform3D
 ## mordida no braço por um raptor: ragdoll com o antebraço preso à boca dele
@@ -84,6 +109,7 @@ var _trail := Blood.Trail.new()
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1
+	add_to_group("player")
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.28
@@ -129,6 +155,9 @@ func _physics_process(delta: float) -> void:
 		return
 	_shot_cd -= delta
 	_hip_aim_t -= delta
+	_lock_t -= delta
+	_roll_cd -= delta
+	_say_cd -= delta
 	_bloom = maxf(0.0, _bloom - BLOOM_DECAY * delta)
 	if moves.busy():
 		aiming = false
@@ -157,15 +186,24 @@ func _physics_process(delta: float) -> void:
 	if grounded:
 		if Input.is_action_just_pressed("crouch"):
 			crouching = not crouching
-		if Input.is_action_just_pressed("roll"):
+		if Input.is_action_just_pressed("roll") and _roll_cd <= 0.0:
 			make_noise(7.0, 0.7)
-			moves.start_roll(wish.normalized() if wish.length() > 0.1 else -global_basis.z)
+			_roll_cd = GameMode.roll_cooldown()
+			if GameMode.short_dodge():
+				# pulinho para onde o direcional aponta (parado, para trás), ou cambalhota com clique duplo
+				moves.request_dodge(wish.normalized() if wish.length() > 0.1 else global_basis.z)
+			else:
+				moves.start_roll(wish.normalized() if wish.length() > 0.1 else -global_basis.z)
 			return
 		if Input.is_action_just_pressed("jump") and _jump(wish):
 			return
 		if Input.is_action_just_pressed("interact"):
-			if pick_target():
-				moves.start_pickup(pick_target())
+			var chest := pick_target()
+			if chest and chest.is_locked():
+				locked.emit(chest)
+				return
+			if chest:
+				moves.start_pickup(chest)
 				return
 			var door := pick_door()
 			if door:
@@ -182,7 +220,7 @@ func _physics_process(delta: float) -> void:
 		_aim_at(delta)
 		hv = _aim_locomotion(wish)
 	elif crouching:
-		var speed := Moves.speed("crouch_walk") * minf(1.0, wish.length() / 0.6)
+		var speed := Moves.speed("crouch_walk") * GameMode.move_scale() * minf(1.0, wish.length() / 0.6)
 		hv = wish.normalized() * speed
 		if wish.length() > 0.1:
 			_face(wish, delta)
@@ -190,17 +228,19 @@ func _physics_process(delta: float) -> void:
 		else:
 			model.set_state("crouch")
 	else:
-		var walk_btn := Input.is_action_pressed("walk")
+		# survival: SHIFT/L3 é a corrida forte e o andar devagar do teclado fica no ALT; no arcade SHIFT é andar devagar
+		var walk_btn := Input.is_action_pressed("walk_slow" if GameMode.sprint() else "walk")
 		if wish.length() < 0.1:
 			model.set_state("idle")
 		elif walk_btn or wish.length() < 0.6:
 			# andar devagar: com o analógico pela metade, mais devagar ainda (e a animação junto)
-			var speed := Moves.speed("walk") * (1.0 if walk_btn else clampf(wish.length() / 0.6, 0.3, 1.0))
+			var speed := Moves.speed("walk") * GameMode.move_scale() * (1.0 if walk_btn else clampf(wish.length() / 0.6, 0.3, 1.0))
 			hv = wish.normalized() * speed
 			_face(wish, delta)
 			model.set_state("walk", speed / Moves.speed("walk"))
 		else:
-			hv = wish * RUN_SPEED
+			var sprinting := GameMode.sprint() and Input.is_action_pressed("sprint")
+			hv = wish * (SPRINT_SPEED if sprinting else RUN_SPEED * GameMode.move_scale())
 			_face(wish, delta)
 			model.set_state("run", hv.length() / RUN_SPEED)
 	if is_on_floor() and _air_t == 0.0 and velocity.y <= 0.0:
@@ -222,6 +262,16 @@ func _physics_process(delta: float) -> void:
 ## O quanto ela aparece para os inimigos (0..1): multiplica o alcance da visão deles (ver PlayerStealth).
 func visibility() -> float:
 	return stealth.visibility
+
+
+## Inimigo ao alcance para abate furtivo ou golpe crítico (sem mirar), ou null.
+func stealth_target() -> Node3D:
+	return stealth.target()
+
+
+## Instrução para o HUD quando o abate furtivo ou o golpe crítico está disponível ("" = nenhum).
+func stealth_prompt() -> String:
+	return stealth.prompt()
 
 
 ## Barulho no lugar dela que os inimigos a `radius` metros ouvem (a atenção deles sobe até `power`, mais quanto mais perto).
@@ -246,13 +296,19 @@ func _jump(wish: Vector3) -> bool:
 	return false
 
 
-## Mirando: passo lateral, para a frente ou de costas (em pé ou agachada), na velocidade dos ciclos de passo.
+## Mirando: passo lateral, para a frente ou de costas (em pé ou agachada), na velocidade dos ciclos de passo. No perfil
+## "survival" em pé, quem manda é a arma da mão (`_armed_locomotion`); a escopeta trava o movimento em qualquer postura.
 func _aim_locomotion(wish: Vector3) -> Vector3:
+	if GameMode.weapon_handling() and crouching and float(weapon_stats(weapon()).aim_speed) < 0.05:
+		model.set_state("crouch")
+		return Vector3.ZERO
+	if GameMode.weapon_handling() and not crouching:
+		return _armed_locomotion(wish)
 	var prefix := "crouch_" if crouching else ""
 	if wish.length() < 0.1:
 		model.set_state("crouch" if crouching else "idle")
 		return Vector3.ZERO
-	var speed := Moves.speed(prefix + "strafe") * minf(1.0, wish.length())
+	var speed := Moves.speed(prefix + "strafe") * GameMode.move_scale() * minf(1.0, wish.length())
 	var local := global_basis.inverse() * wish
 	if absf(local.x) > absf(local.z):
 		model.set_state(prefix + ("strafe_r" if local.x > 0.0 else "strafe_l"), speed / Moves.speed(prefix + "strafe"))
@@ -260,6 +316,39 @@ func _aim_locomotion(wish: Vector3) -> Vector3:
 		var gait := "crouch_walk" if crouching else "walk"
 		model.set_state(gait, (1.0 if local.z < 0.0 else -1.0) * speed / Moves.speed(gait))
 	return wish.normalized() * speed
+
+
+## Mirando em pé no "survival": quem manda é a arma, sem ela precisar parar. A velocidade máxima é a da arma (`aim_speed`:
+## pistola corre, M16 anda, escopeta trava o movimento) e cai logo depois de cada tiro (`lock_slow`). Para a frente a
+## animação é de corrida ou de andar, de lado o passo lateral e de costas o andar ao contrário, sempre no ritmo da
+## velocidade (o pé não escorrega).
+func _armed_locomotion(wish: Vector3) -> Vector3:
+	var cap := float(weapon_stats(weapon()).aim_speed) * _lock_factor()
+	if wish.length() < 0.1 or cap < 0.05:
+		model.set_state("idle")
+		return Vector3.ZERO
+	var strength := minf(1.0, wish.length())
+	var local := global_basis.inverse() * wish
+	var walk := Moves.speed("walk")
+	var speed: float
+	if absf(local.x) > absf(local.z):
+		speed = minf(cap * strength, Moves.speed("strafe") * 1.8)
+		model.set_state("strafe_r" if local.x > 0.0 else "strafe_l", speed / Moves.speed("strafe"))
+	elif local.z < 0.0:
+		speed = cap * strength
+		if speed > walk * 2.0:
+			model.set_state("run", speed / RUN_SPEED)
+		else:
+			model.set_state("walk", speed / walk)
+	else:
+		speed = minf(cap * 0.7 * strength, walk * 1.6)
+		model.set_state("walk", -speed / walk)
+	return wish.normalized() * speed
+
+
+## Quanto da velocidade sobra enquanto o coice do último tiro segura o movimento (1 = livre).
+func _lock_factor() -> float:
+	return 1.0 if _lock_t <= 0.0 else float(weapon_stats(weapon()).lock_slow)
 
 
 ## Mirando: vira para o ponto sob a retícula e inclina o tronco até a altura dele (o cano aponta para onde o tiro
@@ -280,9 +369,58 @@ func _face(dir: Vector3, delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, target_yaw, 1.0 - exp(-TURN_RATE * delta))
 
 
-## Arma na mão ("pistol", "m16" ou "shotgun").
+## Arma na mão ("pistol", "m16", "shotgun" ou "m79").
 func weapon() -> String:
 	return model.weapon
+
+
+## Números da arma `kind` no perfil de jogo atual (a pistola do "survival" é mais lenta, a escopeta exige parar...).
+func weapon_stats(kind: String) -> Dictionary:
+	return GameMode.weapon_stats(kind, WEAPON_STATS[kind])
+
+
+## Munição da arma `kind` (sempre cheia no "arcade", onde não acaba).
+func ammo_of(kind: String) -> int:
+	return ammo.get(kind, 0) if GameMode.limited_ammo() else 999
+
+
+func has_ammo(kind: String) -> bool:
+	return ammo_of(kind) > 0
+
+
+## Volta ao que ela tem no começo: só a pistola, com a munição inicial do perfil.
+func reset_loadout() -> void:
+	weapons = ["pistol"]
+	ammo = GameMode.START_AMMO.duplicate()
+	model.set_weapon("pistol")
+
+
+## Item do chão: munição de uma arma (`kind` = nome da arma) ou "health". Devolve false se não coube (munição no máximo,
+## vida cheia): o item fica onde está.
+func collect(kind: String, amount: int) -> bool:
+	if dead or grabbed:
+		return false
+	if kind == "health":
+		if health >= MAX_HEALTH:
+			return false
+		health = mini(MAX_HEALTH, health + amount)
+		health_changed.emit(health)
+		notice.emit("VIDA +%d" % amount)
+		return true
+	var room: int = int(GameMode.AMMO_CAP[kind]) - ammo_of(kind)
+	if room <= 0:
+		return false
+	ammo[kind] = ammo_of(kind) + mini(amount, room)
+	notice.emit("%s +%d" % [WEAPON_STATS[kind].name, mini(amount, room)])
+	return true
+
+
+## Aviso para o HUD sem repetir a cada quadro (tiro segurado com a arma vazia).
+func _say(text: String) -> void:
+	if _say_cd > 0.0:
+		return
+	_say_cd = NOTICE_GAP
+	notice.emit(text)
 
 
 ## Recebe uma arma (do baú): entra no inventário e já vai para a mão.
@@ -291,6 +429,9 @@ func give_weapon(w: String) -> void:
 		return
 	if not w in weapons:
 		weapons.append(w)
+		if GameMode.limited_ammo():
+			ammo[w] = ammo_of(w) + int(GameMode.WEAPON_AMMO[w])
+			notice.emit("%s +%d" % [WEAPON_STATS[w].name, GameMode.WEAPON_AMMO[w]])
 	model.set_weapon(w)
 	model.holster(false)
 
@@ -303,7 +444,22 @@ func switch_weapon() -> void:
 	_shot_cd = 0.15
 
 
-## Baú com arma ao alcance (para o aviso de interação e para pegar), ou null.
+## Chave `id` (KeyItem) no bolso.
+func has_key(id: String) -> bool:
+	return id in keys
+
+
+func add_key(id: String) -> void:
+	if not id in keys:
+		keys.append(id)
+
+
+## Gasta a chave (destrancou o que ela abre).
+func use_key(id: String) -> void:
+	keys.erase(id)
+
+
+## Baú com arma ao alcance (para o aviso de interação e para pegar; trancado também, para o aviso), ou null.
 func pick_target() -> Node:
 	if dead or grabbed or moves.busy():
 		return null
@@ -324,11 +480,25 @@ func pick_door() -> Door:
 
 
 func fire() -> void:
-	if _shot_cd > 0.0 or dead or grabbed or moves.busy():
+	if dead or grabbed or moves.busy():
+		return
+	if not aiming and not Input.is_action_pressed("aim") and stealth.try_strike():
+		return
+	if _shot_cd > 0.0:
 		return
 	var kind := weapon()
-	var stats: Dictionary = WEAPON_STATS[kind]
+	var stats := weapon_stats(kind)
+	if GameMode.aim_to_shoot() and not (aiming and model.is_aimed()):
+		return  # sem mira apertada não há tiro (nem retícula): nada de tiro do quadril
+	if not has_ammo(kind):
+		_shot_cd = DRY_FIRE_TIME
+		Sfx.play(self, "dry_fire", model.muzzle_position())
+		_say("SEM MUNICAO")
+		return
 	_shot_cd = stats.cooldown
+	_lock_t = stats.lock
+	if GameMode.limited_ammo():
+		ammo[kind] = ammo_of(kind) - 1
 	shots_fired += 1
 	stealth.shot()
 	make_noise(26.0, 2.2)  # tiro: ouvido de longe, e o clarão a deixa visível
@@ -343,6 +513,12 @@ func fire() -> void:
 	var muzzle := model.muzzle_position()
 	var parent := get_parent()
 	Fx.muzzle_flash(parent, muzzle, kind, ray[1])
+	if stats.get("grenade", false):
+		var skip: Array[RID] = [get_rid()]
+		skip.append_array(model.ragdoll.body_rids())
+		Grenade.launch(parent, muzzle, camera_rig.aim_point(skip), self, int(stats.damage))
+		camera_rig.kick(stats.kick)
+		return
 	if stats.casing == "brass":
 		# janela de ejeção do lado direito, atrás do cano (a escopeta ejeta ao bombear: HeroineModel.shell_ejected)
 		var right := global_basis.x
@@ -351,7 +527,8 @@ func fire() -> void:
 	var exclude: Array[RID] = [get_rid()]
 	exclude.append_array(model.ragdoll.body_rids())
 	var space := get_world_3d().direct_space_state
-	var cone := float(stats.spread) + _bloom
+	var moving := Vector2(velocity.x, velocity.z).length() > 0.5
+	var cone := float(stats.spread) + _bloom + (float(stats.move_spread) if moving else 0.0)
 	_bloom = minf(_bloom + float(stats.bloom), float(stats.max_spread))
 	# dano somado por alvo (os chumbos da escopeta acertam juntos: uma reação só)
 	var hits := {}
@@ -366,6 +543,7 @@ func fire() -> void:
 		if hit.is_empty():
 			continue
 		_pellet_hit(hit, dir, stats, hits)
+	camera_rig.kick(stats.kick)
 	for who: Node in hits:
 		if is_instance_valid(who) and not who.get("dead"):
 			var h: Dictionary = hits[who]
@@ -548,9 +726,9 @@ func _hold_c() -> void:
 		Ragdoll.drag(b[n], goals[n], 8.0, 5.0, base)
 
 
-## Na cambalhota (ou caída, levantando) ela não leva outro golpe.
+## Na cambalhota (ou caída, levantando, ou executando golpe furtivo/crítico) ela não leva outro golpe.
 func is_dodging() -> bool:
-	return rolling or _down_t > 0.0 or _rising
+	return rolling or hopping or _down_t > 0.0 or _rising or moves.mode in ["assassinate", "crit_strike"]
 
 
 func grab(by: Node3D) -> void:
@@ -685,15 +863,25 @@ func die(impulse: Vector3, at: Variant = null) -> void:
 	died.emit()
 
 
+const RESPAWN_ROLL_GRACE := 0.1  # s sem rolar logo depois de renascer
+
+
 func respawn() -> void:
 	moves.cancel()
 	model.stop_ragdoll()
 	dead = false
 	crouching = false
+	aiming = false
 	_jumping = false
-	weapons = ["pistol"]
+	reset_loadout()
+	keys.clear()
 	_bloom = 0.0
-	model.set_weapon("pistol")
+	_shot_cd = 0.0
+	_hip_aim_t = 0.0
+	# o mesmo aperto que recomeçou (Espaço na tela de Game Over) ainda conta como "acabou de apertar" no quadro de física
+	# seguinte: um instante de espera e ela não sai rolando ao renascer
+	_roll_cd = RESPAWN_ROLL_GRACE
+	_lock_t = 0.0
 	grabbed = false
 	grabber = null
 	_stun = 0.0

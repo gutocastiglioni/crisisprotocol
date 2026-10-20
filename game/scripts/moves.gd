@@ -12,7 +12,7 @@ static func data() -> Dictionary:
 	if _data.is_empty():
 		var v: Variant = JSON.parse_string(FileAccess.get_file_as_string(DATA_PATH))
 		# o arquivo vem do build da arte; sem ele (build parcial) nada dos movimentos funciona: falha uma vez, alto
-		assert(v is Dictionary and v.has_all(["fps", "speeds", "roll", "hang", "climb", "mantle", "rifle", "shotgun"]),
+		assert(v is Dictionary and v.has_all(["fps", "speeds", "roll", "dodge", "hang", "climb", "mantle", "rifle", "shotgun", "assassinate", "crit_strike"]),
 			DATA_PATH + " ausente ou incompleto: rode o build da arte (ver CLAUDE.md)")
 		_data = v
 	return _data

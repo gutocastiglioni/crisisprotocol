@@ -181,7 +181,33 @@ def chest(caliber="U.S. 5.56MM", label="RIFLE M16"):
 
 
 def chest_shotgun():
-    return chest("U.S. 12 GAUGE", "SHOTGUN M870")
+    return chest("12 GAUGE", "SHOTGUN M870")
+
+
+def chest_m79():
+    """Container trancado da M79: o mesmo baú, sem estêncil (o que tem dentro é surpresa)."""
+    return chest("", "")
+
+
+def scorch():
+    """Mancha de queimado 128x128 com alfa (explosão da M79): preto no meio, raios e borda irregular."""
+    S = 128
+    r = random.Random(40)
+    img = Image.new("RGBA", (S, S), (20, 18, 16, 0))
+    d = ImageDraw.Draw(img)
+    c = S / 2
+    for k in range(40):
+        a = r.uniform(0, math.tau)
+        ln = r.uniform(0.6, 1.0) * c * 0.95
+        d.line([(c, c), (c + math.cos(a) * ln, c + math.sin(a) * ln)], fill=(28, 24, 20, 255), width=r.randint(2, 4))
+    pts = []
+    for k in range(24):
+        a = k / 24 * math.tau
+        rr = c * r.uniform(0.5, 0.72)
+        pts.append((c + math.cos(a) * rr, c + math.sin(a) * rr))
+    d.polygon(pts, fill=(26, 22, 18, 255))
+    d.ellipse([c - 14, c - 14, c + 14, c + 14], fill=(8, 7, 6, 255))
+    return img
 
 
 def bullet_holes():
@@ -514,7 +540,7 @@ def main():
                      ("chest_shotgun", chest_shotgun), ("bullet_holes", bullet_holes),
                      ("grass", grass), ("dirt", dirt), ("bark", bark), ("leaves", leaves), ("rock", rock),
                      ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx),
-                     ("blood_fx", blood_fx)):
+                     ("blood_fx", blood_fx), ("chest_m79", chest_m79), ("scorch", scorch)):
         fn().save(OUT / f"{name}.png")
         print(OUT / f"{name}.png")
 

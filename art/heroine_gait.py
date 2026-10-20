@@ -73,6 +73,9 @@ def _foot_targets(g, ankle0, toe0, phase):
     return ankle, rot @ foot.normalized()
 
 
+NECK_NOD = 2.5  # graus
+
+
 def frame_pose(g, f):
     """Pose do quadro f (sem as pernas resolvidas)."""
     w = math.pi * f / g.n  # meia volta por passo
@@ -86,6 +89,12 @@ def frame_pose(g, f):
     for bone, k in (("Chest", 0.9), ("Head", -0.3)):
         b = pose.get(bone, (0, 0, 0))
         pose[bone] = (b[0], b[1] + turn * k, b[2])
+    # pescoço solto: acena com o passo (duas vezes por ciclo, junto do sobe e desce) e a cabeça compensa metade
+    nod = NECK_NOD * math.cos(2 * w)
+    n = pose.get("Neck", (0, 0, 0))
+    pose["Neck"] = (n[0] + nod, n[1] - turn * 0.2, n[2])
+    h = pose.get("Head", (0, 0, 0))
+    pose["Head"] = (h[0] - nod * 0.5, h[1], h[2])
     for s, sign in (("L", -1.0), ("R", 1.0)):
         b = pose.get(f"UpperArm_{s}", (0, 0, 0))
         pose[f"UpperArm_{s}"] = (b[0] + sign * g.swing_arm * math.cos(w), b[1], b[2])

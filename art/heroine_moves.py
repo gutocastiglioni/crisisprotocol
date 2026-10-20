@@ -46,12 +46,14 @@ def hermite(fr, vals, f):
             + (-2 * t3 + 3 * t2) * vals[i + 1] + (t3 - t2) * h * s[i + 1])
 
 
-def path_offset(path, f):
-    """Deslocamento da raiz no quadro f, no espaço do Blender (frente = -Y)."""
+def path_offset(path, f, along=None):
+    """Deslocamento da raiz no quadro f, no espaço do Blender (frente = -Y; `along` = outra direção no chão)."""
     if not path:
         return Vector((0, 0, 0))
     fr = [k[0] for k in path]
-    return Vector((0.0, -hermite(fr, [k[1] for k in path], f), hermite(fr, [k[2] for k in path], f)))
+    d = hermite(fr, [k[1] for k in path], f)
+    up = Vector((0.0, 0.0, hermite(fr, [k[2] for k in path], f)))
+    return (along if along is not None else Vector((0.0, -1.0, 0.0))) * d + up
 
 
 def interp_pose(keys, f):
@@ -116,9 +118,10 @@ def _solve_plant(sk, pose, pl, tgt, off):
 PLANT_BONES = {"foot": ("UpperLeg", "LowerLeg", "Foot"), "knee": ("UpperLeg",), "palm": ("UpperArm", "LowerArm")}
 
 
-def bake(sk, name, keys, plants=(), path=None, fix=None):
+def bake(sk, name, keys, plants=(), path=None, fix=None, along=None):
     """Um quadro-chave por quadro: pose desenhada interpolada, ajuste `fix(pose, f)` e apoios resolvidos
-    (cada apoio parte da solução do quadro anterior: sem saltos de um quadro para o outro)."""
+    (cada apoio parte da solução do quadro anterior: sem saltos de um quadro para o outro).
+    `along` = direção do caminho no chão (padrão: frente)."""
     held = {}
     out = []
     worst, where = 0.0, ""
@@ -126,7 +129,7 @@ def bake(sk, name, keys, plants=(), path=None, fix=None):
         pose = interp_pose(keys, f)
         if fix:
             pose = fix(pose, f)
-        off = path_offset(path, f)
+        off = path_offset(path, f, along)
         for pl in plants:
             if not pl.start <= f <= pl.end:
                 continue
@@ -185,7 +188,7 @@ def gaits(A, crouch_guard=None):
         crouch_aim[k] = A.AIM[k]
     return {
         "walk": G.Gait(n=15, speed=0.9, stance=0.58, hip=-0.04, upper=walk_upper),
-        "crouch_walk": G.Gait(n=16, speed=0.8, stance=0.65, hip=-0.33, bob=0.01, sway=0.015, turn=3.0,
+        "crouch_walk": G.Gait(n=11, speed=1.4, stance=0.62, hip=-0.33, bob=0.01, sway=0.015, turn=3.0,
                               lift=0.07, heel=6.0, toe_off=-14.0, swing_arm=0.0, upper=crouch_upper),
         "strafe": G.Gait(n=10, speed=0.75, travel=(1.0, 0.0), stance=0.5, hip=-0.04, bob=0.008, lift=0.05,
                          width=0.08, heel=0.0, toe_off=0.0, swing_arm=0.0, upper=no_legs(A.AIM)),
@@ -248,6 +251,67 @@ def roll_keys(A, sk):
     plants += [Plant("palm", s, 12, 15, ground=0.0) for s in ("L", "R")]
     plants += [Plant("foot", s, 28, 34) for s in ("L", "R")]
     return bake(sk, "Roll", keys, plants, ROLL_PATH, fix)
+
+
+# ------------------------------------------------------------------ esquiva curta (perfil survival)
+# Pulinho sem girar o corpo, para o lado ou para trás: agacha e empurra (0-5), voa baixo (5-10), aterrissa dobrando
+# os joelhos (10-13) e se ergue (13-18). A altura do pulo fica no quadril (loc), não no caminho: a cápsula não sai do
+# chão. DodgeL vai para a esquerda dela (+X no Blender), DodgeR é o espelho e DodgeBack vai para trás (+Y).
+# O jogo a deixa invulnerável até DODGE_GUARD e toca a aterrissagem em DODGE_LAND.
+DODGE_FRAMES = 18
+DODGE_LAND = 10
+DODGE_GUARD = 12
+DODGE_SIDE_PATH = [(0, 0.0, 0.0), (3, 0.06, 0.0), (5, 0.38, 0.0), (8, 1.28, 0.0), (10, 1.74, 0.0), (13, 1.81, 0.0),
+                   (18, 1.82, 0.0)]
+DODGE_BACK_PATH = [(0, 0.0, 0.0), (3, 0.05, 0.0), (5, 0.32, 0.0), (8, 1.05, 0.0), (10, 1.4, 0.0), (13, 1.52, 0.0),
+                   (18, 1.55, 0.0)]
+
+
+def _dodge_plants():
+    plants = [Plant("foot", s, 0, 3) for s in ("L", "R")]
+    return plants + [Plant("foot", s, DODGE_LAND, DODGE_FRAMES) for s in ("L", "R")]
+
+
+def dodge_side_keys(A, sk):
+    """Para a esquerda dela: a perna direita empurra, a esquerda abre e pousa primeiro; o tronco inclina para o lado
+    do salto ao empurrar e para trás dele ao frear. Braços quase simétricos (o espelho troca a mão da arma)."""
+    keys = [
+        (0, A.IDLE),
+        (3, A.merge(arms(25, 6, 50), legs(40, -72, 26, 44, -80, 28, spread=7),
+                    {"loc": (0, -0.15, 0.02), "Spine": (12, 0, -7), "Head": (-10, 0, 7)})),
+        (5, A.merge(arms(28, 18, 40, 22, 6, 50), legs(34, -58, 6, 8, -10, -28, spread=7),
+                    {"UpperLeg_L": (0, 0, 14), "UpperLeg_R": (0, 0, 16), "loc": (0, -0.02, 0),
+                     "Spine": (8, 0, -9), "Head": (-6, 0, 9)})),
+        (8, A.merge(arms(22, 30, 38, 24, 10, 52), legs(30, -38, -6, 46, -90, -12, spread=4),
+                    {"UpperLeg_L": (0, 0, 24), "loc": (0, 0.08, 0), "Spine": (6, 0, -6), "Head": (-6, 0, 6)})),
+        (10, A.merge(arms(24, 24, 42, 22, 8, 50), legs(24, -36, 10, 34, -60, 4, spread=4),
+                     {"UpperLeg_L": (0, 0, 14), "UpperLeg_R": (0, 0, -3), "loc": (0, -0.05, 0),
+                      "Spine": (8, 0, 4), "Head": (-8, 0, -4)})),
+        (13, A.merge(arms(26, 12, 50), legs(50, -92, 32, 46, -86, 30, spread=8),
+                     {"loc": (0, -0.2, 0.02), "Spine": (16, 0, 5), "Head": (-14, 0, -5)})),
+        (18, A.IDLE),
+    ]
+    return bake(sk, "DodgeL", keys, _dodge_plants(), DODGE_SIDE_PATH, along=Vector((1.0, 0.0, 0.0)))
+
+
+def dodge_back_keys(A, sk):
+    """Para trás: as duas pernas empurram juntas, braços à frente para equilibrar, os pés pousam atrás do quadril
+    e o tronco vem para a frente para frear."""
+    keys = [
+        (0, A.IDLE),
+        (3, A.merge(arms(28, 6, 50), legs(42, -76, 28, spread=5),
+                    {"loc": (0, -0.15, 0.03), "Spine": (14, 0, 0), "Head": (-12, 0, 0)})),
+        (5, A.merge(arms(42, 8, 42), legs(8, -14, -26, spread=5), {"loc": (0, -0.02, 0), "Spine": (10, 0, 0),
+                                                                   "Head": (-8, 0, 0)})),
+        (8, A.merge(arms(46, 10, 46), legs(14, -56, -14, 6, -44, -18, spread=5),
+                    {"loc": (0, 0.07, 0), "Spine": (8, 0, 0), "Head": (-6, 0, 0)})),
+        (10, A.merge(arms(40, 8, 46), legs(-4, -30, 8, -8, -24, 6, spread=5),
+                     {"loc": (0, -0.05, 0), "Spine": (12, 0, 0), "Head": (-10, 0, 0)})),
+        (13, A.merge(arms(32, 6, 52), legs(48, -90, 30, spread=6),
+                     {"loc": (0, -0.2, 0.03), "Spine": (20, 0, 0), "Head": (-16, 0, 0)})),
+        (18, A.IDLE),
+    ]
+    return bake(sk, "DodgeBack", keys, _dodge_plants(), DODGE_BACK_PATH, along=Vector((0.0, 1.0, 0.0)))
 
 
 # ------------------------------------------------------------------ pulo e queda (o Godot faz a física)
@@ -365,15 +429,101 @@ def mantle_keys(A, sk):
     plants += [Plant("foot", s, 24, 30, ground=k.z + MANTLE_TOP) for s in ("L", "R")]
     return bake(sk, "Mantle", keys, plants, path)
 
+
+# ------------------------------------------------------------------ abate furtivo e golpe crítico
+ASSASSINATE_FRAMES = 20
+ASSASSINATE_HIT = 8
+ASSASSINATE_PATH = [(0, 0.0, 0.0), (4, 0.15, 0.0), (8, 0.42, 0.0), (14, 0.45, 0.0), (20, 0.45, 0.0)]
+CRIT_FRAMES = 22
+CRIT_HIT = 9
+CRIT_PATH = [(0, 0.0, 0.0), (5, 0.22, 0.0), (9, 0.35, 0.0), (16, 0.35, 0.0), (22, 0.35, 0.0)]
+
+
+def assassinate_keys(A, sk):
+    """Golpe furtivo silencioso pelas costas: avança agachando (0-4), golpeia no pescoço/tronco (8) e recolhe (20)."""
+    keys = [
+        (0, A.IDLE),
+        (4, A.merge(legs(28, -52, 20, 22, -42, 16, spread=5),
+                    {"loc": (0, -0.10, 0), "Spine": (12, -15, 0), "Chest": (8, -20, 0), "Head": (-12, 20, 0),
+                     "UpperArm_R": (-22, -18, 32), "LowerArm_R": (95, 0, 0), "Hand_R": (-10, 0, 0),
+                     "UpperArm_L": (65, 10, -15), "LowerArm_L": (40, 0, 0)})),
+        (ASSASSINATE_HIT, A.merge(legs(20, -38, 12, 42, -74, 24, spread=6),
+                                  {"loc": (0, -0.18, 0), "Spine": (18, 18, 0), "Chest": (10, 24, 0),
+                                   "Head": (-18, -24, 0), "UpperArm_R": (88, 24, -18), "LowerArm_R": (25, 0, 0),
+                                   "Hand_R": (-12, 0, 0), "UpperArm_L": (48, -14, 18), "LowerArm_L": (72, 0, 0)})),
+        (14, A.merge(legs(26, -48, 18, 30, -54, 20, spread=5),
+                     {"loc": (0, -0.10, 0), "Spine": (10, 6, 0), "Chest": (6, 8, 0), "Head": (-10, -8, 0),
+                      "UpperArm_R": (42, -8, 18), "LowerArm_R": (62, 0, 0),
+                      "UpperArm_L": (24, 0, 8), "LowerArm_L": (42, 0, 0)})),
+        (ASSASSINATE_FRAMES, A.IDLE),
+    ]
+    plants = [Plant("foot", "L", 0, 3), Plant("foot", "R", 0, 2),
+              Plant("foot", "R", ASSASSINATE_HIT, ASSASSINATE_FRAMES), Plant("foot", "L", 14, ASSASSINATE_FRAMES)]
+    return bake(sk, "Assassinate", keys, plants, ASSASSINATE_PATH)
+
+
+def crit_strike_keys(A, sk):
+    """Golpe crítico de cima para baixo no inimigo caído: ergue o golpe (0-5), crava no chão (9) e levanta (22)."""
+    keys = [
+        (0, A.IDLE),
+        (5, A.merge(legs(20, -38, 14, 30, -56, 20, spread=5),
+                    {"loc": (0, -0.06, 0), "Spine": (-8, -10, 0), "Chest": (-10, -14, 0), "Head": (16, 10, 0),
+                     "UpperArm_R": (132, -10, 14), "LowerArm_R": (54, 0, 0),
+                     "UpperArm_L": (72, 10, -12), "LowerArm_L": (48, 0, 0)})),
+        (CRIT_HIT, A.merge(legs(62, -104, 34, 68, -110, 36, spread=7),
+                           {"loc": (0, -0.34, 0), "Hips": (10, 0, 0), "Spine": (26, 12, 0), "Chest": (16, 16, 0),
+                            "Head": (8, -12, 0), "UpperArm_R": (66, 12, -8), "LowerArm_R": (14, 0, 0),
+                            "Hand_R": (-15, 0, 0), "UpperArm_L": (34, -10, 16), "LowerArm_L": (64, 0, 0)})),
+        (16, A.merge(legs(44, -78, 26, 48, -84, 28, spread=6),
+                     {"loc": (0, -0.22, 0), "Hips": (4, 0, 0), "Spine": (14, 4, 0), "Chest": (8, 6, 0),
+                      "Head": (2, -4, 0), "UpperArm_R": (38, 0, 10), "LowerArm_R": (52, 0, 0),
+                      "UpperArm_L": (24, 0, 8), "LowerArm_L": (42, 0, 0)})),
+        (CRIT_FRAMES, A.IDLE),
+    ]
+    plants = [Plant("foot", "L", 0, 3), Plant("foot", "R", 0, 2),
+              Plant("foot", "R", CRIT_HIT, CRIT_FRAMES), Plant("foot", "L", CRIT_HIT, CRIT_FRAMES)]
+    return bake(sk, "CritStrike", keys, plants, CRIT_PATH)
+
+
 def data(gait_defs):
     """Medidas que o Godot usa (heroine_moves.json)."""
     return {
         "fps": FPS,
         "speeds": {k: g.speed for k, g in gait_defs.items()},
         "roll": {"frames": ROLL_FRAMES, "path": ROLL_PATH},
+        "dodge": {"frames": DODGE_FRAMES, "land": DODGE_LAND, "guard": DODGE_GUARD, "side": DODGE_SIDE_PATH,
+                  "back": DODGE_BACK_PATH},
         "hang": {"reach": HANG_REACH, "fwd": HANG_FWD, "wall": HANG_WALL, "top": HANG_TOP},
         "climb": {"frames": CLIMB_FRAMES, "hands_until": CLIMB_HANDS_UNTIL, "path": CLIMB_PATH},
         "mantle": {"frames": MANTLE_FRAMES, "hop": list(MANTLE_HOP), "hands": list(MANTLE_HANDS), "rel": MANTLE_REL,
                    "palm_up": MANTLE_PALM_UP, "palm_fwd": MANTLE_PALM_FWD, "wall": MANTLE_WALL, "top": MANTLE_TOP,
                    "min": MANTLE_MIN, "max": MANTLE_MAX},
+        "assassinate": {"frames": ASSASSINATE_FRAMES, "hit": ASSASSINATE_HIT, "path": ASSASSINATE_PATH},
+        "crit_strike": {"frames": CRIT_FRAMES, "hit": CRIT_HIT, "path": CRIT_PATH},
     }
+
+
+SHOULDER_DESIGN, ARM_DESIGN = 1.385, 0.485  # ombro (altura) e braço (ombro ao punho) das medidas acima
+
+
+def adapt(spec):
+    """Borda e obstáculo para outro corpo (heroine_spec.use_joints): as mãos ficam onde o braço dele alcança.
+    Pendurada, o punho fica a ombro + braço (menos a mesma folga) acima dos pés; subindo, o corpo só vai até onde o
+    braço ainda segura a borda; escalando, o punho no topo fica a ombro - braço acima da raiz."""
+    global HANG_REACH, HANG_TOP, HANG_FWD, HANG_WALL, CLIMB_PATH, MANTLE_PALM_UP, MANTLE_TOP, MANTLE_REL
+    ds = spec.SHOULDER_L.z - SHOULDER_DESIGN
+    da = spec.UPPER_ARM_LEN + spec.FOREARM_LEN - ARM_DESIGN
+    reach_old = HANG_REACH
+    HANG_REACH = reach_old + ds + da - 0.02  # 2 cm de folga: o braço não fica esticado no limite
+    HANG_TOP = HANG_REACH - 0.03
+    # ombro mais para trás (y do repouso): o corpo pendura mais perto da parede, a mão fica no mesmo lugar da borda
+    back = max(0.0, spec.SHOULDER_L.y) + 0.02
+    HANG_FWD -= back
+    HANG_WALL -= back
+    # subida máxima com as mãos na borda: ombro ao punho no máximo braço + mão (0,06)
+    k = (ARM_DESIGN + da + 0.06 - SHOULDER_DESIGN - ds + HANG_REACH) / (ARM_DESIGN + 0.06 - SHOULDER_DESIGN + reach_old)
+    globals()["_K"] = k
+    CLIMB_PATH = [(f, a, b * k if f <= CLIMB_HANDS_UNTIL else HANG_TOP) for f, a, b in CLIMB_PATH]
+    MANTLE_PALM_UP = MANTLE_PALM_UP + ds - da
+    MANTLE_TOP = MANTLE_PALM_UP - 0.03
+    MANTLE_REL = [(f, a, MANTLE_TOP if f >= 24 else b) for f, a, b in MANTLE_REL]

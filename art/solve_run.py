@@ -20,20 +20,28 @@ import heroine_anims as A  # noqa: E402
 
 RUN_SPEED = 4.4
 STEP = RUN_SPEED / A.FPS  # quanto o chão anda (para trás, +Y) por quadro
-TRACK_L, TRACK_R = 0.07, -0.02  # linha do pé de apoio e do pé que balança (x; este um pouco para dentro)
-Y0 = -0.28  # pé de apoio no contato, à frente do quadril (pousa perto do corpo e empurra lá atrás)
-FLAT_DROP = 0.055  # ponta abaixo do tornozelo com o pé chato (repouso)
+# medidas do esqueleto (em repouso): tornozelo, ponta do pé, largura do quadril e comprimento da perna
+_rig = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+_foot = _rig.data.bones["Foot_L"]
+ANKLE = _foot.head_local.z  # tornozelo com o pé chato no chão
+ANKLE_X = _foot.head_local.x
+LEG = _rig.data.bones["UpperLeg_L"].head_local.z - ANKLE
+TRACK_L, TRACK_R = ANKLE_X - 0.02, -(ANKLE_X - 0.07)  # linha do pé de apoio e do pé que balança (este para dentro)
+Y0 = -0.28 * LEG / 0.834  # pé de apoio no contato, à frente do quadril (na escala da perna; 0,834 = perna antiga)
+FLAT_DROP = ANKLE - _foot.tail_local.z  # ponta abaixo do tornozelo com o pé chato (repouso)
+A.LOC_SCALE = A.leg_scale(_rig.data.bones["UpperLeg_L"].head_local.z, ANKLE)  # igual ao build
 FLIGHT_Y = -0.03  # quadril no voo: o alto do quique (baixo: corrida de reação, não de atleta)
 
 # quadro: (loc x, quadril, coluna, peito, cabeça, joelho E, perna D (coxa, joelho, pé), braço E, braço D, alvo)
 # ombros, peito e costas giram contra o quadril e levam os braços junto (o peito gira ~11° em relação ao chão;
 # a cabeça desconta e continua olhando para a frente); os braços em si balançam pouco (±14°), cotovelo perto de 90°
 DESIGN = [
-    (0, (0.004, (-9, 1), (6, -1), (14, -1), (-10, 0), -12, (-15, -65, -15), (-14, 4, 82), (14, 3, 92), "heel")),
-    (2, (0.022, (-4, 5), (2, -3), (4, -2), (-2, 0), -40, (10, -95, -10), (-4, 4, 85), (4, 3, 89), "flat")),
-    (3, (0.024, (1, 4), (-1, -2), (-3, -2), (3, 0), -38, (28, -95, -5), (4, 4, 86), (-3, 3, 86), "ball")),
-    (4, (0.022, (4, 3), (-3, -2), (-7, -1), (6, 0), -24, (40, -88, 0), (9, 4, 88), (-8, 3, 85), "toe")),
-    (6, (0.008, (7, 1), (-5, -1), (-12, -1), (9, 0), -50, (40, -45, 0), (13, 4, 90), (-13, 3, 83), "air")),
+    # braços soltos: o ombro balança mais, o cotovelo fica entre 55° e 65° (a pistola aponta para baixo)
+    (0, (0.004, (-9, 1), (6, -1), (14, -1), (-10, 0), -12, (-15, -65, -15), (-20, 4, 58), (20, 3, 64), "heel")),
+    (2, (0.022, (-4, 5), (2, -3), (4, -2), (-2, 0), -40, (10, -95, -10), (-6, 4, 60), (6, 3, 62), "flat")),
+    (3, (0.024, (1, 4), (-1, -2), (-3, -2), (3, 0), -38, (28, -95, -5), (6, 4, 61), (-4, 3, 60), "ball")),
+    (4, (0.022, (4, 3), (-3, -2), (-7, -1), (6, 0), -24, (40, -88, 0), (13, 4, 62), (-11, 3, 58), "toe")),
+    (6, (0.008, (7, 1), (-5, -1), (-12, -1), (9, 0), -50, (40, -45, 0), (19, 4, 64), (-18, 3, 56), "air")),
 ]
 AIR_LEG_L = (-20, -15)  # coxa e pé da esquerda no voo (já fora do chão, dobrando)
 # quadros do apoio entre as poses de desenho: o resto da pose é interpolado e as pernas resolvidas também,
@@ -83,13 +91,13 @@ def errors(f, d, v):
     if kind != "air":
         e["th"] = al.y - (Y0 + STEP * f)
         if kind == "heel":
-            e["y"], e["foot"] = al.z - 0.10, tl.z - (al.z - FLAT_DROP + 0.04)
+            e["y"], e["foot"] = al.z - (ANKLE + 0.015), tl.z - (al.z - FLAT_DROP + 0.04)
         elif kind == "flat":
-            e["y"], e["foot"] = al.z - 0.085, tl.z - (al.z - FLAT_DROP)
+            e["y"], e["foot"] = al.z - ANKLE, tl.z - (al.z - FLAT_DROP)
         elif kind == "ball":  # calcanhar subindo
-            e["y"], e["foot"] = tl.z - 0.03, al.z - 0.10
+            e["y"], e["foot"] = tl.z - 0.03, al.z - (ANKLE + 0.015)
         else:  # ponta: dedos no chão, pé bem empinado
-            e["y"], e["foot"] = tl.z - 0.03, tl.z - (al.z - 0.105)
+            e["y"], e["foot"] = tl.z - 0.03, tl.z - (al.z - (ANKLE + 0.02))
     return e
 
 
@@ -99,7 +107,7 @@ def solve(f, d):
         v["th"], v["foot"] = AIR_LEG_L
         v["y"] = FLIGHT_Y
     names = list(errors(f, d, v))
-    for _ in range(40):  # Newton com jacobiano numérico
+    for _ in range(120):  # Newton com jacobiano numérico
         e = errors(f, d, v)
         if max(abs(x) for x in e.values()) < 1e-4:
             break
@@ -113,8 +121,11 @@ def solve(f, d):
         # resolve J^T dx = -e (J[n][m] = d e_m / d v_n)
         import numpy as np
         dx = np.linalg.solve(np.array(J).T, -np.array([e[m] for m in names]))
-        for n, x in zip(names, dx):
-            v[n] += float(x)
+        for n, x in zip(names, dx):  # passo limitado (o Newton cheio dava voltas no ângulo do pé)
+            lim = 0.02 if n == "y" else 15.0
+            v[n] += max(-lim, min(lim, float(x)))
+            if n != "y":
+                v[n] = (v[n] + 180.0) % 360.0 - 180.0
     e = errors(f, d, v)
     (al, tl), (ar, tr) = points("L"), points("R")
     print(f"[run] quadro {f}: erro máx {max(abs(x) for x in e.values()):.5f}, pé mais baixo {min(al.z, tl.z, ar.z, tr.z):.3f}")

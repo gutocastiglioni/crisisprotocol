@@ -63,14 +63,26 @@ def _skinned_object(rig, name, mb, materials):
     return obj
 
 
+def make_weapons(rig, image_path):
+    """Só as armas em malhas à parte ("Pistol", "M16", "Shotgun", "M79"), com o atlas (o corpo vem de outro lugar:
+    art/heroine_body.py)."""
+    image = bpy.data.images.load(str(image_path))
+    image.pack()
+    body = make_material("HeroineBody", image, double_sided=False)
+    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79")):
+        part = _skinned_object(rig, name, heroine_mesh.build_weapon(S.BONE_NAMES, kind), [body])
+        for poly in part.data.polygons:
+            poly.use_smooth = False  # arma: arestas duras
+
+
 def make_mesh_object(rig, image_path):
-    """Corpo ("Heroine") + armas em malhas à parte ("Pistol", "M16", "Shotgun"), todas com o mesmo atlas."""
+    """Corpo ("Heroine") + armas em malhas à parte ("Pistol", "M16", "Shotgun", "M79"), todas com o mesmo atlas."""
     image = bpy.data.images.load(str(image_path))
     image.pack()
     body = make_material("HeroineBody", image, double_sided=False)
     hair = make_material("HeroineHair", image, double_sided=True)
     obj = _skinned_object(rig, "Heroine", heroine_mesh.build_all(S.BONE_NAMES), [body, hair])
-    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun")):
+    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79")):
         part = _skinned_object(rig, name, heroine_mesh.build_weapon(S.BONE_NAMES, kind), [body])
         for poly in part.data.polygons:
             poly.use_smooth = False  # arma: arestas duras

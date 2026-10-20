@@ -405,7 +405,7 @@ func _hold(_delta: float) -> void:
 	var tick := int(_t / SHAKE_PERIOD)
 	if tick > _ticks and not target.dead:
 		_ticks = tick
-		target.take_hit(DAMAGE.bite, global_basis.x * (1.0 if tick % 2 == 0 else -1.0), model.mouth_position())
+		target.take_hit(GameMode.enemy_damage(DAMAGE.bite), global_basis.x * (1.0 if tick % 2 == 0 else -1.0), model.mouth_position())
 	if _t >= HOLD_TIME:
 		_enter("throw", "Throw", 0.08)
 
@@ -419,7 +419,7 @@ func _throw(_delta: float) -> void:
 			# esquerda dele = -X do corpo (o modelo é girado 180°)
 			var throw := -global_basis.x * 8.0 - global_basis.z * 4.0 + Vector3.UP * 5.0
 			last_hit_at = model.mouth_position()
-			target.take_hit(DAMAGE.throw, throw.normalized(), last_hit_at)
+			target.take_hit(GameMode.enemy_damage(DAMAGE.throw), throw.normalized(), last_hit_at)
 			_release(throw)
 			attacked.emit("throw")
 	if _t >= model.length_of("Throw"):
@@ -438,7 +438,7 @@ func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 		return
 	var hit: Vector3 = at if at is Vector3 else target.global_position + Vector3.UP
 	last_hit_at = hit
-	target.take_hit(DAMAGE[kind], push.normalized(), hit)
+	target.take_hit(GameMode.enemy_damage(DAMAGE[kind]), push.normalized(), hit)
 	if not target.dead:
 		target.launch(push, hit)
 	attacked.emit(kind)

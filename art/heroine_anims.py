@@ -48,8 +48,9 @@ def mirror(pose):
 
 # ------------------------------------------------------------------ poses base
 IDLE = {
+    # o braço direito (o da pistola) igual ao esquerdo: solto ao lado do corpo, pistola apontada para baixo
     "UpperArm_L": (5, 0, -4), "LowerArm_L": (12, 0, 0),
-    "UpperArm_R": (14, 0, -2), "LowerArm_R": (28, 0, 0), "Hand_R": (-10, 0, 0),
+    "UpperArm_R": (5, 0, -4), "LowerArm_R": (12, 0, 0), "Hand_R": (-10, 0, 0),
     "UpperLeg_L": (0, 0, 3), "UpperLeg_R": (0, 0, 3),
 }
 
@@ -142,7 +143,9 @@ def run_key(loc, hips, spine, chest, head, leg_l, leg_r, arm_l, arm_r):
     return merge(RUN_BODY, {
         "loc": loc,
         "Hips": (RUN_LEAN, hips[0], hips[1]),
-        "Spine": (0, spine[0], spine[1]), "Chest": (0, chest[0], chest[1]), "Head": (0, head[0], head[1]),
+        "Spine": (0, spine[0], spine[1]), "Chest": (0, chest[0], chest[1]),
+        # pescoço solto: metade do giro e da inclinação da cabeça vai para ele (não gira só a cabeça, dura)
+        "Neck": (RUN_BODY["Neck"][0], head[0] * 0.5, head[1] * 0.5), "Head": (0, head[0] * 0.5, head[1] * 0.5),
         "UpperLeg_L": (leg_l[0] + RUN_LEAN, 0, leg_l[3]), "LowerLeg_L": (leg_l[1], 0, 0), "Foot_L": (leg_l[2], 0, 0),
         "UpperLeg_R": (leg_r[0] + RUN_LEAN, 0, leg_r[3]), "LowerLeg_R": (leg_r[1], 0, 0), "Foot_R": (leg_r[2], 0, 0),
         # o braço que vai à frente cruza um pouco o corpo (gira para dentro)
@@ -157,12 +160,12 @@ def run_key(loc, hips, spine, chest, head, leg_l, leg_r, arm_l, arm_r):
 # de apoio parado no chão, na linha dele (sem deslizar de lado, mesmo com o gingado) e indo para trás na
 # velocidade da corrida do jogo (Player.RUN_SPEED = 4,4 m/s; 2 * RUN_STEP quadros = 2 passos).
 RUN_HALF = [
-    (0, ((0.004, -0.04, 0), (-9, 1), (6, -1), (14, -1), (-10, 0), (27, -12, 0, 1), (-15, -65, -15, 2), (-14, 4, 82), (14, 3, 92))),
-    (1, ((0.013, -0.044, 0), (-6.5, 3), (4, -2), (9, -1.5), (-6, 0), (24, -26, 1.5, -4), (-2.5, -80, -12.5, 2), (-9, 4, 83.5), (9, 3, 90.5))),
-    (2, ((0.022, -0.072, 0), (-4, 5), (2, -3), (4, -2), (-2, 0), (21.5, -40, 18.5, -9), (10, -95, -10, 2.5), (-4, 4, 85), (4, 3, 89))),
-    (3, ((0.024, -0.066, 0), (1, 4), (-1, -2), (-3, -2), (3, 0), (9.5, -38, 22.5, -8), (28, -95, -5, -2), (4, 4, 86), (-3, 3, 86))),
-    (4, ((0.022, -0.04, 0), (4, 3), (-3, -2), (-7, -1), (6, 0), (-8.5, -24, 11.5, -5), (40, -88, 0, -3), (9, 4, 88), (-8, 3, 85))),
-    (6, ((0.008, -0.03, 0), (7, 1), (-5, -1), (-12, -1), (9, 0), (-20, -50, -15, 2), (40, -45, 0, -1.5), (13, 4, 90), (-13, 3, 83))),
+    (0, ((0.004, -0.034, 0), (-9, 1), (6, -1), (14, -1), (-10, 0), (27, -12, 5.5, 1.5), (-15, -65, -15, 4), (-20, 4, 58), (20, 3, 64))),
+    (1, ((0.013, -0.042, 0), (-6.5, 3), (4, -2), (9, -1.5), (-6, 0), (25, -26, 1, -3), (-2.5, -80, -12.5, 4.5), (-13, 4, 59), (13, 3, 63))),
+    (2, ((0.022, -0.069, 0), (-4, 5), (2, -3), (4, -2), (-2, 0), (23.5, -40, 17, -7.5), (10, -95, -10, 6), (-6, 4, 60), (6, 3, 62))),
+    (3, ((0.024, -0.061, 0), (1, 4), (-1, -2), (-3, -2), (3, 0), (12.5, -38, 15, -6.5), (28, -95, -5, 1.5), (6, 4, 61), (-4, 3, 60))),
+    (4, ((0.022, -0.029, 0), (4, 3), (-3, -2), (-7, -1), (6, 0), (-4, -24, -10.5, -4.5), (40, -88, 0, 0), (13, 4, 62), (-11, 3, 58))),
+    (6, ((0.008, -0.03, 0), (7, 1), (-5, -1), (-12, -1), (9, 0), (-20, -50, -15, 3.5), (40, -45, 0, -0.5), (19, 4, 64), (-18, 3, 56))),
 ]
 
 
@@ -185,6 +188,7 @@ def actions(sk):
     """nome -> lista de (frame, pose). Caminhadas, cambalhota, escalada e fuzil saem por IK (sk = esqueleto)."""
     import heroine_gait as G
     import heroine_moves as M
+    import heroine_m79 as GL
     import heroine_rifle as RF
     import heroine_shotgun as SG
 
@@ -204,6 +208,7 @@ def actions(sk):
     crouch_strafe = G.solve_cycle(sk, g["crouch_strafe"], "CrouchStrafeL")
     hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
+    dodge_l = M.dodge_side_keys(A, sk)
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
@@ -217,6 +222,9 @@ def actions(sk):
         "CrouchStrafeL": crouch_strafe,
         "CrouchStrafeR": G.mirror_lateral(crouch_strafe),
         "Roll": M.roll_keys(A, sk),
+        "DodgeL": dodge_l,
+        "DodgeR": [(f, mirror(p)) for f, p in dodge_l],
+        "DodgeBack": M.dodge_back_keys(A, sk),
         "Jump": M.jump_keys(A),
         "Fall": M.fall_keys(A),
         "Hang": M.hang_keys(A, sk),
@@ -226,7 +234,10 @@ def actions(sk):
         "RifleAim": [(0, rifle_aim), (60, rifle_aim)],
         "RifleShoot": [(0, rifle_aim), (2, rifle_recoil), (4, rifle_aim)],
         "ShotgunShoot": SG.shoot_keys(A, sk, rifle_aim),
+        "M79Shoot": GL.shoot_keys(A, sk, rifle_aim),
         "Pickup": RF.pickup_keys(A, sk, hold),
+        "Assassinate": M.assassinate_keys(A, sk),
+        "CritStrike": M.crit_strike_keys(A, sk),
         "Hit": [(0, IDLE), (3, HIT), (14, IDLE)],
         "Dazed": dazed_keys(),
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],
@@ -242,6 +253,17 @@ def mirror_aim(pose):
     return m
 
 
+# Os deslocamentos do quadril ("loc") das poses foram desenhados para a perna de 0,834 m (quadril ao tornozelo); com
+# outro corpo (a heroína com o modelo base, art/heroine_body.py) o build põe aqui a razão entre as pernas, então agachar, ajoelhar e
+# rolar continuam com os pés no chão.
+LOC_SCALE = 1.0
+LEG_DESIGN = 0.834
+
+
+def leg_scale(hip_z, ankle_z):
+    return (hip_z - ankle_z) / LEG_DESIGN
+
+
 def apply_pose(rig, pose):
     for pb in rig.pose.bones:
         x, y, z = pose.get(pb.name, (0, 0, 0))
@@ -250,7 +272,7 @@ def apply_pose(rig, pose):
         pb.rotation_euler = (math.radians(x), math.radians(y), math.radians(z))
         pb.location = (0, 0, 0)
     loc = pose.get("loc", (0, 0, 0))
-    rig.pose.bones["Hips"].location = loc
+    rig.pose.bones["Hips"].location = tuple(c * LOC_SCALE for c in loc)
 
 
 def make_cyclic(act):

@@ -302,7 +302,7 @@ def paint_balaclava():
 
 def copy_weapons():
     src = Image.open(HEROINE).convert("RGBA")
-    for name in ("pistol", "rifle", "shotgun", "shotgun_wood"):
+    for name in ("pistol", "rifle", "shotgun", "shotgun_wood", "m79", "m79_wood"):
         x, y, w, h = rect(name)
         img.paste(src.crop((x, y, x + w, y + h)), (x, y))
 

@@ -217,6 +217,50 @@ def paint_hair(img):
             px[x0 + i, y0 + j] = _mix((r, g, b), color, 0.6) + (a,)
 
 
+def paint_braid(img, lobes=9):
+    """Trança (retângulo "braid", tubo de art/heroine_head.build_braid): u = volta (0 = lado de fora, 0.25 = esquerda
+    dela), v = comprimento. Lateral x linear na volta (1 = esquerda, -1 = direita; o lado de dentro repete o de fora).
+    Gomo k vem do lado (+ se k par) e desce em diagonal passando do meio, por cima do começo do seguinte:
+    fios ao longo do gomo, brilho no meio e vão escuro só entre um gomo e outro."""
+    x0, y0, w, h = rect512("braid")
+    ss = 4
+    W, H = w * ss, h * ss
+    canvas = Image.new("RGB", (W, H), HAIR_DK)
+    px = canvas.load()
+    for j in range(H):
+        p = j / H * lobes
+        for i in range(W):
+            u = (i + 0.5) / W
+            x = 4 * u if u <= 0.25 else (2 - 4 * u if u <= 0.75 else 4 * u - 4)
+            best = None
+            for k in (int(p) - 1, int(p)):  # o gomo de cima ainda cobre o começo deste
+                t = p - k
+                if k < 0 or t > 1.35:
+                    continue
+                s = 1 if k % 2 == 0 else -1
+                e = (x - s * (1.05 - 1.25 * t)) / (0.85 * math.sin(math.pi * min(t, 1.0) * 0.8 + 0.35))
+                if abs(e) < 1 and (best is None or t > best[0]):
+                    best = (t, e, k, s)
+            if best is None:
+                continue
+            t, e, k, s = best
+            shade = (1 - e * e) ** 0.5 * (0.45 + 0.55 * math.sin(math.pi * min(1.0, t * 0.9 + 0.05)))
+            c = _mix(HAIR_DK, HAIR, min(1.0, 0.25 + shade))
+            gloss = max(0.0, 1 - abs(e + 0.2 * s) / 0.4) * max(0.0, math.sin(math.pi * (t - 0.15) / 0.6))
+            if 0.15 < t < 0.75:
+                c = _mix(c, HAIR_HI, 0.5 * gloss)
+            if math.sin(e * 10 + k * 1.7) > 0.6:  # fios
+                c = _mix(c, HAIR_LO, 0.35)
+            px[i, j] = c
+    braid = canvas.resize((w, h), Image.LANCZOS)
+    bp = braid.load()
+    out = img.load()
+    for j in range(h):
+        for i in range(w):
+            n = rng.randint(-4, 4)
+            out[x0 + i, y0 + j] = tuple(max(0, min(255, c + n)) for c in bp[i, j]) + (255,)
+
+
 def pad(img, bg=(255, 0, 255), passes=6):
     """Espalha a cor das peças por cima do fundo (magenta): com filtro linear e mipmaps a borda não puxa magenta."""
     rgb = img.convert("RGB")

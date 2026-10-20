@@ -7,6 +7,8 @@ const KEYS := {
 	"move_left": [KEY_A, KEY_LEFT],
 	"move_right": [KEY_D, KEY_RIGHT],
 	"walk": [KEY_SHIFT],
+	"sprint": [KEY_SHIFT],
+	"walk_slow": [KEY_ALT],
 	"roll": [KEY_SPACE],
 	"jump": [KEY_F],
 	"interact": [KEY_E],
@@ -17,6 +19,7 @@ const KEYS := {
 	"debug_kill": [KEY_K],
 	"toggle_help": [KEY_F1],
 	"toggle_gfx": [KEY_F2],
+	"toggle_mode": [KEY_F3],
 }
 const MOUSE := {"aim": MOUSE_BUTTON_RIGHT, "shoot": MOUSE_BUTTON_LEFT}
 # posições do controle de PlayStation: A = X, B = bola, X = quadrado, Y = triângulo, BACK = Select
@@ -29,6 +32,7 @@ const JOY_BUTTONS := {
 	"aim": JOY_BUTTON_LEFT_SHOULDER,
 	"shoot": JOY_BUTTON_RIGHT_SHOULDER,
 	"reset": JOY_BUTTON_START,
+	"sprint": JOY_BUTTON_LEFT_STICK,
 }
 # ação: [eixo, sentido]
 const JOY_AXES := {

@@ -76,8 +76,10 @@ def show_weapon(name):
     """Mostra só a arma da ação (o Godot faz o mesmo): escopeta nas Shotgun*, fuzil nas Rifle*/Pickup, pistola
     nas outras."""
     shown = "Shotgun" if name.startswith("Shotgun") else ("M16" if name.startswith(("Rifle", "Pickup")) else "Pistol")
+    if name.startswith("M79"):
+        shown = "M79"
     for o in bpy.data.objects:
-        if o.name in ("Pistol", "M16", "Shotgun", "ShotgunPump"):
+        if o.name in ("Pistol", "M16", "Shotgun", "ShotgunPump", "M79"):
             o.hide_render = not o.name.startswith(shown)
 
 

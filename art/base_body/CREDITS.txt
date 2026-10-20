@@ -1,0 +1,5 @@
+"DinoCrisisCustom - Regina" by Otherspectre (https://sketchfab.com/Otherspectre)
+https://sketchfab.com/3d-models/dinocrisiscustom-regina-4237f76d28de41afbdc2ac0e948b5991
+Licensed under Creative Commons Attribution 4.0 (http://creativecommons.org/licenses/by/4.0/).
+Changes: textures reduced to 512 px; in the build the mesh is posed (arms lowered, fingers closed), re-rigged to
+the game skeleton and reduced in triangles (art/heroine_body.py).

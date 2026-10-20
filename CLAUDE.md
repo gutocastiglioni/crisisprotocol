@@ -13,14 +13,15 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 ## Pastas
 - `art/` — gerador da heroína: `heroine_spec.py` (medidas/ossos), `heroine_mesh.py` (malha por anéis + UV + pesos),
   `heroine_rig.py` (esqueleto, materiais, marcador do cano), `heroine_anims.py` (animações em keyframes),
-  `heroine_head.py` (cabeça esculpida de 16 lados, nariz, cabelo em calota/franja/laterais/cortina com pontas por alfa),
+  `heroine_head.py` (cabeça esculpida de 16 lados, nariz; cabelo por `HAIR_STYLE`: "braid" = calota puxada + franja + trança única
+  nas costas (retângulo "braid" do atlas, pintado em `paint_face.paint_braid`), "loose" = calota/franja/laterais/cortina com pontas por alfa),
   `build_heroine.py` (monta tudo e exporta), `solve_run.py` (resolve pernas/quadril da corrida para o pé de apoio não
   deslizar; imprime `RUN_HALF` para `heroine_anims.py` — rodar com `art/heroine.blend` ao mudar a pose da corrida), `preview.py` (renders de conferência, serve para os dois), `atlas.py` (layout da textura).
   `heroine_ik.py` (FK pelas matrizes de repouso + IK numérica), `heroine_gait.py` (caminhada, agachada e passos
   laterais com o pé de apoio preso no chão por IK), `heroine_moves.py` (cambalhota, pulo/queda, pendurar, subir da
   borda, escalar obstáculo baixo: poses + apoios presos + caminho da raiz), `heroine_rifle.py` (malha do M16, poses
   com o fuzil e a animação de pegar no baú), `heroine_shotgun.py` (malha da escopeta, telha à parte e a animação de
-  tiro com coice e bombeamento).
+  tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot).
   Guerrilheiro encapuzado (inimigo humano): `guerrilla_mesh.py` (malha própria de homem no esqueleto dela: moletom com capuz levantado de dois lados, balaclava, colete,
   calça cargo, coturno), `guerrilla_atlas.py` (layout dela + `cargo`/`cord`),
   `build_guerrilla.py` (mesmo esqueleto/animações; gera `guerrilla.glb`; `art/guerrilla.blend` fica fora do git) e `tools/make_guerrilla_texture.py` (atlas 512 com o layout da heroína).
@@ -37,29 +38,45 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   buracos de bala `bullet_holes.png`, quadros do clarão/fumaça `shot_fx.png` e do sangue `blood_fx.png`),
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
-- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, cenário, pátio da mata `yard.gd`,
+- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
   portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`), `assets/` (gerados — não
-  editar à mão; inclui `m16.glb`/`shotgun.glb` = armas dos baús e `heroine_moves.json` = caminhos/medidas dos movimentos).
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`), `assets/` (gerados — não
+  editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
 - Regerar arte: `python tools/make_textures.py && python tools/make_sounds.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_guerrilla_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py && blender --background --factory-startup --python art/build_guerrilla.py`
   (Blender em `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`)
 - Prévia no Blender: `blender --background art/heroine.blend --python art/preview.py -- <pasta> turntable|anims|Acao:f1,f2` (ou `art/raptor.blend`)
 - Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 240 s)
-- Rodar o jogo: `godot --path game` (F2 alterna o visual PS1/PS2; `-- --gfx=ps2` já começa no PS2)
+- Rodar o jogo: `godot --path game` (F2 alterna o visual PS1/PS2; `-- --gfx=ps2` já começa no PS2; F3 alterna o perfil SOBREVIVENCIA/ARCADE e reinicia; `-- --mode=arcade` já começa no arcade)
 - Captura do jogo: `godot --path game -- --capture=out.png --shot=idle|aim|run|crouch|roll|ragdoll|dummy [--yaw=graus] [--at=segundos]`
   Rosto: `--shot=face [--yaw=graus]`. Visual: `--gfx=ps1|ps2`.
-  Movimentos: `--shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim`.
+  Movimentos: `--shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|dodge_l|dodge_r|dodge_back|dodge_roll`.
   Armas: `--shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump` (tiros na pilha de caixas;
   a captura imprime `buracos=`).
   Raptor: `--shot=raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead|raptor_idle [--playercam]`
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
+  Container/chave/M79: `--shot=locked|unlock|key_drop|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
+  tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão).
   Alossauro: `--shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end [--playercam]`; pedreira: `--shot=arena`.
   Depois de regerar um .glb/.png, `godot --headless --path game --import` (rodar o jogo não reimporta sozinho).
   (a primeira execução depois de editar scripts reimporta o projeto e pode sair com a cena errada: rode de novo).
 
 ## Convenções
+- Perfil de jogo (`GameMode`, padrão `survival`; F3 ou `--mode=arcade|survival`): **os dois perfis ficam vivos e testados**, nada do
+  jogo de ação de antes foi apagado, para servir de base a outro jogo. `arcade` = o jogo de antes (câmera livre que volta atrás dela,
+  munição infinita, tiro do quadril liga a mira temporária, inimigos com o dano base, sem itens). `survival` (RE4 Remake + Dino
+  Crisis 2): câmera por cima do ombro direito sem voltar sozinha (`CameraRig.SHOULDER`, coice `kick`), anda/corre a 80%
+  (`move_scale`; SHIFT/L3 = corrida forte `Player.SPRINT_SPEED` 4,2 m/s, andar devagar passa para ALT; no arcade SHIFT segue sendo andar), esquiva = pulinho curto em vez da cambalhota (`GameMode.short_dodge`, `PlayerMoves.start_dodge`: parada ou direcional para trás = DodgeBack ~1,5 m, senão de lado DodgeL/DodgeR ~1,8 m virando o mínimo; invulnerável até `dodge.guard` do heroine_moves.json; poses em `heroine_moves.dodge_*_keys`; o primeiro X espera `PlayerMoves.DOUBLE_TAP` = 0,2 s (`dodge_wait`, já invulnerável, no embalo de antes): veio o segundo = cambalhota direto, sem pulinho; não veio = pulinho) com intervalo de 1,4 s, a retícula só existe com o botão de mirar apertado e só atira mirando (sem
+  mira apertada não há tiro), inimigos machucam ×2 (`GameMode.enemy_damage`, usado em todo `take_hit` de inimigo na jogadora),
+  munição limitada sem recarga (`Player.ammo`, HUD "PISTOLA 10", clique `dry_fire` e aviso quando acaba; `START_AMMO`/`WEAPON_AMMO`
+  do baú/`AMMO_CAP`) e itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
+  o teste confere que estão em chão livre). Cada arma manda no movimento enquanto o botão de mirar está apertado, sem a jogadora
+  precisar parar (`aim_speed`/`lock`/`lock_slow` em `GameMode.SURVIVAL_WEAPONS`, `Player._armed_locomotion`): pistola corre e atira
+  (coice mínimo), M16 vira andar devagar e atira (coice médio, o tiro a desacelera mais), escopeta trava o movimento sozinha (só gira
+  a mira; também agachada). Soltou a mira, volta a andar/correr normal.
+  Os números das armas lidos pelo jogo vêm de `Player.weapon_stats(kind)` (o `WEAPON_STATS` é o do arcade). Teste novo nos dois
+  perfis: `run_tests.gd` roda tudo no `arcade` (comportamento antigo intacto) e `survival_tests.gd` cobre o novo.
 - Blender: Z para cima, personagem olha para -Y, lado esquerdo dela em +X. No Godot o modelo é girado 180° (frente = -Z).
 - Ossos sem ponto no nome (`UpperArm_L`), para virarem nomes válidos no Godot.
 - Ângulos das animações: ver cabeçalho de `art/heroine_anims.py` (X>0 dobra para a frente, joelho dobra com X<0).
@@ -75,9 +92,13 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `SIGHT_RANGE * Player.visibility()`: parada 0,7, andando 0,75, correndo/rolando/atirando 1, agachada 0,3–0,45, capim alto ×0,5 agachada)
   e pelo barulho (`hear_noise`: passos de corrida 10 m, andando 4 m, agachada 2 m, tiro 26 m). A atenção (`aware`) sobe → `suspicious`
   (para e olha, "?") → `investigate` (vai ao ponto do barulho) ou, se a vê, `spot()` = grito + `on_alarm` nos outros do grupo "raptors"
-  (`hunt` até o último ponto + visão em volta toda, "!"; o grupo "enemies" mistura raptors e soldados). Em combate sem vê-la por `LOSE_TIME` → `hunt` → `search` → volta à rota.
-  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS`; `alert` (reage 0,7 s) → `engage` (mira, rajadas de 2–4
-  tiros instantâneos, chance de acerto cai com distância/agachada/correndo, rolar esquiva; avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
+  (`hunt` até o último ponto, "!"; o grupo "enemies" mistura raptors e soldados). Alertado (`alert_t`, `ALERT_TIME` 15 s) vê com cone
+  mais aberto (`ALERT_FOV_BONUS`, nunca nas costas) e alcance `ALERT_SIGHT * visibility()` (agachada/capim ainda esconde). Em combate só
+  sabe onde ela está com linha livre (`_combat_sees`, `COMBAT_SENSE`): parede/caixa corta o rastro; sem vê-la por `LOSE_TIME` (3 s) →
+  `hunt` → `search` → esquece (`alert_t`/`aware` = 0) e volta à rota.
+  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS`; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
+  tiros instantâneos com descanso de 0,3–0,7 s, chance de acerto cai com distância/agachada/correndo e a cada tiro da rajada (`BURST_DECAY`),
+  rolar esquiva; ela some atrás de algo = `SUPPRESS_TIME` de fogo de supressão onde ela estava, que não acerta; avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
   Caminhos: `NavigationServer3D` com a malha de `Yard.bake_nav` (sem malha, anda reto desviando com raios). Testes: `ai_tests.gd`.
 - Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), clareira de capim com estrada de terra
   até um portão, árvores/arbustos/pedras/troncos, touceiras de capim alto (grupo "cover", meta "radius"), 3 raptors em `Yard.POSTS` com rotas.
@@ -97,7 +118,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Morte em ragdoll → sinal `killed` → tela de fim do `main` (FIM, tempo, tiros; R reinicia). Atordoada: estado "dazed" da
   heroína (animação Dazed), aviso "ATORDOADA" no HUD; golpe, mordida ou reinício acabam com ela.
 - Controles novos: F / quadrado = pular (com borda à frente: escala até MANTLE_MAX ou pula e fica pendurada; pendurada,
-  frente/pular sobe e trás/agachar solta), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / X = cambalhota.
+  frente/pular sobe e trás/agachar solta), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / X = cambalhota (survival: pulinho de esquiva).
 - Movimentos com deslocamento (cambalhota, subir, escalar, pegar): o caminho da raiz sai do Blender (`*_PATH` em
   `heroine_moves.py`, gravado em heroine_moves.json) e o Godot segue o mesmo caminho (`Moves.hermite`, igual ao Python).
   Mudou pose/caminho: regerar a arte e rodar os testes (conferem mãos na borda e pé sem deslizar).
@@ -113,6 +134,18 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   pegam (RIFLE_CHEST, em relação à raiz dela ajoelhada a `kneel_dist` da frente do baú).
   A telha da escopeta (`ShotgunPump`, BoneAttachment3D) é movida pelo Godot seguindo `PUMP_KEYS` (heroine_moves.json
   "shotgun"), o mesmo caminho da mão esquerda na animação; no fundo do curso sai o cartucho (`shell_ejected`).
+- M79 (lança-granadas, `heroine_m79.py`; mesmas poses/Pickup/RIFLE_CHEST das armas longas, tiro `M79Shoot`): `WEAPON_STATS.m79.grenade`
+  troca o raio por `Grenade.launch` (arco baixo que cai no ponto da retícula, `aim_velocity`). Antes de `ARM_DIST` só dá a pancada;
+  armada explode (`Grenade.explode`: dano em área até `RADIUS`, só em quem está à vista — parede/porta protegem —, empurra corpos,
+  arremessa a jogadora perto e ela leva `PLAYER_SHARE` do dano; barulho `NOISE`; `Fx.explosion` + mancha `Fx.scorch`, que conta em
+  `MAX_DECALS` e some com o R). Survival: 4 granadas no baú, caixa verde em `Pickup.LAYOUT`.
+- Container trancado e chave (jeito RE/Dino Crisis): `Chest.lock` = id da chave (ferrolho + cadeado na frente). A M79 fica no
+  container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está com o alvo
+  `main.KEY_DUMMY` (`TargetDummy.loot`): morto, ela cai no chão brilhando e é pega ao chegar perto (`Player.keys`). Interagir no
+  trancado emite `Player.locked` → `Inspect.lock_zoom` (jogo pausado, câmera vai até o cadeado; sem chave chacoalha e avisa, com
+  chave ele cai e a chave é gasta). Pegar a chave → `Inspect.show_item` (item girando numa SubViewport). As telas de inspeção
+  pausam a árvore e rodam com `PROCESS_MODE_ALWAYS` (sons delas por `Sfx.ui`); `auto_close`/`on_shown` para testes e capturas.
+  Reiniciar tranca de novo e devolve a chave ao alvo. Testes: `key_tests.gd`.
 - Tiros: `Player.WEAPON_STATS` (cadência, dano por projétil, chumbos, dispersão/abertura em rajada, alcance com queda
   de dano, tremida, cápsula); chumbos no mesmo alvo somam num `take_hit` só. Efeitos em `Fx` por arma e por superfície
   (meta "surface" do corpo = textura do `Level.block`); buraco de bala (`Fx.decal`) só em cenário, preso ao corpo,

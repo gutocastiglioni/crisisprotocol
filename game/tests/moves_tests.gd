@@ -5,7 +5,7 @@ extends RefCounted
 
 const NEW_ANIMS := [
 	"CrouchWalk", "CrouchStrafeL", "CrouchStrafeR", "Jump", "Fall", "Hang", "ClimbUp", "Mantle",
-	"RifleHold", "RifleAim", "RifleShoot", "Pickup",
+	"RifleHold", "RifleAim", "RifleShoot", "Pickup", "DodgeL", "DodgeR", "DodgeBack",
 ]
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -77,7 +77,7 @@ func test_assets() -> void:
 		t.check(inst.find_child(n, true, false) != null, "nó " + n + " no modelo")
 	inst.free()
 	var d := Moves.data()
-	t.check(d.has("roll") and d.has("climb") and d.has("mantle") and d.has("rifle"), "medidas dos movimentos (heroine_moves.json)")
+	t.check(d.has("roll") and d.has("dodge") and d.has("climb") and d.has("mantle") and d.has("rifle"), "medidas dos movimentos (heroine_moves.json)")
 	var chest_rifle: Node = load("res://assets/characters/m16.glb").instantiate()
 	var rifle_mesh: MeshInstance3D = chest_rifle.find_children("*", "MeshInstance3D", true, false)[0]
 	t.check(rifle_mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV].size() > 0, "m16.glb (fuzil do baú) com UV para o atlas")

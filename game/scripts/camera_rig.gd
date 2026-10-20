@@ -1,12 +1,21 @@
 class_name CameraRig
 extends Node3D
-## Câmera em 3ª pessoa: atrás e acima dela; mirando, chega por cima do ombro direito.
-## Mouse/analógico giram; parado o controle, volta devagar para trás dela (jeito Syphon Filter).
+## Câmera em 3ª pessoa. Perfil "arcade" (GameMode): atrás e acima dela; mirando, chega por cima do ombro direito; parado o
+## controle, volta devagar para trás dela (jeito Syphon Filter). Perfil "survival": sempre por cima do ombro direito (jeito RE4
+## Remake), mais perto, sem voltar sozinha; mirando, chega mais perto e a mira fica lenta; o tiro dá coice (`kick`).
+## Mouse/analógico giram.
 
 const HEIGHT := 1.45
 const MOUSE_SENS := 0.0035
 const PAD_SENS := 2.6
 const FOLLOW_DELAY := 1.5
+## por cima do ombro (survival): distância atrás dela, desvio para a direita e campo de visão, andando e mirando
+const SHOULDER := {"length": 2.3, "length_aim": 1.3, "side": 0.5, "side_aim": 0.7, "fov": 60.0, "fov_aim": 46.0}
+const PORTRAIT_SIDE := 0.5  # tela em pé: fração do desvio do ombro
+const PORTRAIT_FOV := 62.0  # tela em pé: campo de visão mínimo (o da largura)
+const SHOULDER_AIM_SENS := 0.6  # mirando, o mouse/analógico giram a esta fração
+const RECOIL_RECOVER := 0.4  # radianos por segundo: o quanto do coice a câmera desfaz
+const RECOIL_KEEP := 0.4  # fração de cada coice que fica (tiros seguidos sobem a mira)
 
 var target: Node3D
 var yaw := 0.0
@@ -17,6 +26,7 @@ var _idle_look := 0.0
 var _snapped := false
 var _shake := 0.0
 var _shake_t := 0.0
+var _recoil := 0.0  # coice ainda por desfazer (radianos)
 
 
 func _ready() -> void:
@@ -45,6 +55,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _look(d: Vector2) -> void:
+	if GameMode.shoulder_cam() and target and target.get("aiming"):
+		d *= SHOULDER_AIM_SENS
 	yaw -= d.x
 	pitch = clampf(pitch - d.y, -1.1, 0.55)
 	_idle_look = 0.0
@@ -62,8 +74,13 @@ func _process(delta: float) -> void:
 	var aiming: bool = target.get("aiming")
 	var moving: bool = target.get("velocity").length() > 0.5
 	_idle_look += delta
-	if not aiming and moving and _idle_look > FOLLOW_DELAY:
+	var shoulder := GameMode.shoulder_cam()
+	if not shoulder and not aiming and moving and _idle_look > FOLLOW_DELAY:
 		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-1.2 * delta))
+	if _recoil > 0.0:
+		var back := minf(_recoil, RECOIL_RECOVER * delta)
+		pitch -= back
+		_recoil -= back
 	var focus: Vector3 = target.call("camera_focus") if target.has_method("camera_focus") else target.global_position
 	var goal := focus + Vector3.UP * HEIGHT
 	if target.get("crouching"):
@@ -72,9 +89,18 @@ func _process(delta: float) -> void:
 	_snapped = true
 	rotation = Vector3(pitch, yaw, 0.0)
 	var k := 1.0 - exp(-10.0 * delta)
-	spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
-	spring.position.x = lerpf(spring.position.x, 0.62 if aiming else 0.0, k)
-	camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
+	if shoulder:
+		# tela em pé: o campo de visão é o da largura, então o desvio do ombro encolhe e o campo abre (senão ela sai do quadro)
+		var portrait := vp.y > vp.x
+		var side: float = (SHOULDER.side_aim if aiming else SHOULDER.side) * (PORTRAIT_SIDE if portrait else 1.0)
+		var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov
+		spring.spring_length = lerpf(spring.spring_length, SHOULDER.length_aim if aiming else SHOULDER.length, k)
+		spring.position.x = lerpf(spring.position.x, side, k)
+		camera.fov = lerpf(camera.fov, maxf(fov, PORTRAIT_FOV) if portrait else fov, k)
+	else:
+		spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
+		spring.position.x = lerpf(spring.position.x, 0.62 if aiming else 0.0, k)
+		camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
 	_shake_t = maxf(0.0, _shake_t - delta)
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
@@ -85,6 +111,14 @@ func _process(delta: float) -> void:
 func shake(strength: float, time: float) -> void:
 	_shake = maxf(strength, _shake if _shake_t > 0.0 else 0.0)
 	_shake_t = maxf(_shake_t, time)
+
+
+## Coice do tiro: a mira sobe `up` radianos e a câmera desfaz a maior parte (tiros seguidos sobem a mira). Só no survival.
+func kick(up: float) -> void:
+	if up <= 0.0 or not GameMode.shoulder_cam():
+		return
+	pitch = clampf(pitch + up, -1.1, 0.55)
+	_recoil += up * (1.0 - RECOIL_KEEP)
 
 
 ## Gira a câmera para que o centro da tela (a retícula) fique sobre `point`.

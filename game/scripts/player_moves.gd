@@ -1,7 +1,7 @@
 class_name PlayerMoves
 extends RefCounted
 ## Ações da heroína que seguem um caminho da raiz (Moves) e tomam o controle enquanto duram: cambalhota com
-## projeção, pulo até a borda (fica pendurada), subir da borda, escalar obstáculo baixo e pegar arma no baú.
+## projeção, pulinho de esquiva (survival), pulo até a borda (fica pendurada), subir da borda, escalar obstáculo baixo e pegar arma no baú.
 ## A cápsula anda pelo mesmo caminho que o corpo animado (gerado com a animação), então nada escorrega.
 
 const LEDGE_REACH := 0.9  # distância máxima até a parede para agarrar/escalar
@@ -10,9 +10,12 @@ const GRAB_TIME := 0.38  # duração do pulo até a borda
 const DROP_PUSH := 0.14  # ao soltar da borda, afasta da parede (pendurada, a cápsula encosta nela)
 const ROLL_TURN := 18.0  # rapidez com que vira para a direção da cambalhota
 const KNEEL_WALK := 8.0  # quadros até chegar ao lugar de ajoelhar na frente do baú
+const DODGE_BACK_COS := cos(deg_to_rad(50.0))  # direção pedida até 50° das costas dela: pulinho para trás
+const DOUBLE_TAP := 0.2  # segundo X até este tempo depois do primeiro = clique duplo = cambalhota (sem pulinho antes)
+const WAIT_BRAKE := 25.0  # m/s² com que ela freia esperando o segundo clique (planta os pés para pular)
 
 var p: Player
-var mode := ""  # "", "roll", "grab", "hang", "climb", "mantle", "pickup"
+var mode := ""  # "", "roll", "dodge_wait", "dodge", "grab", "hang", "climb", "mantle", "pickup"
 var t := 0.0
 var _base := Vector3.ZERO  # origem do caminho da ação
 var _fwd := Vector3.FORWARD  # frente do caminho (para a parede, ou para onde rola)
@@ -28,6 +31,10 @@ var _chest: Node
 var _kneel: Transform3D
 var _yaw0 := 0.0
 var _got_item := false
+var _landed := false  # pulinho: já tocou a aterrissagem
+var _enemy: Node3D
+var _hit_done := false
+var _hit_frame := 0.0
 
 
 func _init(player: Player) -> void:
@@ -46,18 +53,25 @@ func update(delta: float) -> void:
 	t += delta
 	match mode:
 		"roll": _roll(delta)
+		"dodge_wait": _dodge_wait(delta)
+		"dodge": _dodge(delta)
 		"grab": _grab()
 		"hang": _hang()
 		"climb", "mantle": _follow()
 		"pickup": _pickup()
+		"assassinate", "crit_strike": _strike_move(delta)
 
 
 ## Interrompe a ação (golpe, mordida, morte, reinício). Pegando a arma antes das mãos chegarem nela, a arma fica.
 func cancel() -> void:
-	if mode in ["grab", "hang", "climb", "mantle"] or (mode == "pickup" and not _got_item):
+	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike"] or (mode == "pickup" and not _got_item):
 		p.model.holster(false)
+	if is_instance_valid(_enemy):
+		_enemy.stealth_lock(false)
+		_enemy = null
 	mode = ""
 	p.rolling = false
+	p.hopping = false
 
 
 # ------------------------------------------------------------------ cambalhota
@@ -89,6 +103,85 @@ func _roll(delta: float) -> void:
 	if f >= _frames:
 		mode = ""
 		p.rolling = false
+
+
+# ------------------------------------------------------------------ pulinho de esquiva
+## Primeiro X: espera DOUBLE_TAP pelo segundo antes de decidir, já invulnerável e freando o embalo de antes. Veio o
+## segundo: cambalhota direto (o pulinho nem começa), para o direcional ou para `dir`. Não veio: pulinho para `dir`
+## (ou para o direcional, se ele foi apertado durante a espera).
+func request_dodge(dir: Vector3) -> void:
+	mode = "dodge_wait"
+	t = 0.0
+	_fwd = dir
+	p.hopping = true
+	p.crouching = false
+	p.model.set_state("idle")
+
+
+func _dodge_wait(delta: float) -> void:
+	var wish := p.move_wish()
+	if wish.length() > 0.1:
+		_fwd = wish.normalized()
+	if Input.is_action_just_pressed("roll"):
+		p.hopping = false
+		start_roll(_fwd)
+		return
+	var h := Vector2(p.velocity.x, p.velocity.z).move_toward(Vector2.ZERO, WAIT_BRAKE * delta)
+	p.velocity.x = h.x
+	p.velocity.z = h.y
+	if not p.is_on_floor():
+		p.velocity.y -= Player.GRAVITY * delta
+	p.move_and_slide()
+	if t >= DOUBLE_TAP:
+		start_dodge(_fwd)
+
+
+## Pulinho curto para `dir` (no chão, normalizada) sem rolar: para trás se `dir` está até 50° das costas dela; senão de
+## lado, virando só o necessário para `dir` ficar à esquerda ou à direita dela. Invulnerável até o quadro "guard".
+func start_dodge(dir: Vector3) -> void:
+	var d: Dictionary = Moves.data().dodge
+	var fwd := -p.global_basis.z
+	var face := -dir
+	var anim := "dodge_back"
+	_path = d.back
+	if dir.dot(-fwd) < DODGE_BACK_COS:
+		# das duas frentes que deixam `dir` de lado, a mais perto de para onde ela já olha
+		face = Vector3(-dir.z, 0.0, dir.x)
+		if face.dot(fwd) < 0.0:
+			face = -face
+		anim = "dodge_r" if dir.dot(face.cross(Vector3.UP)) > 0.0 else "dodge_l"
+		_path = d.side
+	mode = "dodge"
+	t = 0.0
+	_fwd = dir
+	_yaw0 = atan2(-face.x, -face.z)
+	_frames = float(d.frames)
+	_prev = 0.0
+	_landed = false
+	p.hopping = true
+	p.crouching = false
+	p.model.play(anim)
+
+
+func _dodge(delta: float) -> void:
+	var d: Dictionary = Moves.data().dodge
+	var f := t * Moves.fps()
+	var dist := Moves.path_at(_path, f).x
+	var v := _fwd * (dist - _prev) / delta
+	_prev = dist
+	p.velocity.x = v.x
+	p.velocity.z = v.z
+	if not p.is_on_floor():
+		p.velocity.y -= Player.GRAVITY * delta
+	p.rotation.y = lerp_angle(p.rotation.y, _yaw0, 1.0 - exp(-ROLL_TURN * delta))
+	p.move_and_slide()
+	p.hopping = f < float(d.guard)
+	if not _landed and f >= float(d.land):
+		_landed = true
+		Sfx.play(p.model, "land")
+	if f >= _frames:
+		mode = ""
+		p.hopping = false
 
 
 # ------------------------------------------------------------------ bordas
@@ -287,4 +380,60 @@ func _pickup() -> void:
 		Sfx.play(p.model, "weapon_pickup", p.global_position + Vector3.UP * 0.8)
 	if f >= _frames:
 		mode = ""
+		p.model.set_state("idle")
+
+
+# ------------------------------------------------------------------ abate furtivo e golpe crítico
+## Inicia o abate furtivo silencioso no inimigo `enemy` (trava o inimigo, guarda a arma, vira para ele e avança).
+func start_assassinate(enemy: Node3D) -> void:
+	_start_strike("assassinate", enemy, Moves.data().assassinate)
+
+
+## Inicia o golpe crítico de finalização no inimigo caído `enemy` (pausa o tempo de levantar dele e crava o golpe).
+func start_crit_strike(enemy: Node3D) -> void:
+	_start_strike("crit_strike", enemy, Moves.data().crit_strike)
+
+
+func _start_strike(kind: String, enemy: Node3D, d: Dictionary) -> void:
+	_enemy = enemy
+	_hit_done = false
+	_prev = 0.0
+	_path = d.path
+	_frames = float(d.frames)
+	_hit_frame = float(d.hit)
+	var to := Enemy._flat(enemy.global_position - p.global_position)
+	_fwd = to.normalized() if to.length() > 0.01 else -p.global_basis.z
+	_yaw0 = atan2(-_fwd.x, -_fwd.z)
+	enemy.stealth_lock(true)
+	_begin(kind)
+	Sfx.play(p.model, "tail_whoosh", p.global_position + Vector3.UP * 1.2)
+
+
+func _strike_move(delta: float) -> void:
+	var f := t * Moves.fps()
+	var dist := Moves.path_at(_path, f).x
+	var v := _fwd * (dist - _prev) / delta
+	_prev = dist
+	p.velocity.x = v.x
+	p.velocity.z = v.z
+	if not p.is_on_floor():
+		p.velocity.y -= Player.GRAVITY * delta
+	p.rotation.y = lerp_angle(p.rotation.y, _yaw0, 1.0 - exp(-ROLL_TURN * delta))
+	p.move_and_slide()
+	if not _hit_done and f >= _hit_frame:
+		_hit_done = true
+		if is_instance_valid(_enemy) and not bool(_enemy.get("dead")):
+			_enemy.stealth_lock(false)
+			if mode == "crit_strike":
+				_enemy.crit_strike(_fwd, _enemy.global_position + Vector3.UP * 0.5)
+				p.camera_rig.shake(0.1, 0.18)
+			else:
+				_enemy.assassinate(_fwd, _enemy.global_position + Vector3.UP * 1.1)
+				p.camera_rig.shake(0.06, 0.12)
+	if f >= _frames:
+		if is_instance_valid(_enemy):
+			_enemy.stealth_lock(false)
+			_enemy = null
+		mode = ""
+		p.model.holster(false)
 		p.model.set_state("idle")

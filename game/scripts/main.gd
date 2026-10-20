@@ -1,7 +1,7 @@
 extends Node3D
 ## Cena de teste: sala, heroína, alvos de treino, baús com M16 e escopeta, um velociraptor, HUD e pós-processo PS1.
 ## Captura para conferência:  godot --path game -- --capture=out.png [--shot=idle|aim|run|ragdoll|front|roll|crouch|face]
-##   movimentos:  --shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim  (--at=segundos)
+##   movimentos:  --shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|dodge_l|dodge_r|dodge_back|dodge_roll  (--at=segundos)
 ##   armas:  --shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump  (tiros: --at=segundos)
 ##   raptor:  --shot=raptor_idle|raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead
 ##            (câmera de revisão em volta dele; --yaw=graus gira a câmera; --playercam usa a câmera dela)
@@ -10,21 +10,36 @@ extends Node3D
 ##               (na pedreira; --yaw, --playercam)
 ##   pedreira:  --shot=arena (a câmera dela olhando a sala da entrada; --pos=x,z[,graus] para outro ponto)
 ##   --pitch=graus inclina a câmera dela junto com --yaw (> 0 = para cima; mirando, a arma acompanha)
+##   M79 e chave:  --shot=locked|unlock|key_drop|key_get|m79_aim|fire_m79|pickup_m79  (locked/unlock/key_get salvam
+##                 quando a tela de inspeção termina de aparecer; fire_m79: --at=segundos para pegar a explosão)
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
+## Perfil de jogo:  --mode=survival|arcade  (F3 alterna no jogo; ver GameMode)
 
 const POST_SHADER := preload("res://shaders/psx_post.gdshader")
 const MOVE_SHOTS := [
 	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
+	"dodge_l", "dodge_r", "dodge_back", "dodge_roll",
 ]
+## revisão do container trancado da M79, da chave escondida no alvo e da M79 (ver _setup_key_shot)
+const KEY_SHOTS := ["locked", "unlock", "key_drop", "key_get", "m79_aim", "fire_m79", "pickup_m79"]
+const KEY_DUMMY := 2  # o alvo da direita, mirando, guarda a chave do container
+const LOCKER_POS := Vector3(0, 0, 9.6)  # atrás de onde ela começa (ela olha para -Z), de frente para ela
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
-const HELP := "WASD mover  SHIFT andar  MOUSE-D mirar  MOUSE-E atirar\nESPACO cambalhota  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  R reiniciar  F1 ajuda  F2 PS1/PS2"
+const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparece (dá tempo de ver o corpo cair)
+const RESTART_ACTIONS := ["reset", "interact", "roll", "jump", "shoot", "ui_accept"]
+const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
+const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
 var chest: Chest
 var chests: Array[Chest] = []
+var locker: Chest  # container trancado com a M79
+var key: KeyItem
+var inspect: Inspect
 var raptors: Array[Raptor] = []
 var soldiers: Array[Soldier] = []
 var allosaurus: Allosaurus
@@ -33,7 +48,9 @@ var _end: Control
 var _end_stats: Label
 var _play_t := 0.0  # tempo de jogo até o fim (tela de fim)
 var _end_t := -1.0  # > 0: contando para mostrar a tela de fim
+var _game_over_t := -1.0  # > 0: contando para mostrar a tela de game over
 var ended := false
+var game_over := false
 var _hud: CanvasLayer
 var _post: ColorRect
 var _hud_health: Label
@@ -41,6 +58,8 @@ var _hud_help: Label
 var _hud_weapon: Label
 var _hud_stealth: Label
 var _hud_headshot: Label
+var _hud_notice: Label
+var _notice_t := 0.0
 var _headshot_t := 0.0
 var _prompt: Control
 var _prompt_text: Label
@@ -84,6 +103,18 @@ func _ready() -> void:
 	sg.rotation.y = atan2(3.0, 3.4)
 	add_child(sg)
 	chests.append(sg)
+	# container trancado com a M79 atrás de onde ela começa, de frente para ela; a chave está com um dos alvos
+	locker = Chest.new()
+	locker.item = "m79"
+	locker.lock = "container"
+	locker.position = LOCKER_POS
+	locker.rotation.y = PI
+	add_child(locker)
+	chests.append(locker)
+	key = KeyItem.new()
+	key.id = locker.lock
+	add_child(key)
+	dummies[KEY_DUMMY].loot = key
 	# os velociraptors ficam no pátio da mata (segunda sala, pela porta oeste) e na pedreira (última sala, junto com o
 	# alossauro), cada um patrulhando a sua rota
 	for post in Yard.POSTS + Arena.POSTS:
@@ -92,7 +123,10 @@ func _ready() -> void:
 		raptors.append(r)
 	allosaurus = Allosaurus.new()
 	_place(allosaurus, Arena.ALLO)
-	allosaurus.killed.connect(func() -> void: _end_t = END_DELAY)
+	allosaurus.killed.connect(func() -> void:
+		if not player.dead and not game_over:
+			_end_t = END_DELAY)
+	player.died.connect(_on_player_died)
 	# soldados de guarda no galpão, cada um com a sua ronda (alarme em comum com os raptors: grupo "enemies")
 	for g in Soldier.GUARDS:
 		var sd := Soldier.new()
@@ -105,13 +139,22 @@ func _ready() -> void:
 		add_child(sd)
 		soldiers.append(sd)
 	Yard.bake_nav(self)
+	# itens do chão (só no perfil de sobrevivência): depois da malha de navegação, que não os conhece
+	Pickup.build(self)
 	var sound := Soundscape.new()
 	sound.target = player
 	add_child(sound)
 	_build_post()
 	_build_hud()
+	inspect = Inspect.new()
+	inspect.player = player
+	inspect.hud = _hud
+	add_child(inspect)
+	player.locked.connect(_on_locked)
+	key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	player.health_changed.connect(func(v: int) -> void: _hud_health.text = "VIDA %d" % v)
 	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
+	player.notice.connect(show_notice)
 	apply_gfx(Gfx.mode)
 	_parse_args()
 	if _capture == "":
@@ -158,6 +201,9 @@ func _build_hud() -> void:
 	_hud_headshot.add_theme_color_override("font_color", Color(1.0, 0.25, 0.2))
 	_hud_headshot.visible = false
 	_prompt = _build_prompt(layer)
+	_hud_notice = _label(layer, "", Vector2.ZERO)
+	_hud_notice.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_hud_notice.visible = false
 	# mira numa camada sem escala: ancorada no centro, a escala do HUD (apply_gfx) a jogaria para o canto
 	var cross_layer := CanvasLayer.new()
 	cross_layer.layer = 1
@@ -180,12 +226,20 @@ func _build_hud() -> void:
 	add_child(layer)
 
 
-## Tela de fim (o alossauro caiu): faixa escura no meio com "FIM", o tempo e os tiros, e como jogar de novo.
+## Tela de fim (o alossauro caiu) e de morte (game over): escurecimento avermelhado na morte, faixa escura no meio com o título, o tempo e os tiros, e como jogar de novo.
 func _build_end(layer: CanvasLayer) -> Control:
 	var box := Control.new()
 	box.visible = false
+	var shade := ColorRect.new()
+	shade.name = "Shade"
+	shade.color = Color(0.22, 0.0, 0.0, 0.45)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shade.visible = false
+	box.add_child(shade)
 	var band := ColorRect.new()
+	band.name = "Band"
 	band.color = Color(0, 0, 0, 0.72)
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(band)
 	var title := _label(box, "FIM", Vector2.ZERO)
 	title.add_theme_font_size_override("font_size", 24)
@@ -198,23 +252,56 @@ func _build_end(layer: CanvasLayer) -> Control:
 	return box
 
 
+func _on_player_died() -> void:
+	if ended or (_capture != "" and _shot != "game_over"):
+		return
+	_end_t = -1.0
+	_game_over_t = GAME_OVER_DELAY
+
+
 func show_end() -> void:
+	if game_over or player.dead:
+		return
 	ended = true
 	_end_t = -1.0
 	var t := int(_play_t)
+	(_end.get_node("Shade") as ColorRect).visible = false
+	var title: Label = _end.get_node("Title")
+	title.text = "FIM"
+	title.reset_size()
 	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d\n\nR PARA JOGAR DE NOVO" % [t / 60, t % 60, player.shots_fired, player.health]
+	_end_stats.reset_size()
+	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
 
 
-## Centraliza a tela de fim e o aviso de atordoada na área do HUD (320x240 ampliado, qualquer proporção).
+func show_game_over() -> void:
+	if ended:
+		return
+	game_over = true
+	_game_over_t = -1.0
+	var t := int(_play_t)
+	(_end.get_node("Shade") as ColorRect).visible = true
+	var title: Label = _end.get_node("Title")
+	title.text = "GAME OVER"
+	title.reset_size()
+	_end_stats.text = "VOCE MORREU\nTEMPO %02d:%02d   TIROS %d\n\nR / E / ESPACO PARA RECOMECAR" % [t / 60, t % 60, player.shots_fired]
+	_end_stats.reset_size()
+	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
+	_end.visible = true
+
+
+## Centraliza a tela de fim/game over e o aviso de atordoada na área do HUD (320x240 ampliado, qualquer proporção).
 func _layout_overlays(area: Vector2) -> void:
 	_hud_daze.position = Vector2(roundf((area.x - _hud_daze.size.x) * 0.5), roundf(area.y * 0.32))
-	var band: ColorRect = _end.get_child(0)
-	band.position = Vector2(0, area.y * 0.5 - 40)
-	band.size = Vector2(area.x, 80)
+	var shade: ColorRect = _end.get_node("Shade")
+	shade.size = area
+	var band: ColorRect = _end.get_node("Band")
+	band.position = Vector2(0, area.y * 0.5 - 46)
+	band.size = Vector2(area.x, 104)
 	var title: Label = _end.get_node("Title")
-	title.position = Vector2(roundf((area.x - title.size.x) * 0.5), area.y * 0.5 - 38)
-	_end_stats.position = Vector2(roundf((area.x - _end_stats.size.x) * 0.5), area.y * 0.5 - 6)
+	title.position = Vector2(roundf((area.x - title.size.x) * 0.5), area.y * 0.5 - 42)
+	_end_stats.position = Vector2(roundf((area.x - _end_stats.size.x) * 0.5), area.y * 0.5 - 8)
 
 
 ## Aviso de interação embaixo, no centro: triângulo verde (o botão do controle) + "PEGAR <arma> (E)".
@@ -257,12 +344,54 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if game_over:
+			_restart_from_overlay()
 	elif event.is_action_pressed("reset"):
 		reset_all()
+	elif game_over and _is_restart_event(event):
+		_restart_from_overlay()
 	elif event.is_action_pressed("toggle_help"):
 		_hud_help.visible = not _hud_help.visible
 	elif event.is_action_pressed("toggle_gfx"):
 		apply_gfx("ps2" if Gfx.mode == "ps1" else "ps1")
+	elif event.is_action_pressed("toggle_mode"):
+		apply_mode(GameMode.ARCADE if GameMode.is_survival() else GameMode.SURVIVAL)
+
+
+func _is_restart_event(event: InputEvent) -> bool:
+	for a in RESTART_ACTIONS:
+		if InputMap.has_action(a) and event.is_action_pressed(a):
+			return true
+	return false
+
+
+func _poll_restart() -> bool:
+	for a in RESTART_ACTIONS:
+		if InputMap.has_action(a) and Input.is_action_just_pressed(a):
+			return true
+	return false
+
+
+func _restart_from_overlay() -> void:
+	for a in RESTART_ACTIONS:
+		if InputMap.has_action(a):
+			Input.action_release(a)
+	reset_all()
+	player._roll_cd = 0.1
+	player._shot_cd = 0.1
+
+
+## Troca o perfil de jogo (ver GameMode) e reinicia: a jogadora volta ao começo com a munição do perfil novo.
+func apply_mode(m: String) -> void:
+	GameMode.set_mode(m)
+	reset_all()
+	show_notice("MODO " + ("SOBREVIVENCIA" if GameMode.is_survival() else "ARCADE"))
+
+
+## Aviso rápido no centro, embaixo (munição pega, arma vazia, mudança de modo).
+func show_notice(text: String) -> void:
+	_hud_notice.text = text
+	_notice_t = NOTICE_TIME
 
 
 ## Aplica o modo de visual (ver Gfx): materiais e luzes, resolução interna, pós-processo de PS1 e HUD.
@@ -274,6 +403,33 @@ func apply_gfx(m: String) -> void:
 	var k := float(Gfx.RES[m].y) / 240.0
 	_hud.scale = Vector2(k, k)
 	_crosshair.add_theme_font_size_override("font_size", int(8 * k))
+	if inspect:
+		inspect.set_ui_scale(k)
+
+
+## Ela tentou abrir um baú trancado: o cadeado de perto; com a chave ele abre e a chave é gasta.
+func _on_locked(c: Chest) -> void:
+	if inspect.busy:
+		return
+	var has := player.has_key(c.lock)
+	var id := c.lock
+	await inspect.lock_zoom(c, has)
+	if has:
+		player.use_key(id)
+
+
+## Arma na mão no canto de cima à direita; no perfil de sobrevivência com a munição dela (vermelha quando está acabando).
+func _update_weapon_hud() -> void:
+	var kind := player.weapon()
+	var text: String = Player.WEAPON_STATS[kind].name
+	var color := Color(0.85, 0.9, 0.8)
+	if GameMode.limited_ammo():
+		var n := player.ammo_of(kind)
+		text += " %d" % n
+		if n <= LOW_AMMO:
+			color = Color(1.0, 0.3, 0.25)
+	_hud_weapon.text = text
+	_hud_weapon.add_theme_color_override("font_color", color)
 
 
 ## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos raptors (calmos, desconfiados, alertados).
@@ -289,6 +445,8 @@ func _update_stealth_hud(area: Vector2) -> void:
 
 
 func reset_all() -> void:
+	for g in get_tree().get_nodes_in_group("grenades"):
+		g.queue_free()
 	player.respawn()
 	for c in chests:
 		c.reset()
@@ -298,14 +456,21 @@ func reset_all() -> void:
 	Blood.clear()
 	for d in dummies:
 		d.reset()
+	key.reset()
 	for r in raptors:
 		r.reset()
 	for sd in soldiers:
 		sd.reset()
+	for pk: Pickup in get_tree().get_nodes_in_group("pickups"):
+		pk.reset()
 	allosaurus.reset()
 	ended = false
+	game_over = false
 	_end_t = -1.0
+	_game_over_t = -1.0
 	_end.visible = false
+	_notice_t = 0.0
+	_headshot_t = 0.0
 	_play_t = 0.0
 	player.shots_fired = 0
 
@@ -324,6 +489,11 @@ func _parse_args() -> void:
 			_shot = a.get_slice("=", 1)
 		elif a.begins_with("--at="):
 			_until = float(a.get_slice("=", 1))
+		elif a.begins_with("--mode="):
+			var gm := a.get_slice("=", 1)
+			if gm in GameMode.MODES:
+				GameMode.set_mode(gm)
+				player.reset_loadout()
 		elif a.begins_with("--gfx="):
 			var g := a.get_slice("=", 1)
 			if g in Gfx.MODES:
@@ -344,13 +514,13 @@ func _parse_args() -> void:
 	if _capture == "":
 		return
 	_hud_help.visible = _shot == "idle"
-	if _shot.begins_with("soldier"):
+	if _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_setup_soldier_shot()
 	else:
 		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
 		for sd in soldiers:
 			sd.process_mode = Node.PROCESS_MODE_DISABLED
-	if _shot.begins_with("raptor_"):
+	if _shot.begins_with("raptor_") or _shot in ["assassinate_raptor", "crit_raptor"]:
 		_setup_raptor_shot()
 	elif _shot.begins_with("allo_"):
 		_setup_allo_shot()
@@ -380,6 +550,8 @@ func _parse_args() -> void:
 			Input.action_press("crouch")
 	if _shot in MOVE_SHOTS:
 		_setup_move_shot()
+	if _shot in KEY_SHOTS:
+		_setup_key_shot()
 
 
 func _process(delta: float) -> void:
@@ -387,11 +559,14 @@ func _process(delta: float) -> void:
 	var target := player.pick_target()
 	var door := player.pick_door() if target == null else null
 	_prompt.visible = target != null or door != null
-	if target:
+	if target and target.is_locked():
+		# trancado: não diz o que tem dentro
+		_set_prompt(_prompt, "USAR CHAVE (E)" if player.has_key(target.lock) else "ABRIR (E)")
+	elif target:
 		_set_prompt(_prompt, "PEGAR %s (E)" % Player.WEAPON_STATS[target.item].name)
 	elif door:
 		_set_prompt(_prompt, "%s (E)" % door.verb)
-	_hud_weapon.text = Player.WEAPON_STATS[player.weapon()].name
+	_update_weapon_hud()
 	# HUD ampliado (apply_gfx): arma no canto de cima à direita e aviso embaixo no centro, em qualquer proporção
 	var area := get_viewport().get_visible_rect().size / _hud.scale
 	_hud_weapon.position = Vector2(area.x - _hud_weapon.size.x - 6, 4)
@@ -400,15 +575,31 @@ func _process(delta: float) -> void:
 	_hud_headshot.visible = _headshot_t > 0.0
 	_hud_headshot.position = Vector2(roundf((area.x - _hud_headshot.size.x) * 0.5), roundf(area.y * 0.5) + 10)
 	_prompt.position = Vector2(roundf((area.x - _prompt.size.x) * 0.5), area.y - 34)
+	_notice_t = maxf(_notice_t - delta, 0.0)
+	var sp := player.stealth_prompt()
+	if sp == "" and _hud_notice.text in [PlayerStealth.ASSASSINATE_PROMPT, PlayerStealth.CRIT_PROMPT]:
+		_notice_t = 0.0
+	if _notice_t <= 0.0 and sp != "":
+		_hud_notice.text = sp
+	_hud_notice.visible = _notice_t > 0.0 or sp != ""
+	_hud_notice.position = Vector2(roundf((area.x - _hud_notice.size.x) * 0.5), area.y - 50)
 	# atordoada: o aviso pisca enquanto dura
 	_hud_daze.visible = player.is_dazed() and fmod(_play_t, 0.5) < 0.32
 	_layout_overlays(area)
-	if not ended:
+	if not ended and not game_over and not player.dead:
 		_play_t += delta
 	if _end_t > 0.0:
 		_end_t -= delta
 		if _end_t <= 0.0:
 			show_end()
+	if _game_over_t > 0.0 and not player.grabbed:
+		_game_over_t -= delta
+		if _game_over_t <= 0.0:
+			show_game_over()
+	elif game_over and _poll_restart():
+		_restart_from_overlay()
+	elif ended and InputMap.has_action("reset") and Input.is_action_just_pressed("reset"):
+		_restart_from_overlay()
 	if _capture == "":
 		return
 	var prev := _t
@@ -423,11 +614,11 @@ func _process(delta: float) -> void:
 		var head := player.global_position + Vector3.UP * 1.6
 		_review_cam.global_position = head + Vector3(sin(a), 0.03, cos(a)) * 0.75
 		_review_cam.look_at(head)
-	elif _review_cam and _shot.begins_with("raptor_"):
+	elif _review_cam and (_shot.begins_with("raptor_") or _shot in ["assassinate_raptor", "crit_raptor"]):
 		_raptor_shot(at)
 	elif _shot.begins_with("allo_"):
 		_allo_shot(at)
-	if _shot.begins_with("soldier"):
+	if _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_soldier_shot(at)
 	if _shot in MOVE_SHOTS:
 		_move_shot(at)
@@ -445,6 +636,14 @@ func _process(delta: float) -> void:
 				Input.action_press("roll")
 			if at.call(0.45):
 				Input.action_release("roll")
+		"game_over":
+			if at.call(0.1):
+				player.take_hit(999, player.global_basis.z, player.global_position + Vector3.UP * 1.2)
+				player.camera_rig.yaw = PI * 0.75
+				player.camera_rig.pitch = -0.6
+				_game_over_t = 0.4
+			if _t > 0.1:
+				player.camera_rig.camera.fov = 34.0
 		"ragdoll", "dummy":
 			if at.call(0.3):
 				Input.action_press("aim")
@@ -468,8 +667,64 @@ func _process(delta: float) -> void:
 					player.model.visible = false
 				if _shot == "dummy" and _t > 2.5:
 					player.camera_rig.look_at_point(dummies[0].model.ragdoll.bodies["Hips"].global_position)
+	if _shot in KEY_SHOTS:
+		_key_shot(at)
 	if _t >= _until:
 		_save_and_quit()
+
+
+## Revisão do container trancado, da chave e da M79: põe a jogadora no lugar e aperta os botões na hora certa. As telas
+## de inspeção pausam o jogo (e o relógio da captura): a captura é salva quando a tela termina de aparecer.
+func _setup_key_shot() -> void:
+	var front := locker.kneel_transform().origin + locker.global_basis.z * 0.5
+	var spots := {
+		"locked": [front, locker.rotation.y], "unlock": [front, locker.rotation.y], "pickup_m79": [front, locker.rotation.y],
+		# a 3 m do alvo da chave, olhando para ele
+		"key_drop": [dummies[KEY_DUMMY].global_position + Vector3(-1.6, 0, 2.6), deg_to_rad(-30.0)],
+		"key_get": [dummies[KEY_DUMMY].global_position + Vector3(-1.6, 0, 2.6), deg_to_rad(-30.0)],
+		# de frente para o fundo do galpão: a granada cai no chão a ~7 m
+		"fire_m79": [Vector3(-1.0, 0, 5.0), 0.0], "m79_aim": [Vector3(-2.4, 0, 1.6), 0.0],
+	}
+	player.global_position = spots[_shot][0]
+	player.rotation.y = spots[_shot][1]
+	player.reset_physics_interpolation()
+	player.camera_rig.yaw = player.rotation.y
+	if _shot in ["locked", "unlock", "key_get"]:
+		inspect.on_shown = _save_and_quit
+	if _shot == "unlock":
+		player.add_key(locker.lock)
+	if _shot == "pickup_m79":
+		locker.unlock()
+	if _shot in ["m79_aim", "fire_m79"]:
+		for d in dummies:
+			d.visible = false
+		player.give_weapon("m79")
+
+
+func _key_shot(at: Callable) -> void:
+	match _shot:
+		"locked", "unlock", "pickup_m79":
+			if at.call(0.3):
+				Input.action_press("interact")
+			if at.call(0.35):
+				Input.action_release("interact")
+		"key_drop", "key_get":
+			var d := dummies[KEY_DUMMY]
+			if at.call(0.2):
+				d.take_hit(999, Vector3.FORWARD, d.global_position + Vector3.UP * 1.2)
+			if _t > 0.2:
+				player.camera_rig.look_at_point(key.global_position + Vector3.UP * 0.3)
+			if _shot == "key_get" and at.call(1.2):
+				player.global_position = key.global_position + Vector3(0.3, 0, 0.3)
+				player.reset_physics_interpolation()
+		"m79_aim":
+			Input.action_press("aim")
+		"fire_m79":
+			Input.action_press("aim")
+			if _t < 0.6:
+				player.camera_rig.look_at_point(Vector3(-1.0, 0.0, -2.0))
+			if at.call(0.6):
+				player.fire()
 
 
 ## Revisão dos movimentos novos: põe a jogadora na frente do obstáculo/baú e aperta os botões na hora certa.
@@ -511,6 +766,7 @@ func _move_shot(at: Callable) -> void:
 	match _shot:
 		"walk":
 			Input.action_press("walk")
+			Input.action_press("walk_slow")
 			Input.action_press("move_forward")
 		"crouch_walk", "crouch_aim":
 			tap.call("crouch", 0.05)
@@ -525,6 +781,18 @@ func _move_shot(at: Callable) -> void:
 			tap.call("jump", 1.2)
 		"pickup", "pickup_shotgun":
 			tap.call("interact", 0.3)
+		"dodge_l", "dodge_r", "dodge_back":
+			# pulinho do survival (com --mode=arcade vira cambalhota); --at escolhe o quadro
+			var side: String = {"dodge_l": "move_left", "dodge_r": "move_right"}.get(_shot, "")
+			if side and at.call(0.35):
+				Input.action_press(side)
+			tap.call("roll", 0.4)
+			if side and at.call(0.5):
+				Input.action_release(side)
+		"dodge_roll":
+			# clique duplo no X: cambalhota
+			tap.call("roll", 0.4)
+			tap.call("roll", 0.5)
 		"rifle_aim", "shotgun_aim":
 			Input.action_press("aim")
 		"fire_pistol", "fire_m16", "fire_shotgun", "pump":
@@ -557,8 +825,8 @@ func _setup_soldier_shot() -> void:
 	sd.route.clear()
 	for other in soldiers.slice(1):
 		other.process_mode = Node.PROCESS_MODE_DISABLED
-	sd.global_position = player.global_position + Vector3(0, 0, -4.0)
-	sd.rotation.y = PI
+	sd.global_position = player.global_position + Vector3(0, 0, -1.6 if _shot == "assassinate_soldier" else -4.0)
+	sd.rotation.y = 0.0 if _shot == "assassinate_soldier" else PI
 	sd.reset_physics_interpolation()
 	# câmera de revisão perto dele (--yaw gira em volta: 0 = de frente); --playercam usa a dela
 	if not _player_cam:
@@ -571,7 +839,10 @@ func _setup_soldier_shot() -> void:
 
 func _soldier_shot(at: Callable) -> void:
 	var sd := soldiers[0]
-	if _shot == "soldier_headshot":
+	if _shot == "assassinate_soldier":
+		if at.call(0.3):
+			player.fire()
+	elif _shot == "soldier_headshot":
 		if at.call(0.1):
 			Input.action_press("aim")
 		if _t < 0.6 and not sd.dead:
@@ -608,10 +879,10 @@ func _setup_raptor_shot() -> void:
 	var fwd := Vector3.RIGHT
 	var her := {
 		"bite": fwd * 1.7, "tail": -fwd * 1.6 - Vector3.BACK * 1.0, "leap": fwd * 7.0,
-		"charge": fwd * 8.0, "idle": fwd * 15.0,
+		"charge": fwd * 8.0, "idle": fwd * 15.0, "assassinate_raptor": -fwd * 1.6, "crit_raptor": -fwd * 1.6,
 	}
 	player.global_position = r.global_position + her.get(_shot.trim_prefix("raptor_"), fwd * 4.0)
-	player.rotation.y = PI * 0.5
+	player.rotation.y = -PI * 0.5 if _shot in ["assassinate_raptor", "crit_raptor"] else PI * 0.5
 	player.reset_physics_interpolation()
 	r.reset_physics_interpolation()
 	player.camera_rig.yaw = 0.0
@@ -624,7 +895,12 @@ func _setup_raptor_shot() -> void:
 
 func _raptor_shot(at: Callable) -> void:
 	var r := raptors[0]
-	if at.call(0.15):
+	if _shot == "assassinate_raptor" and at.call(0.3):
+		player.fire()
+	elif _shot == "crit_raptor":
+		if at.call(0.2) or at.call(1.0):
+			player.fire()
+	elif at.call(0.15):
 		match _shot:
 			"raptor_roar": r.start_roar()
 			"raptor_study": r.start_study()

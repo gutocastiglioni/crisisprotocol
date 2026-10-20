@@ -1,7 +1,7 @@
 class_name HeroineModel
 extends Node3D
 ## Modelo da heroína: materiais PS1, árvore de animação (corpo + fuzil/mira/tiro na parte de cima), armas
-## (pistola, M16 e escopeta em malhas à parte: só a da mão aparece; a telha da escopeta desliza no bombeamento)
+## (pistola, M16, escopeta e M79 em malhas à parte: só a da mão aparece; a telha da escopeta desliza no bombeamento)
 ## e ragdoll. Os sons do corpo saem daqui (Sfx), para quem usa o modelo (heroína, guerrilheiro, alvo): tiro da arma da
 ## mão, telha, troca de arma, pancada, queda do ragdoll, cambalhota/pulo/aterrissagem/borda/subida e os passos, que
 ## tocam quando um pé desce até o chão (altura do osso Foot_*), no volume do jeito de andar e no tipo de chão.
@@ -23,8 +23,10 @@ const UPPER_BODY := [
 ]
 const STATES := {
 	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
+	"dodge_l": "DodgeL", "dodge_r": "DodgeR", "dodge_back": "DodgeBack",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
 	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
+	"assassinate": "Assassinate", "crit_strike": "CritStrike",
 	"death": "Death", "dazed": "Dazed",
 }
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
@@ -32,26 +34,34 @@ const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_s
 ## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
-	"jump", "fall",
+	"jump", "fall", "dodge_l", "dodge_r", "dodge_back",
 ]
 ## arma: [malha, marcador do cano]
-const WEAPONS := {"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"], "shotgun": ["Shotgun", "ShotgunMuzzle"]}
-## armas longas: pose de carregar, mira e pegar do fuzil (a escopeta tem o cabo e a telha nos mesmos pontos)
-const LONG_GUNS := ["m16", "shotgun"]
+const WEAPONS := {
+	"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"], "shotgun": ["Shotgun", "ShotgunMuzzle"],
+	"m79": ["M79", "M79Muzzle"],
+}
+## armas longas: pose de carregar, mira e pegar do fuzil (escopeta e M79 têm o cabo e a telha nos mesmos pontos)
+const LONG_GUNS := ["m16", "shotgun", "m79"]
 ## janela de ejeção da escopeta em relação ao centro da telha em repouso (lado direito, atrás, em cima; m)
 const SHELL_PORT := Vector3(0.02, 0.018, 0.21)
-## passo: o pé (osso Foot_*, em relação aos pés do corpo) subiu acima de STEP_UP e voltou abaixo de STEP_DOWN (m);
-## apoiado ele fica em ~0,08 e no ar passa de 0,13 em todos os ciclos de andar. Volume (dB) de cada jeito de andar.
-const STEP_UP := 0.115
-const STEP_DOWN := 0.095
+## passo: o pé (osso Foot_*, em relação aos pés do corpo) subiu STEP_UP acima da altura dele em repouso e voltou a
+## menos de STEP_DOWN dela (m); apoiado ele fica nela e no ar passa de +0,045 em todos os ciclos de andar (a altura do
+## tornozelo muda de um corpo para outro: heroína, guerrilheiro). Volume (dB) de cada jeito de andar.
+const STEP_UP := 0.03
+const STEP_DOWN := 0.01
 const STEP_DB := {
 	"walk": -6.0, "run": 0.0, "strafe_l": -7.0, "strafe_r": -7.0,
 	"crouch_walk": -13.0, "crouch_strafe_l": -13.0, "crouch_strafe_r": -13.0,
 }
 const AIR := ["jump", "fall"]
 const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem
+## entram mais rápido (a mistura longa com a corrida cruzava as pernas no começo do pulinho)
+const QUICK := ["dodge_l", "dodge_r", "dodge_back", "assassinate", "crit_strike"]
+const XFADE := 0.15
+const QUICK_XFADE := 0.05
 ## som ao entrar no estado
-const STATE_SOUNDS := {"roll": "roll", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab"}
+const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
@@ -79,6 +89,7 @@ var _ejected := false
 var _pump_sounds := 0  # 1 = já tocou a ida da telha, 2 = a volta
 var _foot_bones: Array[int] = []
 var _foot_up := [false, false]
+var _foot_rest := 0.08  # altura do tornozelo em repouso (lida do esqueleto)
 var _air_t := 0.0
 var _quiet := true  # montando (_ready): a primeira arma na mão não faz barulho
 
@@ -103,11 +114,52 @@ func _ready() -> void:
 	aim_pitch = AimPitch.new()
 	aim_pitch.influence = 0.0
 	skeleton.add_child(aim_pitch)
+	_setup_braid()
 	ragdoll = Ragdoll.create(skeleton)
 	ragdoll.hit_owner = get_parent()
 	set_weapon(weapon)
 	_foot_bones = [skeleton.find_bone("Foot_L"), skeleton.find_bone("Foot_R")]
+	_foot_rest = skeleton.get_bone_global_rest(_foot_bones[0]).origin.y
 	_quiet = false
+
+
+## Trança (ossos Braid1..N, só a heroína): mola que balança com o movimento e não atravessa as costas (cápsulas no
+## peito, na coluna e no quadril). A animação deixa esses ossos em repouso; a mola roda depois dela.
+const BRAID_STIFFNESS := 1.2
+const BRAID_DRAG := 0.45
+const BRAID_GRAVITY := 1.0
+const BRAID_RADIUS := 0.025
+const BRAID_BODY := [["Chest", 0.105, 0.30], ["Spine", 0.10, 0.16], ["Hips", 0.12, 0.16]]  # osso, raio, altura
+var braid: SpringBoneSimulator3D
+
+
+func _setup_braid() -> void:
+	if skeleton.find_bone("Braid1") < 0:
+		return
+	var last := 1
+	while skeleton.find_bone("Braid%d" % (last + 1)) >= 0:
+		last += 1
+	braid = SpringBoneSimulator3D.new()
+	braid.name = "BraidSpring"
+	skeleton.add_child(braid)
+	braid.set_setting_count(1)
+	braid.set_root_bone_name(0, "Braid1")
+	braid.set_end_bone_name(0, "Braid%d" % last)
+	braid.set_extend_end_bone(0, true)
+	braid.set_end_bone_length(0, 0.06)
+	braid.set_radius(0, BRAID_RADIUS)
+	braid.set_stiffness(0, BRAID_STIFFNESS)
+	braid.set_drag(0, BRAID_DRAG)
+	braid.set_gravity(0, BRAID_GRAVITY)
+	for b in BRAID_BODY:
+		var c := SpringBoneCollisionCapsule3D.new()
+		c.bone_name = b[0]
+		c.radius = b[1]
+		c.height = b[2]
+		# cápsula de pé ao longo do osso, no meio da altura dele
+		c.set_position_offset(Vector3(0, b[2] * 0.5, 0))
+		braid.add_child(c)
+	braid.set_enable_all_child_collisions(0, true)
 
 
 func _apply_materials(root: Node) -> void:
@@ -118,7 +170,11 @@ func _apply_materials(root: Node) -> void:
 			var two_sided := src != null and src.cull_mode == BaseMaterial3D.CULL_DISABLED
 			m.shader = Gfx.shader(two_sided)
 			m.set_shader_parameter("rim", 0.35)
-			m.set_shader_parameter("albedo_tex", atlas)
+			# corpo da heroína (modelo base, materiais Body_*): cada parte com a textura própria; armas e guerrilheiro usam o atlas
+			var tex: Texture2D = atlas
+			if src != null and src.resource_name.begins_with("Body_") and src.albedo_texture != null:
+				tex = src.albedo_texture
+			m.set_shader_parameter("albedo_tex", tex)
 			m.set_shader_parameter("tint", tint)
 			m.set_shader_parameter("desaturate", desaturate)
 			mi.set_surface_override_material(i, m)
@@ -132,7 +188,7 @@ func _build_tree() -> void:
 	var bt := AnimationNodeBlendTree.new()
 
 	var base := AnimationNodeTransition.new()
-	base.xfade_time = 0.15
+	base.xfade_time = XFADE
 	for s in STATES:
 		base.add_input(s)
 		bt.add_node("a_" + s, _anim(STATES[s]))
@@ -174,11 +230,15 @@ func _build_tree() -> void:
 		bt.add_node(n[0], AnimationNodeBlend2.new())
 		bt.connect_node(n[0], 0, "a_" + n[0] + "_pistol")
 	bt.connect_node("aim_pose", 1, "a_aim_pose_m16")
-	# tiro das armas longas: M16 (0) ou escopeta com o bombeamento (1)
+	# tiro das armas longas: M16 (0) ou pesada (1) = escopeta com o bombeamento (0) ou M79 com o coice forte (1)
 	bt.add_node("a_shoot_pose_shotgun", _anim("ShotgunShoot"))
+	bt.add_node("a_shoot_pose_m79", _anim("M79Shoot"))
+	bt.add_node("heavy_shoot", AnimationNodeBlend2.new())
+	bt.connect_node("heavy_shoot", 0, "a_shoot_pose_shotgun")
+	bt.connect_node("heavy_shoot", 1, "a_shoot_pose_m79")
 	bt.add_node("long_shoot", AnimationNodeBlend2.new())
 	bt.connect_node("long_shoot", 0, "a_shoot_pose_m16")
-	bt.connect_node("long_shoot", 1, "a_shoot_pose_shotgun")
+	bt.connect_node("long_shoot", 1, "heavy_shoot")
 	bt.connect_node("shoot_pose", 1, "long_shoot")
 	bt.add_node("a_hit", _anim("Hit"))
 	bt.add_node("aim", aim)
@@ -233,7 +293,7 @@ func _footsteps() -> void:
 		return
 	for i in 2:
 		var foot := skeleton.global_transform * skeleton.get_bone_global_pose(_foot_bones[i]).origin
-		var h := foot.y - global_position.y
+		var h := foot.y - global_position.y - _foot_rest
 		if h > STEP_UP:
 			_foot_up[i] = true
 		elif h < STEP_DOWN and _foot_up[i]:
@@ -291,6 +351,7 @@ func set_state(s: String, speed_scale := 1.0) -> void:
 	if STATE_SOUNDS.has(s) and not (s == "jump" and state in AIR):
 		Sfx.play(self, STATE_SOUNDS[s])
 	state = s
+	(tree.tree_root as AnimationNodeBlendTree).get_node("base").xfade_time = QUICK_XFADE if s in QUICK else XFADE
 	tree.set("parameters/base/transition_request", s)
 
 
@@ -307,7 +368,7 @@ func play_from(s: String, sec: float) -> void:
 		tree.set("parameters/climb_seek/seek_request", sec)
 
 
-## Arma na mão ("pistol", "m16" ou "shotgun"): mostra a malha dela e usa as poses de mira/tiro dela.
+## Arma na mão ("pistol", "m16", "shotgun" ou "m79"): mostra a malha dela e usa as poses de mira/tiro dela.
 func set_weapon(w: String) -> void:
 	if w != weapon and not _quiet and not holstered:
 		Sfx.play(self, "weapon_switch", global_position + Vector3.UP * 1.1)
@@ -315,7 +376,8 @@ func set_weapon(w: String) -> void:
 	var k := 1.0 if w in LONG_GUNS else 0.0
 	tree.set("parameters/aim_pose/blend_amount", k)
 	tree.set("parameters/shoot_pose/blend_amount", k)
-	tree.set("parameters/long_shoot/blend_amount", 1.0 if w == "shotgun" else 0.0)
+	tree.set("parameters/long_shoot/blend_amount", 1.0 if w in ["shotgun", "m79"] else 0.0)
+	tree.set("parameters/heavy_shoot/blend_amount", 1.0 if w == "m79" else 0.0)
 	_stop_pump()
 	_show_weapon()
 

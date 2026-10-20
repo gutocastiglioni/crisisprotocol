@@ -10,6 +10,7 @@ const TEX := {
 	"hazard": preload("res://assets/textures/hazard.png"),
 	"chest": preload("res://assets/textures/chest.png"),
 	"chest_shotgun": preload("res://assets/textures/chest_shotgun.png"),
+	"chest_m79": preload("res://assets/textures/chest_m79.png"),
 }
 const SIZE := 26.0
 const WALL_H := 4.5

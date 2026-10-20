@@ -1,8 +1,10 @@
 """Cabeça e cabelo da heroína no orçamento de "PS2 do começo" (referência: ruiva de cabelo liso e longo,
-franja varrida para os lados, mechas emoldurando o rosto até o peito).
+franja varrida para os lados; HAIR_STYLE escolhe entre a trança única nas costas e o cabelo solto).
 
 Cabeça: loft de 16 lados esculpido com empurrões (queixo, lábios, nariz, maçãs, órbitas, arco da sobrancelha).
-Cabelo: calota com linha do cabelo de verdade (testa livre), franja e mechas em fitas, cortina nas costas.
+Cabelo: calota com linha do cabelo de verdade (testa livre) e franja em fitas; "braid" = puxado para trás numa trança
+(tubo de 6 lados com gomos alternados, retângulo "braid" do atlas, prendedor e pontas soltas); "loose" = mechas
+laterais até o peito e cortina nas costas.
 As fitas usam o retângulo "hair" do atlas: u = largura da mecha, v = comprimento (pontas recortadas por alfa).
 Índices do anel de 16 lados: 0 = nuca, 4 = esquerda dela (+X), 8 = frente, 12 = direita dela.
 """
@@ -17,6 +19,7 @@ Y = Vector((0, 1, 0))
 Z = Vector((0, 0, 1))
 SIDES = 16
 Y0 = -0.012  # centro da cabeça em Y
+HAIR_STYLE = "braid"  # "braid" = trança única nas costas, "loose" = solto até o peito (o de antes)
 
 # (z, centro y, rx, ry, empurrões {índice: metros}) — de baixo (queixo) para cima
 HEAD = [
@@ -126,8 +129,20 @@ def _hairline(th):
     return 1.59 + 0.115 * front ** 1.5
 
 
-def build_scalp(mb, rows=5):
-    """Calota: do alto da cabeça até a linha do cabelo (v = 0 no topo, 1 na linha, onde o alfa recorta)."""
+def _hairline_pulled(th):
+    """Linha do cabelo puxado para a trança: igual na frente, por cima da orelha e descendo atrás dela até a nuca."""
+    a = math.pi - abs(math.pi - th % (2 * math.pi))  # 0 = nuca, pi = frente
+    if a >= 1.57:
+        return _hairline(th)
+    keys = [(0.0, 1.538), (0.6, 1.552), (1.15, 1.612), (1.57, _hairline(1.57))]
+    for (a0, z0), (a1, z1) in zip(keys, keys[1:]):
+        if a <= a1:
+            return z0 + (z1 - z0) * (a - a0) / (a1 - a0)
+
+
+def build_scalp(mb, rows=5, lift=0.011, edge_lift=0.015, line=_hairline, v_end=1.0):
+    """Calota: do alto da cabeça até a linha do cabelo (v = 0 no topo, 1 na linha, onde o alfa recorta).
+    `lift`/`edge_lift` = distância da pele no alto e na borda; v_end < 1 tira a borda das pontas recortadas."""
     head = {"Head": 1}
     grid = []
     for r in range(rows + 1):
@@ -135,8 +150,8 @@ def build_scalp(mb, rows=5):
         row = []
         for j in range(SIDES + 1):
             th = 2 * math.pi * j / SIDES
-            z = 1.745 + (_hairline(th) - 1.745) * s
-            off = 0.011 + 0.004 * s
+            z = 1.745 + (line(th) - 1.745) * s
+            off = lift + (edge_lift - lift) * s
             p = head_point(th, z, off)
             if r == 0:
                 p = Vector((p.x * 0.25, Y0 + 0.008 + (p.y - Y0 - 0.008) * 0.25, 1.745))
@@ -144,7 +159,7 @@ def build_scalp(mb, rows=5):
         grid.append(row)
     for r in range(rows):
         # topo fora da raiz escura do retângulo (senão a coroa vira um anel escuro)
-        va, vb = 0.15 + 0.85 * r / rows, 0.15 + 0.85 * (r + 1) / rows
+        va, vb = 0.15 + (v_end - 0.15) * r / rows, 0.15 + (v_end - 0.15) * (r + 1) / rows
         for j in range(SIDES):
             u0, u1 = j / SIDES, (j + 1) / SIDES
             mb._face(
@@ -235,7 +250,81 @@ def build_back(mb):
     ], "hair", 10, mat=MAT_HAIR, arc=(-wide, wide))
 
 
+# Trança: linha do centro (z, y) da nuca até o meio das costas, por fora da cabeça, do pescoço e das costas do
+# tronco (costas do torso em y ~0,06 no pescoço, ~0,10 nas escápulas, ~0,09 na cintura).
+BRAID_PATH = [(1.585, 0.082), (1.545, 0.090), (1.500, 0.094), (1.450, 0.104), (1.400, 0.122), (1.340, 0.132),
+              (1.280, 0.130), (1.220, 0.124), (1.165, 0.116)]
+BRAID_LOBES = 9  # gomos (cada um vem de um lado); o retângulo "braid" tem o mesmo número pintado em v
+BRAID_SIDES = 6
+
+
+def _braid_weights(z):
+    """Raiz presa à cabeça, meio no pescoço, resto no peito (a trança fica deitada nas costas)."""
+    keys = [(1.56, {"Head": 1}), (1.52, {"Head": 0.5, "Neck": 0.5}), (1.47, {"Neck": 0.5, "Chest": 0.5}),
+            (1.42, {"Chest": 1})]
+    for kz, w in keys:
+        if z >= kz:
+            return w
+    return {"Chest": 1}
+
+
+def _path_at(path, d):
+    """Ponto a `d` metros do começo da polilinha (e a direção nele)."""
+    for p0, p1 in zip(path, path[1:]):
+        seg = (p1 - p0).length
+        if d <= seg:
+            return p0.lerp(p1, d / seg), (p1 - p0).normalized()
+        d -= seg
+    return path[-1], (path[-1] - path[-2]).normalized()
+
+
+def build_braid(mb):
+    """Trança única: anéis a passo igual (v do retângulo = comprimento), alternando gomo largo deslocado para o lado
+    dele e cintura estreita; afina para baixo, termina num prendedor e num tufo de pontas."""
+    path = [Vector((0, y, z)) for z, y in BRAID_PATH]
+    total = sum((b - a).length for a, b in zip(path, path[1:]))
+    rings = []
+    steps = 2 * BRAID_LOBES
+    for i in range(steps + 1):
+        t = i / steps
+        c, _ = _path_at(path, total * t)
+        r = 0.012 + 0.022 * (1 - t) ** 1.2  # grossa na nuca, fina na ponta
+        if i == 0:  # raiz: cabelo juntado, achatado contra a nuca
+            rings.append(R(c + Vector((0, -0.006, 0)), 0.042, 0.018, _braid_weights(c.z)))
+            continue
+        lobe = i % 2 == 1
+        k = (i - 1) // 2
+        side = 1 if k % 2 == 0 else -1
+        if lobe:
+            c = c + X * (side * 0.30 * r)
+        rx, ry = (r, r * 0.72) if lobe else (r * 0.72, r * 0.58)
+        rings.append(R(c, rx, ry, _braid_weights(c.z)))
+    mb.loft(rings, "braid", BRAID_SIDES, caps=(False, True))
+
+    # prendedor: anel curto e justo logo abaixo do último gomo
+    end, along = _path_at(path, total)
+    band = 0.012
+    mb.loft([R(end + along * k, rx, ry, {"Chest": 1}) for k, rx, ry in
+             ((-0.004, 0.012, 0.009), (band * 0.5, 0.013, 0.010), (band, 0.011, 0.008))],
+            "leather", BRAID_SIDES)
+
+    # tufo: duas fitas cruzadas que abrem um pouco e terminam em pontas recortadas pelo alfa
+    chest = {"Chest": 1}
+    for k, (out, across) in enumerate(((Y, X), (X, Y))):
+        pts, outs = [], []
+        for t in (0.0, 0.35, 0.7, 1.0):
+            pts.append(end + along * (band * 0.4 + 0.075 * t) + Y * (0.004 * t))
+            outs.append(out)
+        widths = [0.009, 0.012, 0.015, 0.017]
+        ribbon(mb, pts, widths, outs, [chest] * 4, u0=0.25 * (k + 1), u1=0.25 * (k + 2), bulge=0.003)
+
+
 def build_hair(mb):
+    if HAIR_STYLE == "braid":
+        build_scalp(mb, lift=0.009, edge_lift=0.003, line=_hairline_pulled, v_end=0.78)
+        build_braid(mb)
+        build_fringe(mb)
+        return
     build_scalp(mb)
     build_back(mb)
     build_fringe(mb)

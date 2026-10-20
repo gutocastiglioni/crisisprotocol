@@ -5,7 +5,7 @@ Uso:
 Saídas:
   art/heroine.blend
   game/assets/characters/heroine.glb
-  game/assets/characters/m16.glb e shotgun.glb (as armas deitadas no baú, em relação à raiz dela ajoelhada)
+  game/assets/characters/m16.glb, shotgun.glb e m79.glb (as armas deitadas no baú, em relação à raiz dela ajoelhada)
   game/assets/characters/heroine_moves.json (caminhos da raiz e medidas dos movimentos, lidos pelo Godot)
 """
 import json
@@ -19,17 +19,20 @@ ROOT = ART.parent
 sys.path.insert(0, str(ART))
 
 import heroine_anims  # noqa: E402
+import heroine_m79  # noqa: E402
 import heroine_mesh  # noqa: E402
 import heroine_moves  # noqa: E402
 import heroine_rifle  # noqa: E402
 import heroine_rig  # noqa: E402
 import heroine_shotgun  # noqa: E402
+import heroine_body  # noqa: E402
 import heroine_spec  # noqa: E402
 
 ATLAS = ROOT / "game/assets/characters/heroine_atlas.png"
 GLB = ROOT / "game/assets/characters/heroine.glb"
 CHEST_GLB = ROOT / "game/assets/characters/m16.glb"
 CHEST_SHOTGUN_GLB = ROOT / "game/assets/characters/shotgun.glb"
+CHEST_M79_GLB = ROOT / "game/assets/characters/m79.glb"
 MOVES_JSON = ROOT / "game/assets/characters/heroine_moves.json"
 BLEND = ART / "heroine.blend"
 
@@ -107,12 +110,26 @@ def write_moves(path):
 
 
 def main():
-    reset_scene()
+    scene = reset_scene()
+    # corpo = o modelo base (art/heroine_body.py); o esqueleto nasce nas juntas dele
+    body, joints = heroine_body.prepare()
+    joints["extra_bones"] = heroine_body.braid_bones(joints["braid"])  # a trança balança (mola no Godot)
+    scene.render.fps = heroine_anims.FPS  # a importação do FBX troca o fps da cena (24): as animações são a 30
+    heroine_spec.use_joints(joints)
+    heroine_moves.ANKLE_Z = heroine_spec.ANKLE_L.z  # tornozelo com o pé chato no chão
+    # poses, borda/obstáculo e fuzil na medida do corpo dela (as medidas de projeto eram da heroína antiga)
+    heroine_anims.LOC_SCALE = heroine_anims.leg_scale(heroine_spec.HIP_L.z, heroine_spec.ANKLE_L.z)
+    heroine_moves.adapt(heroine_spec)
+    heroine_rifle.adapt(heroine_spec)
     rig = heroine_rig.make_armature()
-    body = heroine_rig.make_mesh_object(rig, ATLAS)
+    heroine_body.bind(body, rig)
+    heroine_rig.make_weapons(rig, ATLAS)
+    heroine_body.make_hair(rig, ATLAS)  # a nossa trança na cabeça dela
+    heroine_body.make_boots(rig, ATLAS)  # e a bota no lugar do pé dela
     heroine_rig.make_muzzle(rig)
     heroine_rig.make_muzzle(rig, "RifleMuzzle", heroine_rifle.muzzle_position())
     heroine_rig.make_muzzle(rig, "ShotgunMuzzle", heroine_shotgun.muzzle_position())
+    heroine_rig.make_muzzle(rig, "M79Muzzle", heroine_m79.muzzle_position())
     heroine_rig.make_pump(rig)
     acts = heroine_anims.build_actions(rig)
     stats(body, rig, acts)
@@ -120,6 +137,7 @@ def main():
     export(GLB)
     export_chest_weapon("M16Chest", heroine_rifle.build_rifle, CHEST_GLB)
     export_chest_weapon("ShotgunChest", heroine_shotgun.build_shotgun, CHEST_SHOTGUN_GLB)
+    export_chest_weapon("M79Chest", heroine_m79.build_m79, CHEST_M79_GLB)
     write_moves(MOVES_JSON)
 
 

@@ -62,14 +62,41 @@ def wrist(s):
     return arm_point(s, UPPER_ARM_LEN + FOREARM_LEN)
 
 
+# Tronco (cabeça, cauda) de cada osso; use_joints troca pelo do modelo base (art/heroine_body.py).
+TORSO_BONES = {
+    "Hips": (rz(Vector((0, 0, 0.92))), rz(Vector((0, 0, 1.02)))),
+    "Spine": (rz(Vector((0, 0, 1.02))), Vector((0, 0, 1.20))),
+    "Chest": (Vector((0, 0, 1.20)), Vector((0, 0, 1.44))),
+    "Neck": (Vector((0, -0.005, 1.44)), Vector((0, -0.01, 1.52))),
+    "Head": (Vector((0, -0.01, 1.52)), Vector((0, -0.01, 1.72))),
+}
+
+
+EXTRA_BONES = []  # ossos além dos 17 do corpo (a trança da heroína: use_joints)
+
+
+def use_joints(j):
+    """Esqueleto nas juntas de outro corpo (a heroína usa o modelo base: art/heroine_body.py). `j`: lado
+    esquerdo (+X) de ombro, punho, quadril, joelho, tornozelo, ponta do pé, comprimentos do braço e da mão e os
+    ossos do tronco. O braço continua reto em ARM_SPREAD (o modelo é posto assim). Sem chamar: as medidas acima
+    (o guerrilheiro usa essas)."""
+    global SHOULDER_L, UPPER_ARM_LEN, FOREARM_LEN, HAND_LEN, HIP_L, KNEE_L, ANKLE_L, TOE_L, TORSO_BONES, EXTRA_BONES
+    SHOULDER_L = j["shoulder"].copy()
+    UPPER_ARM_LEN, FOREARM_LEN, HAND_LEN = j["upper_arm"], j["forearm"], j["hand"]
+    HIP_L, KNEE_L, ANKLE_L, TOE_L = j["hip"].copy(), j["knee"].copy(), j["ankle"].copy(), j["toe"].copy()
+    TORSO_BONES = {k: (h.copy(), t.copy()) for k, (h, t) in j["torso"].items()}
+    EXTRA_BONES = list(j.get("extra_bones", []))
+
+
 # (nome, cabeça, cauda, pai). Nomes sem ponto para virarem nomes válidos no Godot.
 def bones():
+    tb = TORSO_BONES
     out = [
-        ("Hips", rz(Vector((0, 0, 0.92))), rz(Vector((0, 0, 1.02))), None),
-        ("Spine", rz(Vector((0, 0, 1.02))), Vector((0, 0, 1.20)), "Hips"),
-        ("Chest", Vector((0, 0, 1.20)), Vector((0, 0, 1.44)), "Spine"),
-        ("Neck", Vector((0, -0.005, 1.44)), Vector((0, -0.01, 1.52)), "Chest"),
-        ("Head", Vector((0, -0.01, 1.52)), Vector((0, -0.01, 1.72)), "Neck"),
+        ("Hips", *tb["Hips"], None),
+        ("Spine", *tb["Spine"], "Hips"),
+        ("Chest", *tb["Chest"], "Spine"),
+        ("Neck", *tb["Neck"], "Chest"),
+        ("Head", *tb["Head"], "Neck"),
     ]
     for s in ("L", "R"):
         out += [
@@ -80,7 +107,7 @@ def bones():
             (f"LowerLeg_{s}", side(KNEE_L, s), side(ANKLE_L, s), f"UpperLeg_{s}"),
             (f"Foot_{s}", side(ANKLE_L, s), side(TOE_L, s), f"LowerLeg_{s}"),
         ]
-    return out
+    return out + list(EXTRA_BONES)
 
 
 BONE_NAMES = [b[0] for b in bones()]

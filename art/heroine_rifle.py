@@ -68,6 +68,20 @@ def muzzle_position():
 # ------------------------------------------------------------------ poses com o fuzil
 RIFLE_CHEST = frame_matrix((-0.14, -0.40, 0.34), (1, 0, 0), (0, 0, 1))  # deitado no baú, cano para a esquerda
 KNEEL_DIST = 0.32  # da raiz dela até a frente do baú (o Godot põe o baú nessa distância)
+HOLD_Z = 1.02  # altura do cabo carregando (pronto baixo): 0,10 acima da junta do quadril
+AIM_TWIST = 0.0  # giro extra do peito mirando (braço mais curto: o ombro esquerdo vai à frente para a mão chegar)
+ARM_DESIGN, HIP_DESIGN = 0.485, 0.919  # braço (ombro ao punho) e quadril para que as medidas acima foram feitas
+
+
+def adapt(spec):
+    """Medidas do fuzil para outro corpo (heroine_spec.use_joints): cabo carregando na altura do quadril, giro na mira
+    e baú mais perto na medida do braço (as mãos alcançam o fuzil deitado)."""
+    global RIFLE_CHEST, KNEEL_DIST, HOLD_Z, AIM_TWIST
+    da = spec.UPPER_ARM_LEN + spec.FOREARM_LEN - ARM_DESIGN
+    HOLD_Z = 1.02 + spec.HIP_L.z - HIP_DESIGN
+    AIM_TWIST = max(0.0, -da) * 250.0  # graus: ~10 para 4 cm a menos
+    KNEEL_DIST = 0.32 + da
+    RIFLE_CHEST = frame_matrix((-0.14, -0.40 - da, 0.34), (1, 0, 0), (0, 0, 1))
 GRAB_FRAME = 26
 PICKUP_FRAMES = 54
 
@@ -107,7 +121,7 @@ def aim_target(sk, pose):
 
 def rifle_poses(A, sk):
     """(carregando, mirando, recuo): poses da parte de cima com o fuzil."""
-    aim_body = A.merge(A.AIM, {"Spine": (2, -15, 0), "Chest": (0, -22, 0), "Neck": (0, 18, 0),
+    aim_body = A.merge(A.AIM, {"Spine": (2, -15, 0), "Chest": (0, -22 - AIM_TWIST, 0), "Neck": (0, 18 + AIM_TWIST, 0),
                                "Head": (10, 18, 8)})
     for k in ("UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R"):
         aim_body.pop(k, None)
@@ -127,7 +141,7 @@ def rifle_poses(A, sk):
 
 def hold_target():
     """Carregando (pronto baixo): cabo na frente do quadril direito, cano para a frente, baixo e para a esquerda."""
-    return frame_matrix((-0.12, -0.2, 1.02), (0.55, -0.6, -0.25), (0.15, -0.2, 0.95))
+    return frame_matrix((-0.12, -0.2, HOLD_Z), (0.55, -0.6, -0.25), (0.15, -0.2, 0.95))
 
 
 def _lerp_frame(a, b, t):

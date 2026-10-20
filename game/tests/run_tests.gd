@@ -19,6 +19,9 @@ const WEAPONS_TESTS := preload("res://tests/weapons_tests.gd")
 const BLOOD_TESTS := preload("res://tests/blood_tests.gd")
 const SFX_TESTS := preload("res://tests/sfx_tests.gd")
 const ALLOSAURUS_TESTS := preload("res://tests/allosaurus_tests.gd")
+const SURVIVAL_TESTS := preload("res://tests/survival_tests.gd")
+const KEY_TESTS := preload("res://tests/key_tests.gd")
+const STEALTH_KILL_TESTS := preload("res://tests/stealth_kill_tests.gd")
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -27,6 +30,8 @@ var _world: Node3D
 
 func _initialize() -> void:
 	InputSetup.register()
+	# os testes do jogo de ação de antes valem no perfil "arcade" (o que o jogo mantém inteiro); o "survival" tem os seus
+	GameMode.set_mode(GameMode.ARCADE)
 	_run.call_deferred()
 
 
@@ -91,6 +96,8 @@ func _run() -> void:
 	await MOVES_TESTS.new().run(self)
 	print("== escopeta, buracos de bala e disparos")
 	await WEAPONS_TESTS.new().run(self)
+	print("== container trancado, chave e M79")
+	await KEY_TESTS.new().run(self)
 	print("== sangue e tiro na cabeça")
 	await BLOOD_TESTS.new().run(self)
 	print("== velociraptor")
@@ -99,8 +106,12 @@ func _run() -> void:
 	await AI_TESTS.new().run(self)
 	print("== guerrilheiros")
 	await SOLDIER_TESTS.new().run(self)
+	print("== abate furtivo e golpe crítico")
+	await STEALTH_KILL_TESTS.new().run(self)
 	print("== alossauro e pedreira (última sala)")
 	await ALLOSAURUS_TESTS.new().run(self)
+	print("== sobrevivência: câmera, armas, munição e dano")
+	await SURVIVAL_TESTS.new().run(self)
 	print("== visual (PS1/PS2) e atlas")
 	await GFX_TESTS.new().run(self)
 	print("== efeitos sonoros")
@@ -119,7 +130,9 @@ func test_asset() -> void:
 	var names := []
 	for i in sk.get_bone_count():
 		names.append(sk.get_bone_name(i))
-	check(names.size() == EXPECTED_BONES.size(), "17 ossos", str(names))
+	var braid := names.filter(func(n: String) -> bool: return n.begins_with("Braid"))
+	check(names.size() - braid.size() == EXPECTED_BONES.size(), "17 ossos do corpo", str(names))
+	check(braid.size() == 4, "trança em 4 ossos (balança com mola)", str(braid))
 	for b in EXPECTED_BONES:
 		check(b in names, "osso " + b)
 	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
@@ -311,7 +324,7 @@ func test_player_roll_and_crouch() -> void:
 	check(p.crouching and p.model.state == "crouch", "C = agachar")
 	Input.action_press("move_forward")
 	await _frames(20)
-	check(p.velocity.z < -0.3 and p.velocity.z > -1.0 and p.crouching, "agachada anda devagar", str(p.velocity.z))
+	check(p.velocity.z < -1.0 and p.velocity.z > -Player.RUN_SPEED * 0.5 and p.crouching, "agachada anda devagar (bem abaixo da corrida)", str(p.velocity.z))
 	Input.action_release("move_forward")
 
 

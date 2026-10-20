@@ -23,10 +23,12 @@ const TAIL_HIT := 0.38
 const TAIL_SPIN := deg_to_rad(80.0)
 const HOLD_TIME := 1.6
 const SHAKE_PERIOD := 0.4  # um ciclo da animação Shake
+const DOWN_TIME := 3.0  # tempo caído no chão após abate furtivo antes de levantar no contra-ataque
+const COUNTER_REACH := 2.8  # alcance do contra-ataque ao levantar
 const MAX_HEALTH := 170
-const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7}
+const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7, "counter": 18}
 const BITE_CHANCE := 0.6  # perto e de frente: morde ou recua
-const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "recover", "hit"]
+const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover", "hit"]
 
 var model: RaptorModel
 var health := MAX_HEALTH
@@ -61,6 +63,7 @@ func _ready() -> void:
 	investigate_speed = 2.4
 	hunt_speed = 4.2
 	head_mult = 1.0  # cabeçudo: tiro na cabeça vale como no corpo (sem headshot)
+	can_stealth = true
 	_enemy_ready()
 
 
@@ -115,6 +118,12 @@ func _combat_state(delta: float) -> void:
 			_hold(delta)
 		"tail":
 			_tail(delta)
+		"down":
+			_stop(delta)
+			if not _stealth_locked and _t >= _dur:
+				start_counter()
+		"counter":
+			_counter(delta)
 		"recover", "hit":
 			_stop(delta)
 			if state == "recover" and _t > 0.3 and _behind_close():
@@ -137,7 +146,7 @@ func start_study() -> void:
 		_enter("idle", "Idle")
 		return
 	_enter("study", "Walk", 0.25)
-	_dur = rng.randf_range(1.6, 3.2)
+	_dur = rng.randf_range(1.1, 2.4)
 	_circle = 1.0 if rng.randf() < 0.5 else -1.0
 
 
@@ -160,6 +169,24 @@ func start_tail() -> void:
 	var on_left := local.x < 0.0
 	_spin = -TAIL_SPIN if on_left else TAIL_SPIN
 	_enter("tail", "TailWhip" if on_left else "TailWhipR", 0.08)
+
+
+## Cai no chão atordoado após o abate furtivo por DOWN_TIME segundos, vulnerável ao golpe crítico.
+func start_down() -> void:
+	velocity = Vector3.ZERO
+	_enter("down", "Death", 0.08)
+	_play("Death", 0.08, 1.6)
+	_dur = DOWN_TIME
+
+
+## Levanta do chão num contra-ataque se não foi finalizado a tempo: dá o alarme e varre em volta.
+func start_counter() -> void:
+	if _has_target():
+		_raise_alarm()
+	var local := global_basis.inverse() * _to_target()
+	var on_left := local.x < 0.0
+	_spin = -TAIL_SPIN if on_left else TAIL_SPIN
+	_enter("counter", "TailWhip" if on_left else "TailWhipR", 0.1)
 
 
 func _recover(time := 0.8) -> void:
@@ -325,7 +352,7 @@ func _hold(_delta: float) -> void:
 	if tick > _ticks and not target.dead:
 		_ticks = tick
 		var side := global_basis.x * (1.0 if tick % 2 == 0 else -1.0)
-		target.take_hit(DAMAGE.bite, side, model.mouth_position())
+		target.take_hit(GameMode.enemy_damage(DAMAGE.bite), side, model.mouth_position())
 	# ela se debatendo (apertando botões) solta antes; morta, ele sacode até o fim e larga
 	if _t >= maxf(0.6, HOLD_TIME - target.struggle * 0.1):
 		_release(-global_basis.z * 5.0 + global_basis.x * 3.0 + Vector3.UP * 2.0)
@@ -353,6 +380,23 @@ func _tail(delta: float) -> void:
 		_recover(0.6)
 
 
+## Executa o contra-ataque ao levantar: gira o corpo e derruba a heroína se ela estiver perto (COUNTER_REACH).
+func _counter(delta: float) -> void:
+	_stop(delta)
+	if _has_target() and _t < TAIL_HIT:
+		_face(_to_target(), delta, 10.0)
+	if _t > 0.23 and _t < 0.53:
+		rotation.y += _spin / 0.3 * delta
+	if not _done and _t >= TAIL_HIT:
+		_done = true
+		var to := _to_target()
+		if _has_target() and to.length() < COUNTER_REACH:
+			var dir := to.normalized() if to.length() > 0.01 else -global_basis.z
+			_strike("counter", dir * 8.0 + Vector3.UP * 2.5, target.global_position + Vector3.UP * 1.0)
+	if _t >= model.length_of("TailWhip"):
+		start_study()
+
+
 ## Aplica o golpe `kind` (dano + empurrão a partir de `at`), a não ser que ela esteja rolando.
 func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 	_done = true
@@ -360,10 +404,10 @@ func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 		return
 	var hit: Vector3 = at if at is Vector3 else target.global_position + Vector3.UP
 	last_hit_at = hit
-	target.take_hit(DAMAGE[kind], push.normalized(), hit)
+	target.take_hit(GameMode.enemy_damage(DAMAGE[kind]), push.normalized(), hit)
 	if target.dead:
 		pass
-	elif kind in ["leap", "charge"]:
+	elif kind in ["leap", "charge", "counter"]:
 		target.launch(push, hit)  # arremessada, dobrando em C em volta do golpe
 	else:
 		target.knockback(push)
@@ -384,10 +428,49 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 	if state == "hold":
 		# tiro faz soltar a presa
 		_release(-global_basis.z * 3.0 + Vector3.UP * 1.5)
-	if state in ["leap", "tail", "charge"]:
+	if state in ["leap", "tail", "charge", "down", "counter"]:
 		return
 	_enter("hit", "Hit", 0.05)
 	_dur = 0.45
+
+
+## Golpe crítico disponível quando o raptor está caído no chão ("down") a até CRIT_RANGE, de qualquer direção.
+func can_crit_strike(p: Player) -> bool:
+	if dead or state != "down" or not is_instance_valid(p) or p.dead:
+		return false
+	return _flat(p.global_position - global_position).length() <= CRIT_RANGE and _line_clear(p)
+
+
+## Abate furtivo silencioso pelas costas: tira 70% da vida máxima sem dar alarme e derruba no chão ("down").
+func assassinate(dir := Vector3.ZERO, at: Variant = null) -> void:
+	if dead:
+		return
+	stealth_lock(false)
+	var dmg := roundi(MAX_HEALTH * 0.7)
+	health = maxi(0, health - dmg)
+	var hit: Vector3 = at if at is Vector3 else global_position + Vector3.UP * 1.0
+	var d := dir.normalized() if dir.length() > 0.01 else -global_basis.z
+	Blood.splash(get_parent(), hit, d, -d, 1.2)
+	Sfx.play(model, "impact_flesh", hit)
+	Sfx.play(model, "raptor_hurt", model.mouth_position(), 0.0, model.voice_pitch)
+	if health == 0:
+		die(d, hit)
+	else:
+		start_down()
+
+
+## Segundo golpe em sequência no raptor caído: dano crítico letal que o finaliza sem dar alarme.
+func crit_strike(dir := Vector3.ZERO, at: Variant = null) -> void:
+	if dead:
+		return
+	stealth_lock(false)
+	var dmg := maxi(health, roundi(MAX_HEALTH * 0.35))
+	health = maxi(0, health - dmg)
+	var hit: Vector3 = at if at is Vector3 else global_position + Vector3.UP * 0.5
+	var d := dir.normalized() if dir.length() > 0.01 else -global_basis.z
+	Blood.splash(get_parent(), hit, d, Vector3.UP, 1.5)
+	Sfx.play(model, "impact_flesh", hit)
+	die(d, hit)
 
 
 func wound() -> float:
@@ -398,6 +481,7 @@ func wound() -> float:
 ## sangue cresce embaixo do corpo.
 func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	_release(-global_basis.z * 2.0)
+	var was_down := state == "down"
 	dead = true
 	state = "dead"
 	_t = 0.0
@@ -405,7 +489,7 @@ func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	var flat := Vector3(dir.x, 0.0, dir.z).normalized()
 	var carry := Vector3(velocity.x, maxf(velocity.y, 0.0), velocity.z)
 	velocity = Vector3.ZERO
-	model.start_ragdoll(carry + flat * 1.8, flat * 30.0, at)
+	model.start_ragdoll(carry + flat * (0.6 if was_down else 1.8), flat * (12.0 if was_down else 30.0), at)
 	Blood.pool(model.ragdoll.bodies["Spine"], 2.4)
 	_update_marker()
 	killed.emit()
