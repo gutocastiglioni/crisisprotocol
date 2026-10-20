@@ -53,8 +53,9 @@ def _pose_male(arm):
         bpy.context.view_layer.update()
 
 
-def _drop_extras(mesh):
-    """Remove cabelos, cílios, coldre/tiras e bolsas femininas, mantendo apenas o tronco de costume."""
+def _drop_extras(mesh, joints):
+    """Remove cabelos, cílios, coldre/tiras, bolsas e a parte inferior do macaquinho feminino (eliminando a fralda)."""
+    hip_z = joints["hip"].z
     drop = {i for i, sl in enumerate(mesh.material_slots) if sl.material.name.removeprefix("Body_") in DROP_MATS}
     costume_idx = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_costume")
     bm = bmesh.new()
@@ -79,6 +80,10 @@ def _drop_extras(mesh):
     if len(comps) > 1:
         main_comp = set(max(comps, key=len))
         bmesh.ops.delete(bm, geom=[f for f in c_faces if f not in main_comp], context="FACES")
+    # Remove as faces inferiores do macaquinho (abaixo de hip_z - 0.055)
+    # eliminando o recorte em V de fralda/calcinha e deixando a calça contínua
+    low_costume = [f for f in bm.faces if f.material_index == costume_idx and all(v.co.z < hip_z - 0.055 for v in f.verts)]
+    bmesh.ops.delete(bm, geom=low_costume, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     bm.to_mesh(mesh.data)
     bm.free()
@@ -152,10 +157,10 @@ def _reshape_male(mesh, joints):
             p.x = p.x + (tx - p.x) * alpha
             p.y = p.y + (ty - p.y) * alpha
 
-        # 2. quadril masculino: afunilamento dos trocanteres (elimina formato violão/pera feminino)
+        # 2. quadril masculino: largura atlética e robusta da referência tr_guerilla.glb
         if hip_z - 0.18 < p.z < hip_z + 0.06:
-            hip_taper = math.exp(-((p.z - (hip_z - 0.05)) / 0.08) ** 2)
-            p.x *= (1.0 - 0.12 * hip_taper * (1.0 - 0.4 * wl_tot))
+            # Mantém a largura plena do quadril masculino (sem estreitar os trocanteres)
+            pass
 
         # 3. cabeça/pescoço: retração da nuca/crânio para folga total do capuz
         wh, wn = w.get("Head", 0.0), w.get("Neck", 0.0)
@@ -239,30 +244,29 @@ def _reshape_male(mesh, joints):
                     p.x = p.x + (tx - p.x) * blend
                     p.y = p.y + (cy + math.cos(th) * r_new - p.y) * blend
 
-        # 6. pelve: virilha e bunda calibradas com exatidão pelas proporções de tr_guerilla.glb
+        # 6. pelve: virilha e bunda anatômicas masculinas da referência tr_guerilla.glb
         if hip_z - 0.24 < p.z < hip_z + 0.05:
-            # Virilha / braguilha masculina com projeção anatômica de tr_guerilla.glb (Y ~ -0.160 descendo até -0.135)
-            if p.y < -0.01 and abs(p.x) < 0.075:
-                # Perfil frontal da braguilha militar
+            # Virilha / braguilha masculina com projeção de tr_guerilla.glb (Y ~ -0.160 descendo até -0.135)
+            if p.y < -0.01 and abs(p.x) < 0.080:
                 u_z = min(1.0, max(0.0, (hip_z - 0.06 - p.z) / 0.18))
-                # target_fy vai de -0.162 no topo até -0.135 no gancho (medidas de tr_guerilla.glb)
                 target_fy = -0.162 + 0.027 * u_z
-                fly_fade = max(0.0, 1.0 - (abs(p.x) / 0.075) ** 1.8)
+                fly_fade = max(0.0, 1.0 - (abs(p.x) / 0.080) ** 1.8)
                 z_fade = math.exp(-(((p.z - (hip_z - 0.09)) / 0.09) ** 2))
                 alpha_groin = fly_fade * z_fade
                 p.y = min(p.y, target_fy * alpha_groin + p.y * (1.0 - alpha_groin))
-                # Garante que o centro da virilha/gancho (x < 0.04) não recue para trás de -0.135
                 min_y = -0.155 + 0.020 * u_z
                 if abs(p.x) < 0.040 and p.z > hip_z - 0.22:
                     p.y = min(p.y, min_y)
 
-            # Bunda masculina anatômica sob a calça cargo (volume glúteo proeminente e contínuo de tr_guerilla.glb: Y ~ +0.130)
-            elif p.y > 0.02 and abs(p.x) < 0.16:
-                dz = p.z - (hip_z - 0.07)
-                dx = abs(p.x) - 0.065
-                mound = math.exp(-((dx / 0.055) ** 2 + (dz / 0.075) ** 2))
-                # Base de +0.095 subindo até +0.130 no ápice glúteo
-                target_by = 0.095 + 0.035 * mound
+            # Bunda masculina anatômica: dois glúteos redondos volumosos (ápice x=±0.095, Y=+0.131) e vinco central
+            elif p.y > 0.015 and abs(p.x) < 0.195:
+                dz = p.z - (hip_z - 0.065)
+                dx = abs(p.x) - 0.095
+                glute_mound = math.exp(-((dx / 0.052) ** 2 + (dz / 0.075) ** 2))
+                seam_dip = 0.022 * math.exp(-((p.x / 0.038) ** 2))
+                t_z = min(1.0, max(0.0, (p.z - (hip_z - 0.22)) / 0.22))
+                base_y = 0.085 + 0.025 * t_z
+                target_by = base_y + 0.045 * glute_mound - seam_dip
                 z_blend = min(1.0, max(0.0, (p.z - (hip_z - 0.22)) / 0.08))
                 p.y = max(p.y, target_by * z_blend)
         v.co = p
@@ -365,11 +369,14 @@ def _guerrilla_texture(mesh, joints):
                         continue
                     out[py, px, :3] = col[:3]
                     done[py, px] = True
-        lum = src[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
-        if done.any():
+        if key == 'costume' and done.any():
+            lum = src[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
             mean = float(lum[done].mean())
             shade = np.clip(0.85 + 0.35 * (lum - mean) / max(mean, 1e-3), 0.65, 1.2)[..., None]
             out[..., :3] = np.where(done[..., None], np.clip(out[..., :3] * shade, 0, 1), out[..., :3])
+        elif key == 'skin' and done.any():
+            # Na calça (skin), preserva a cor e o tecido militar contínuo sem as sombras do macaquinho da heroína
+            out[..., :3] = np.where(done[..., None], out[..., :3], out[..., :3])
         for _ in range(2):
             for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 sh = np.roll(done, (dy, dx), axis=(0, 1))
@@ -513,7 +520,7 @@ def prepare():
 
     HB._merge_groups(mesh)
     HO._flat_straps(mesh, joints)
-    _drop_extras(mesh)
+    _drop_extras(mesh, joints)
     _reshape_male(mesh, joints)
     _surfaces(mesh)
     HO._drop_feet(mesh)
