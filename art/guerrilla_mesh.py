@@ -233,14 +233,22 @@ def _reshape_male(mesh, joints):
                     p.x = p.x + (tx - p.x) * blend
                     p.y = p.y + (cy + math.cos(th) * r_new - p.y) * blend
 
-        # 6. pelve: virilha (gancho/braguilha) e nádegas masculinas anatômicas da referência militar (Imagem 2)
+        # 6. pelve: virilha anatômica masculina (braguilha e gancho com volume) e nádegas sob calça cargo
         if hip_z - 0.22 < p.z < hip_z + 0.05:
-            # Virilha / braguilha frontal reta e limpa de calça de combate
-            if p.y < -0.01 and abs(p.x) < 0.065:
-                fly_fade = max(0.0, 1.0 - (abs(p.x) / 0.065) ** 2)
-                z_fade = math.exp(-((p.z - (hip_z - 0.08)) / 0.065) ** 2)
-                target_fy = -0.076
-                p.y = p.y + (target_fy - p.y) * 0.45 * fly_fade * z_fade
+            # Virilha / braguilha masculina com volume anatômico autêntico (elimina o corte feminino para dentro)
+            if p.y < -0.01 and abs(p.x) < 0.075:
+                # Perfil frontal masculino: braguilha vertical reta e volume da virilha
+                u_z = (p.z - (hip_z - 0.09)) / 0.070
+                z_fade = math.exp(-(u_z ** 2))
+                x_fade = max(0.0, 1.0 - (abs(p.x) / 0.075) ** 1.8)
+                groin_fade = z_fade * x_fade
+                # Projeção anatômica masculina da virilha (-0.104 na braguilha descendo suave até -0.085 no gancho)
+                target_fy = -0.104 + 0.020 * max(0.0, min(1.0, (hip_z - 0.06 - p.z) / 0.14))
+                p.y = min(p.y, target_fy * groin_fade + p.y * (1.0 - groin_fade))
+                # Garante que no gancho central (x < 0.040, z entre 0.81 e 0.91) a virilha não afunde para dentro
+                if abs(p.x) < 0.040 and p.z > hip_z - 0.18:
+                    min_groin_y = -0.088 + 0.012 * max(0.0, (hip_z - 0.12 - p.z) / 0.06)
+                    p.y = min(p.y, min_groin_y)
 
             # Nádegas masculinas anatômicas sob a calça cargo (volume atlético suave, sem furos nem fendas)
             elif p.y > 0.02 and abs(p.x) < 0.15:
