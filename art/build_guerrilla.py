@@ -46,7 +46,6 @@ def main():
     heroine_body.bind(body, rig)
     heroine_rig.make_weapons(rig, ATLAS)
     guerrilla_mesh.make_hood(rig, ATLAS)
-    guerrilla_mesh.make_boots(rig, ATLAS)
     guerrilla_mesh.make_gear(rig, ATLAS)
     heroine_rig.make_muzzle(rig)
     heroine_rig.make_muzzle(rig, "RifleMuzzle", heroine_rifle.muzzle_position())
