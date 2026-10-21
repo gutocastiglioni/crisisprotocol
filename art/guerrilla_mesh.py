@@ -30,13 +30,24 @@ HEAD_RX, HEAD_RY = 1.08, 1.05
 
 
 def _pose_male(arm):
-    """Pose masculina: ombros naturais e braços canônicos da base (padronização 100% com a base)."""
+    """Pose masculina: ombros naturais alinhados à lateral do tronco e braços longos (+6.8 cm)."""
     old_drop = HB.CLAVICLE_DROP
-    HB.CLAVICLE_DROP = math.radians(2.0)
+    HB.CLAVICLE_DROP = math.radians(1.5)
     try:
         HB._pose(arm)
     finally:
         HB.CLAVICLE_DROP = old_drop
+    for side, k in (("left", 1), ("right", -1)):
+        down = Vector((k * math.sin(S.ARM_SPREAD), 0.0, -math.cos(S.ARM_SPREAD)))
+        clav = arm.pose.bones[f"arm {side} shoulder 1"]
+        clav.matrix = Matrix.Translation(Vector((k * 0.022, -0.030, 0.0))) @ clav.matrix
+        bpy.context.view_layer.update()
+        fore = arm.pose.bones[f"arm {side} elbow"]
+        fore.matrix = Matrix.Translation(down * 0.033) @ fore.matrix
+        bpy.context.view_layer.update()
+        hand = arm.pose.bones[f"arm {side} wrist"]
+        hand.matrix = Matrix.Translation(down * 0.035) @ hand.matrix
+        bpy.context.view_layer.update()
 
 
 def _drop_extras(mesh, joints):
@@ -141,6 +152,16 @@ def _reshape_male(mesh, joints):
                 p.y *= (1.0 - 0.16 * alpha)
             else:
                 p.y *= (1.0 - 0.02 * alpha)
+
+        # 3. braços masculinos: alinhamento lateral ao tórax alargado
+        wa_l = sum(w.get(f"{b}_L", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
+        wa_r = sum(w.get(f"{b}_R", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
+        if wa_l > 0.02:
+            p.y += -0.018 * wa_l
+            p.x += 0.018 * wa_l
+        elif wa_r > 0.02:
+            p.y += -0.018 * wa_r
+            p.x += -0.018 * wa_r
 
         v.co = p
 
