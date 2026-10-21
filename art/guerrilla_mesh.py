@@ -23,31 +23,20 @@ from heroine_hair import SURF, _surfaces
 ART = Path(__file__).resolve().parent
 ROOT = ART.parent
 TR_PATH = ROOT / "possible_models/tr_guerilla.glb"
-TARGET_UPPER_TRIS = 1850
+TARGET_UPPER_TRIS = 2400
 DROP_MATS = ("hair", "hair_2", "eyelash", "holster", "pouch")
 X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
 HEAD_RX, HEAD_RY = 1.08, 1.05
 
 
 def _pose_male(arm):
-    """Pose masculina: ombros naturais alinhados à lateral do tronco e braços longos (+6.8 cm)."""
+    """Pose masculina: ombros naturais e braços canônicos da base (padronização 100% com a base)."""
     old_drop = HB.CLAVICLE_DROP
-    HB.CLAVICLE_DROP = math.radians(1.5)
+    HB.CLAVICLE_DROP = math.radians(2.0)
     try:
         HB._pose(arm)
     finally:
         HB.CLAVICLE_DROP = old_drop
-    for side, k in (("left", 1), ("right", -1)):
-        down = Vector((k * math.sin(S.ARM_SPREAD), 0.0, -math.cos(S.ARM_SPREAD)))
-        clav = arm.pose.bones[f"arm {side} shoulder 1"]
-        clav.matrix = Matrix.Translation(Vector((k * 0.022, -0.030, 0.0))) @ clav.matrix
-        bpy.context.view_layer.update()
-        fore = arm.pose.bones[f"arm {side} elbow"]
-        fore.matrix = Matrix.Translation(down * 0.033) @ fore.matrix
-        bpy.context.view_layer.update()
-        hand = arm.pose.bones[f"arm {side} wrist"]
-        hand.matrix = Matrix.Translation(down * 0.035) @ hand.matrix
-        bpy.context.view_layer.update()
 
 
 def _drop_extras(mesh, joints):
@@ -153,21 +142,11 @@ def _reshape_male(mesh, joints):
             else:
                 p.y *= (1.0 - 0.02 * alpha)
 
-        # 3. braços masculinos: alinhamento lateral ao tórax alargado
-        wa_l = sum(w.get(f"{b}_L", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
-        wa_r = sum(w.get(f"{b}_R", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
-        if wa_l > 0.02:
-            p.y += -0.018 * wa_l
-            p.x += 0.018 * wa_l
-        elif wa_r > 0.02:
-            p.y += -0.018 * wa_r
-            p.x += -0.018 * wa_r
-
         v.co = p
 
 
 def _guerrilla_texture(mesh, joints):
-    """Textura escura tática do moletom e mangas."""
+    """Textura escura tática do moletom e mangas, preservando integralmente as mãos canônicas da base."""
     import numpy as np
 
     dark_hoodie = np.array([32 / 255.0, 32 / 255.0, 34 / 255.0], dtype=np.float32)
@@ -188,6 +167,13 @@ def _guerrilla_texture(mesh, joints):
         shade = np.clip(0.85 + 0.35 * (lum - mean) / mean, 0.70, 1.25)[..., None]
         out = src.copy()
         out[..., :3] = np.clip(base_col * shade, 0.0, 1.0)
+
+        if key == "skin":
+            # Preserva integralmente a textura da pele das mãos [U 0.742..0.988, V 0.270..0.536]
+            yy, xx = np.mgrid[0:h, 0:w]
+            hand_mask = (xx >= int(0.742 * w)) & (xx <= int(0.988 * w)) & (yy >= int(0.270 * h)) & (yy <= int(0.536 * h))
+            out[hand_mask, :3] = src[hand_mask, :3]
+
         new = bpy.data.images.new(f"tex_{key}_guerrilla", w, h, alpha=True)
         new.pixels = out.ravel().tolist()
         new.pack()
