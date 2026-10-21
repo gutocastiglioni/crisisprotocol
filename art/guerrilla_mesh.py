@@ -23,7 +23,7 @@ from heroine_hair import SURF, _surfaces
 ART = Path(__file__).resolve().parent
 ROOT = ART.parent
 TR_PATH = ROOT / "possible_models/tr_guerilla.glb"
-TARGET_UPPER_TRIS = 1350
+TARGET_UPPER_TRIS = 1850
 DROP_MATS = ("hair", "hair_2", "eyelash", "holster", "pouch")
 X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
 HEAD_RX, HEAD_RY = 1.08, 1.05
@@ -40,7 +40,7 @@ def _pose_male(arm):
     for side, k in (("left", 1), ("right", -1)):
         down = Vector((k * math.sin(S.ARM_SPREAD), 0.0, -math.cos(S.ARM_SPREAD)))
         clav = arm.pose.bones[f"arm {side} shoulder 1"]
-        clav.matrix = Matrix.Translation(Vector((k * 0.012, -0.032, 0.0))) @ clav.matrix
+        clav.matrix = Matrix.Translation(Vector((k * 0.022, -0.030, 0.0))) @ clav.matrix
         bpy.context.view_layer.update()
         fore = arm.pose.bones[f"arm {side} elbow"]
         fore.matrix = Matrix.Translation(down * 0.033) @ fore.matrix
@@ -51,14 +51,15 @@ def _pose_male(arm):
 
 
 def _drop_extras(mesh, joints):
-    """Remove cabelos, cílios, bolsas femininas e toda a metade inferior da malha feminina."""
+    """Remove cabelos, cílios, bolsas femininas e toda a metade inferior da malha feminina (preservando braços e mãos)."""
     hip_z = joints["hip"].z
+    names = {g.index: g.name for g in mesh.vertex_groups}
     drop = {i for i, sl in enumerate(mesh.material_slots) if sl.material.name.removeprefix("Body_") in DROP_MATS}
     costume_idx = next(i for i, sl in enumerate(mesh.material_slots) if sl.material.name == "Body_costume")
     bm = bmesh.new()
     bm.from_mesh(mesh.data)
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index in drop], context="FACES")
-    
+
     # Remove as partes desconectadas de costume mantendo o tronco
     c_faces = [f for f in bm.faces if f.material_index == costume_idx]
     seen, comps = set(), []
@@ -79,9 +80,16 @@ def _drop_extras(mesh, joints):
     if len(comps) > 1:
         main_comp = set(max(comps, key=len))
         bmesh.ops.delete(bm, geom=[f for f in c_faces if f not in main_comp], context="FACES")
-        
-    # Remove toda a parte inferior feminina abaixo da bainha do moletom
-    lower_faces = [f for f in bm.faces if all(v.co.z < hip_z - 0.045 for v in f.verts)]
+
+    # Remove pernas e pelve feminina abaixo da bainha do moletom, preservando braços e mãos
+    arm_prefixes = ("UpperArm", "LowerArm", "Hand")
+    dlayer = bm.verts.layers.deform.active
+
+    def is_arm(v):
+        d = v[dlayer]
+        return any(names.get(g, "").startswith(arm_prefixes) for g, w in d.items() if w > 0.08)
+
+    lower_faces = [f for f in bm.faces if all(v.co.z < hip_z - 0.045 and not is_arm(v) for v in f.verts)]
     bmesh.ops.delete(bm, geom=lower_faces, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     bm.to_mesh(mesh.data)
@@ -96,16 +104,16 @@ def _drop_extras(mesh, joints):
 
 
 def _male_torso_section(z, hip_z, neck_z):
-    """Seção transversal masculina: cintura reta, dorsal em V e trapézio suave."""
+    """Seção transversal masculina: tórax largo atlético, dorsal em V e trapézio suave."""
     u = (z - hip_z) / max(neck_z - hip_z, 1e-4)
     hem = 1.0 / (1.0 + math.exp(-(z - (hip_z - 0.085)) / 0.006))
     v_taper = min(1.0, max(0.0, (u + 0.05) / 0.68))
     trap_slope = 1.0 / (1.0 + math.exp((u - 0.78) / 0.075))
-    rx = (0.162 + 0.014 * hem + 0.022 * v_taper) * trap_slope + 0.078 * (1.0 - trap_slope)
+    rx = (0.174 + 0.010 * hem + 0.040 * v_taper) * trap_slope + 0.082 * (1.0 - trap_slope)
     pec = math.exp(-((u - 0.62) / 0.24) ** 2)
-    ry_f = (0.104 + 0.012 * hem + 0.020 * pec) * trap_slope + 0.074 * (1.0 - trap_slope)
+    ry_f = (0.114 + 0.012 * hem + 0.026 * pec) * trap_slope + 0.076 * (1.0 - trap_slope)
     upper_back = math.exp(-((u - 0.66) / 0.28) ** 2)
-    ry_b = (0.098 + 0.008 * hem + 0.018 * upper_back) * trap_slope + 0.074 * (1.0 - trap_slope)
+    ry_b = (0.106 + 0.008 * hem + 0.022 * upper_back) * trap_slope + 0.076 * (1.0 - trap_slope)
     yc = -0.005 * hem
     return yc, rx, ry_f, ry_b
 
@@ -145,15 +153,15 @@ def _reshape_male(mesh, joints):
             else:
                 p.y *= (1.0 - 0.02 * alpha)
 
-        # 3. braços masculinos: alinhamento lateral
+        # 3. braços masculinos: alinhamento lateral ao tórax alargado
         wa_l = sum(w.get(f"{b}_L", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
         wa_r = sum(w.get(f"{b}_R", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
         if wa_l > 0.02:
             p.y += -0.018 * wa_l
-            p.x += 0.008 * wa_l
+            p.x += 0.018 * wa_l
         elif wa_r > 0.02:
             p.y += -0.018 * wa_r
-            p.x += -0.008 * wa_r
+            p.x += -0.018 * wa_r
 
         v.co = p
 
@@ -311,9 +319,18 @@ def _import_tr_lower(joints):
     scale = target_top / (belt_z - min_z)
 
     for v in bm.verts:
-        v.co.z = (v.co.z - min_z) * scale
-        v.co.x = v.co.x * scale
-        v.co.y = (v.co.y + 0.6) * scale
+        p_z = (v.co.z - min_z) * scale
+        # Afunilamento atlético da cintura/cinto para proporção harmônica com o tronco masculino
+        if p_z > hip_z - 0.22:
+            u_w = min(1.0, max(0.0, (p_z - (hip_z - 0.22)) / 0.17))
+            x_scale = 1.0 - 0.12 * u_w
+            y_scale = 1.0 - 0.05 * u_w
+        else:
+            x_scale = 1.0
+            y_scale = 1.0
+        v.co.z = p_z
+        v.co.x = v.co.x * scale * x_scale
+        v.co.y = (v.co.y + 0.6) * scale * y_scale
 
     me_lower = bpy.data.meshes.new("LowerPartMesh")
     bm.to_mesh(me_lower)
