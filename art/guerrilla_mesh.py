@@ -40,7 +40,7 @@ def _pose_male(arm):
     for side, k in (("left", 1), ("right", -1)):
         down = Vector((k * math.sin(S.ARM_SPREAD), 0.0, -math.cos(S.ARM_SPREAD)))
         clav = arm.pose.bones[f"arm {side} shoulder 1"]
-        clav.matrix = Matrix.Translation(Vector((k * 0.022, -0.030, 0.0))) @ clav.matrix
+        clav.matrix = Matrix.Translation(Vector((k * 0.038, -0.025, 0.0))) @ clav.matrix
         bpy.context.view_layer.update()
         fore = arm.pose.bones[f"arm {side} elbow"]
         fore.matrix = Matrix.Translation(down * 0.033) @ fore.matrix
@@ -104,32 +104,33 @@ def _drop_extras(mesh, joints):
 
 
 def _male_torso_section(z, hip_z, neck_z):
-    """Seção transversal masculina: tórax largo atlético, dorsal em V e trapézio suave."""
+    """Seção transversal masculina: colete tático proporcional (46cm tórax, 40cm cintura)."""
     u = (z - hip_z) / max(neck_z - hip_z, 1e-4)
     hem = 1.0 / (1.0 + math.exp(-(z - (hip_z - 0.085)) / 0.006))
-    v_taper = min(1.0, max(0.0, (u + 0.05) / 0.68))
-    trap_slope = 1.0 / (1.0 + math.exp((u - 0.78) / 0.075))
-    rx = (0.174 + 0.010 * hem + 0.040 * v_taper) * trap_slope + 0.082 * (1.0 - trap_slope)
-    pec = math.exp(-((u - 0.62) / 0.24) ** 2)
-    ry_f = (0.114 + 0.012 * hem + 0.026 * pec) * trap_slope + 0.076 * (1.0 - trap_slope)
-    upper_back = math.exp(-((u - 0.66) / 0.28) ** 2)
-    ry_b = (0.106 + 0.008 * hem + 0.022 * upper_back) * trap_slope + 0.076 * (1.0 - trap_slope)
-    yc = -0.005 * hem
+    v_taper = min(1.0, max(0.0, (u + 0.08) / 0.72))
+    trap_slope = 1.0 / (1.0 + math.exp((u - 0.76) / 0.070))
+    rx = (0.198 + 0.004 * hem + 0.028 * v_taper) * trap_slope + 0.102 * (1.0 - trap_slope)
+    pec = math.exp(-((u - 0.62) / 0.22) ** 2)
+    ry_f = (0.118 + 0.006 * hem + 0.020 * pec) * trap_slope + 0.088 * (1.0 - trap_slope)
+    upper_back = math.exp(-((u - 0.65) / 0.26) ** 2)
+    ry_b = (0.112 + 0.004 * hem + 0.018 * upper_back) * trap_slope + 0.088 * (1.0 - trap_slope)
+    yc = -0.006 * hem
     return yc, rx, ry_f, ry_b
 
 
 def _reshape_male(mesh, joints):
-    """Remodela tronco superior para homem: ombros naturais, peitoral em V, braços longos e nuca protegida."""
+    """Remodela tronco superior para homem: colete largo de 46cm, ombros alinhados, mangas encorpadas (14cm) e mãos canônicas."""
     names = {g.index: g.name for g in mesh.vertex_groups}
     hip_z = joints["hip"].z
     neck_z, head_z = joints["torso"]["Neck"][0].z, joints["torso"]["Head"][0].z
+    sh_pt = joints["shoulder"]
     me = mesh.data
 
     for v in me.vertices:
         w = {names[g.group]: g.weight for g in v.groups if g.weight > 0 and g.group in names}
         p = v.co.copy()
 
-        # 1. tronco masculino em V suave
+        # 1. tronco masculino em V e colete tático proporcional
         wt = w.get("Hips", 0.0) + w.get("Spine", 0.0) + w.get("Chest", 0.0)
         if wt > 0.02 and p.z >= hip_z - 0.08 and p.z <= neck_z + 0.04:
             yc, rx, ry_f, ry_b = _male_torso_section(p.z, hip_z, neck_z)
@@ -153,15 +154,35 @@ def _reshape_male(mesh, joints):
             else:
                 p.y *= (1.0 - 0.02 * alpha)
 
-        # 3. braços masculinos: alinhamento lateral ao tórax alargado
-        wa_l = sum(w.get(f"{b}_L", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
-        wa_r = sum(w.get(f"{b}_R", 0.0) for b in ("UpperArm", "LowerArm", "Hand"))
-        if wa_l > 0.02:
-            p.y += -0.018 * wa_l
-            p.x += 0.018 * wa_l
-        elif wa_r > 0.02:
-            p.y += -0.018 * wa_r
-            p.x += -0.018 * wa_r
+        # 3. braços e mangas masculinas: volume tático encorpado (14cm bíceps, 12.3cm antebraço) com mãos canônicas intactas
+        w_up_l, w_low_l, w_h_l = w.get("UpperArm_L", 0.0), w.get("LowerArm_L", 0.0), w.get("Hand_L", 0.0)
+        w_up_r, w_low_r, w_h_r = w.get("UpperArm_R", 0.0), w.get("LowerArm_R", 0.0), w.get("Hand_R", 0.0)
+        wa_l = w_up_l + w_low_l + w_h_l
+        wa_r = w_up_r + w_low_r + w_h_r
+
+        if wa_l > 0.02 or wa_r > 0.02:
+            side_k = 1.0 if wa_l >= wa_r else -1.0
+            w_sleeve = (w_up_l + w_low_l) if side_k > 0 else (w_up_r + w_low_r)
+            w_hand = w_h_l if side_k > 0 else w_h_r
+
+            if w_sleeve > 0.05:
+                c0 = Vector((side_k * 0.215, -0.009, 1.265))
+                d = Vector((side_k * 0.205, 0.001, -0.978))
+                t = (p - c0).dot(d)
+                proj = c0 + d * t
+                v_rad = p - proj
+                r = v_rad.length
+                if r > 0.010 and -0.12 <= t <= 0.34:
+                    u = min(1.0, max(0.0, (t + 0.02) / 0.30))
+                    r_target = 0.072 - 0.015 * u
+                    scale = min(2.05, max(1.0, r_target / max(r, 0.025)))
+                    alpha = min(1.0, w_sleeve * 1.2) * max(0.0, 1.0 - w_hand * 2.5)
+                    if t > 0.26:
+                        alpha *= max(0.0, 1.0 - (t - 0.26) / 0.06)
+                    elif t < -0.02:
+                        alpha *= max(0.0, 1.0 - (-0.02 - t) / 0.08)
+                    p = proj + v_rad * (1.0 + (scale - 1.0) * alpha)
+                    p.z -= 0.007 * alpha
 
         v.co = p
 
@@ -327,11 +348,11 @@ def _import_tr_lower(joints):
 
     for v in bm.verts:
         p_z = (v.co.z - min_z) * scale
-        # Afunilamento atlético da cintura/cinto para proporção harmônica com o tronco masculino
+        # Alinhamento da cintura/cinto para proporção harmônica com o colete
         if p_z > hip_z - 0.22:
             u_w = min(1.0, max(0.0, (p_z - (hip_z - 0.22)) / 0.17))
-            x_scale = 1.0 - 0.12 * u_w
-            y_scale = 1.0 - 0.05 * u_w
+            x_scale = 1.0 - 0.04 * u_w
+            y_scale = 1.0 - 0.02 * u_w
         else:
             x_scale = 1.0
             y_scale = 1.0
