@@ -233,10 +233,15 @@ func show_item(item: KeyItem) -> void:
 	_open()
 	for c in _pivot.get_children():
 		c.queue_free()
-	var model := KeyItem.build_model(_pivot)
-	model.rotation = Vector3(PI * 0.5, 0.0, 0.0)  # em pé, de frente para a câmera
-	model.scale = Vector3.ONE * 2.2
-	model.position.x = 0.02
+	var model := KeyItem.build_model(_pivot, item.kind)
+	if item.kind == "keycard":
+		model.rotation = Vector3(0.15, 0.0, 0.0)
+		model.scale = Vector3.ONE * 2.0
+		model.position.x = 0.0
+	else:
+		model.rotation = Vector3(PI * 0.5, 0.0, 0.0)  # em pé, de frente para a câmera
+		model.scale = Vector3.ONE * 2.2
+		model.position.x = 0.02
 	_pivot.rotation = Vector3(0.0, -0.6, 0.0)
 	_shade.visible = true
 	_view.visible = true

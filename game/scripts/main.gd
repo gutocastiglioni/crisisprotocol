@@ -19,19 +19,19 @@ const POST_SHADER := preload("res://shaders/psx_post.gdshader")
 const MOVE_SHOTS := [
 	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
-	"dodge_l", "dodge_r", "dodge_back", "dodge_roll",
+	"dodge_l", "dodge_r", "dodge_back", "dodge_roll", "sniper_aim", "sniper_zoom",
 ]
 ## revisão do container trancado da M79, da chave escondida no alvo e da M79 (ver _setup_key_shot)
 const KEY_SHOTS := ["locked", "unlock", "key_drop", "key_get", "m79_aim", "fire_m79", "pickup_m79"]
 const KEY_DUMMY := 2  # o alvo da direita, mirando, guarda a chave do container
-const LOCKER_POS := Vector3(0, 0, 9.6)  # atrás de onde ela começa (ela olha para -Z), de frente para ela
+const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
 const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparece (dá tempo de ver o corpo cair)
 const RESTART_ACTIONS := ["reset", "interact", "roll", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triangulo)  Q trocar arma (select)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -39,12 +39,14 @@ var chest: Chest
 var chests: Array[Chest] = []
 var locker: Chest  # container trancado com a M79
 var key: KeyItem
+var keycard: KeyItem
 var inspect: Inspect
 var raptors: Array[Raptor] = []
 var soldiers: Array[Soldier] = []
 var allosaurus: Allosaurus
 var catwalk: Catwalk
 var sniper: Sniper
+var sniper_scope: SniperScope
 var _hud_daze: Label
 var _end: Control
 var _end_stats: Label
@@ -91,21 +93,20 @@ func _ready() -> void:
 		t.rotation.y = PI + d[1]
 		add_child(t)
 		dummies.append(t)
-	# baú com o M16 perto do começo, de frente para ela
+	# baú com o M16 no canto superior direito do galpão, guardado por sentinela à sua direita
 	chest = Chest.new()
-	chest.position = Vector3(2.6, 0, 3.6)
-	chest.rotation.y = atan2(-2.6, 2.4)
+	chest.position = Vector3(10.0, 0, -11.4)
+	chest.rotation.y = 0.0
 	add_child(chest)
 	chests.append(chest)
-	# baú com a escopeta do outro lado, perto da coluna da esquerda, de frente para ela; a frente fica mais para +Z
-	# que para +X (menos de 45°): a textura do cenário é projetada pelo mundo e, virada para +X, o estêncil sai espelhado
+	# baú com a escopeta no canto esquerdo inferior do pátio dos velociraptors (mata sul, perto do fundo)
 	var sg := Chest.new()
 	sg.item = "shotgun"
-	sg.position = Vector3(-3.0, 0, 2.6)
-	sg.rotation.y = atan2(3.0, 3.4)
+	sg.position = Vector3(-49.5, 0, 14.0)
+	sg.rotation.y = 0.0
 	add_child(sg)
 	chests.append(sg)
-	# container trancado com a M79 atrás de onde ela começa, de frente para ela; a chave está com um dos alvos
+	# container trancado com a M79 no mezanino às costas da heroína; a chave está com um dos alvos
 	locker = Chest.new()
 	locker.item = "m79"
 	locker.lock = "container"
@@ -133,23 +134,37 @@ func _ready() -> void:
 	catwalk = Catwalk.new()
 	add_child(catwalk)
 	
-	# inimigo guerrilheiro Sniper no mezanino às costas da heroína
+	# inimigo guerrilheiro Sniper no mezanino às costas da heroína (posto de observação elevado)
 	sniper = Sniper.new()
 	sniper.target = player
-	sniper.position = Vector3(0, Catwalk.FLOOR_Y, 11.8)
-	sniper.rotation.y = PI  # olhando para frente do galpão (-Z)
-	sniper.route = [Vector3(-2.5, Catwalk.FLOOR_Y, 11.8), Vector3(2.5, Catwalk.FLOOR_Y, 11.8)]
+	sniper.position = Vector3(-2.0, Catwalk.FLOOR_Y, 11.7)
+	sniper.rotation.y = 0.0  # olhando para frente do galpão (-Z)
+	sniper.route = [Vector3(-3.5, Catwalk.FLOOR_Y, 11.7), Vector3(0.5, Catwalk.FLOOR_Y, 11.7)]
 	add_child(sniper)
 	
-	# soldados de guarda no galpão, cada um com a sua ronda (alarme em comum com os raptors: grupo "enemies")
+	# keycard no sniper que abre o portão da primeira fase
+	keycard = KeyItem.new()
+	keycard.id = "keycard_gate"
+	keycard.kind = "keycard"
+	keycard.display_name = "CARTAO DE ACESSO"
+	keycard.description = "Cartao de acesso magnetico nivel 1.\nAbre o portao de seguranca do patio."
+	add_child(keycard)
+	sniper.loot = keycard
+	keycard.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
+	
+	# soldados de guarda no galpão/pátio (2 patrulhando o pátio, 2 sentinelas no portão)
 	for g in Soldier.GUARDS:
 		var sd := Soldier.new()
 		sd.target = player
-		sd.position = g.route[0]
-		var next: Vector3 = g.route[1] - g.route[0]
-		sd.rotation.y = atan2(-next.x, -next.z)
-		for p in g.route:
-			sd.route.append(p)
+		if g.route.is_empty():
+			sd.position = g.pos
+			sd.rotation.y = g.rot_y
+		else:
+			sd.position = g.route[0]
+			var next: Vector3 = g.route[1] - g.route[0]
+			sd.rotation.y = atan2(-next.x, -next.z)
+			for p in g.route:
+				sd.route.append(p)
 		add_child(sd)
 		soldiers.append(sd)
 	Yard.bake_nav(self)
@@ -164,6 +179,8 @@ func _ready() -> void:
 	inspect.player = player
 	inspect.hud = _hud
 	add_child(inspect)
+	sniper_scope = SniperScope.new()
+	add_child(sniper_scope)
 	player.locked.connect(_on_locked)
 	key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	player.health_changed.connect(func(v: int) -> void: _hud_health.text = "VIDA %d" % v)
@@ -456,15 +473,16 @@ func _update_weapon_hud() -> void:
 	_hud_weapon.add_theme_color_override("font_color", color)
 
 
-## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos raptors (calmos, desconfiados, alertados).
+## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos inimigos.
 func _update_stealth_hud(area: Vector2) -> void:
 	var level := 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		level = maxi(level, e.alert_level())
 	var bars := clampi(roundi(player.visibility() * 5.0), 1, 5)
-	var status: String = ["", "  DESCONFIADOS", "  ALERTA!"][level]
+	var idx := clampi(level, 0, 3)
+	var status: String = ["", "  DESCONFIADOS", "  BUSCA ATIVA", "  ALERTA!"][idx]
 	_hud_stealth.text = "VISIVEL %s%s%s" % ["#".repeat(bars), ".".repeat(5 - bars), status]
-	_hud_stealth.add_theme_color_override("font_color", [Color(0.85, 0.9, 0.8), Color(1.0, 0.85, 0.3), Color(1.0, 0.3, 0.25)][level])
+	_hud_stealth.add_theme_color_override("font_color", [Color(0.85, 0.9, 0.8), Color(1.0, 0.85, 0.3), Color(1.0, 0.55, 0.15), Color(1.0, 0.3, 0.25)][idx])
 	_hud_stealth.position = Vector2(6, area.y - 14)
 
 
@@ -481,13 +499,16 @@ func reset_all() -> void:
 	for d in dummies:
 		d.reset()
 	key.reset()
+	if is_instance_valid(keycard):
+		keycard.reset()
 	for r in raptors:
 		r.reset()
 	for sd in soldiers:
 		sd.reset()
 	if is_instance_valid(sniper):
 		sniper.reset()
-		sniper.position = Vector3(0, Catwalk.FLOOR_Y, 11.8)
+		sniper.position = Vector3(-2.0, Catwalk.FLOOR_Y, 11.7)
+		sniper.rotation.y = 0.0
 	for pk: Pickup in get_tree().get_nodes_in_group("pickups"):
 		pk.reset()
 	allosaurus.reset()
@@ -587,18 +608,39 @@ func _parse_args() -> void:
 func _process(delta: float) -> void:
 	if _crosshair == null:
 		return
-	_crosshair.visible = player.aiming and player.model.is_aimed()
+	var in_sniper := player.is_sniper_zoomed()
+	_crosshair.visible = player.aiming and player.model.is_aimed() and not in_sniper
+	if _crosshair.visible:
+		var aim_info: Dictionary = player.aim_target_info()
+		if aim_info.has_target:
+			if aim_info.blocked:
+				_crosshair.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+			else:
+				_crosshair.add_theme_color_override("font_color", Color(1.0, 0.25, 0.2))
+		else:
+			_crosshair.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
+	if sniper_scope:
+		var aim_pt := player.camera_rig.aim_point([player.get_rid()])
+		var dist := player.camera_rig.camera.global_position.distance_to(aim_pt)
+		var aim_info: Dictionary = player.aim_target_info() if in_sniper else {}
+		sniper_scope.update_scope(in_sniper, player.sniper_zoom_label(), dist, aim_info.get("blocked", false))
 	var target := player.pick_target()
-	var door := player.pick_door() if target == null else null
-	var ladder := player.pick_ladder() if target == null and door == null else null
-	_prompt.visible = target != null or door != null or ladder != null
+	var key_node := player.pick_key() if target == null else null
+	var door := player.pick_door() if target == null and key_node == null else null
+	var ladder := player.pick_ladder() if target == null and key_node == null and door == null else null
+	_prompt.visible = target != null or key_node != null or door != null or ladder != null
 	if target and target.is_locked():
 		# trancado: não diz o que tem dentro
 		_set_prompt(_prompt, "USAR CHAVE (E)" if player.has_key(target.lock) else "ABRIR (E)")
 	elif target:
 		_set_prompt(_prompt, "PEGAR %s (E)" % Player.WEAPON_STATS[target.item].name)
+	elif key_node:
+		_set_prompt(_prompt, "PEGAR %s (E)" % key_node.display_name)
 	elif door:
-		_set_prompt(_prompt, "%s (E)" % door.verb)
+		if door.is_locked():
+			_set_prompt(_prompt, "USAR CARTAO DE ACESSO (E)" if player.has_key(door.lock) else "LEITOR DE CARTAO (E)")
+		else:
+			_set_prompt(_prompt, "%s (E)" % door.verb)
 	elif ladder:
 		var info: Dictionary = ladder.can_mount(player.global_position)
 		_set_prompt(_prompt, "DESCER ESCADA (E)" if info.get("at_top", false) else "SUBIR ESCADA (E)")
@@ -753,6 +795,10 @@ func _key_shot(at: Callable) -> void:
 			if _shot == "key_get" and at.call(1.2):
 				player.global_position = key.global_position + Vector3(0.3, 0, 0.3)
 				player.reset_physics_interpolation()
+			if _shot == "key_get" and at.call(1.3):
+				Input.action_press("interact")
+			if _shot == "key_get" and at.call(1.35):
+				Input.action_release("interact")
 		"m79_aim":
 			Input.action_press("aim")
 		"fire_m79":
@@ -784,6 +830,8 @@ func _setup_move_shot() -> void:
 		player.give_weapon("m16")
 	if _shot.begins_with("shotgun") or _shot in ["fire_shotgun", "pump"]:
 		player.give_weapon("shotgun")
+	if _shot.begins_with("sniper"):
+		player.give_weapon("sniper")
 	if _shot == "pump":
 		# de lado, perto das mãos, para ver a telha indo e voltando
 		_review_cam = Camera3D.new()
@@ -829,8 +877,14 @@ func _move_shot(at: Callable) -> void:
 			# clique duplo no X: cambalhota
 			tap.call("roll", 0.4)
 			tap.call("roll", 0.5)
-		"rifle_aim", "shotgun_aim":
+		"rifle_aim", "shotgun_aim", "sniper_aim":
 			Input.action_press("aim")
+		"sniper_zoom":
+			Input.action_press("aim")
+			if at.call(0.1):
+				player.zoom_in()
+			if at.call(0.2):
+				player.zoom_in()
 		"fire_pistol", "fire_m16", "fire_shotgun", "pump":
 			Input.action_press("aim")
 			var gap: float = {"fire_pistol": 0.3, "fire_m16": 0.12, "fire_shotgun": 0.85, "pump": 9.0}[_shot]

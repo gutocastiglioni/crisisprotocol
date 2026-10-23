@@ -3,6 +3,8 @@ extends Node3D
 ## Câmera em 3ª pessoa. Perfil "arcade" (GameMode): atrás e acima dela; mirando, chega por cima do ombro direito; parado o
 ## controle, volta devagar para trás dela (jeito Syphon Filter). Perfil "survival": sempre por cima do ombro direito (jeito RE4
 ## Remake), mais perto, sem voltar sozinha; mirando, chega mais perto e a mira fica lenta; o tiro dá coice (`kick`).
+## Mira Sniper telescópica: ao mirar com a Sniper, a câmera entra em 1ª pessoa alinhada à mira, oculta o modelo para visão desobstruída,
+## reduz a sensibilidade proporcionalmente ao zoom (2x / 4x / 8x / 16x) e projeta alcance de até 120 metros.
 ## Mouse/analógico giram.
 
 const HEIGHT := 1.45
@@ -44,7 +46,7 @@ func _ready() -> void:
 	camera = Camera3D.new()
 	camera.fov = 62.0
 	camera.near = 0.05
-	camera.far = 80.0
+	camera.far = 140.0
 	spring.add_child(camera)
 	camera.current = true
 
@@ -55,7 +57,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _look(d: Vector2) -> void:
-	if GameMode.shoulder_cam() and target and target.get("aiming"):
+	if target and target.has_method("is_sniper_zoomed") and target.is_sniper_zoomed():
+		var zoom_factor: float = target.call("sniper_zoom")
+		d *= clampf(1.0 / zoom_factor, 0.05, 0.5)
+	elif GameMode.shoulder_cam() and target and target.get("aiming"):
 		d *= SHOULDER_AIM_SENS
 	yaw -= d.x
 	pitch = clampf(pitch - d.y, -1.1, 0.55)
@@ -72,6 +77,7 @@ func _process(delta: float) -> void:
 	var vp := get_viewport().get_visible_rect().size
 	camera.keep_aspect = Camera3D.KEEP_WIDTH if vp.y > vp.x else Camera3D.KEEP_HEIGHT
 	var aiming: bool = target.get("aiming")
+	var in_sniper: bool = target.has_method("is_sniper_zoomed") and target.is_sniper_zoomed()
 	var moving: bool = target.get("velocity").length() > 0.5
 	_idle_look += delta
 	var shoulder := GameMode.shoulder_cam()
@@ -85,22 +91,35 @@ func _process(delta: float) -> void:
 	var goal := focus + Vector3.UP * HEIGHT
 	if target.get("crouching"):
 		goal.y -= 0.45
+	if in_sniper:
+		goal.y = focus.y + (1.15 if target.get("crouching") else 1.52)
 	global_position = goal if not _snapped else global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
 	_snapped = true
 	rotation = Vector3(pitch, yaw, 0.0)
 	var k := 1.0 - exp(-10.0 * delta)
-	if shoulder:
-		# tela em pé: o campo de visão é o da largura, então o desvio do ombro encolhe e o campo abre (senão ela sai do quadro)
-		var portrait := vp.y > vp.x
-		var side: float = (SHOULDER.side_aim if aiming else SHOULDER.side) * (PORTRAIT_SIDE if portrait else 1.0)
-		var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov
-		spring.spring_length = lerpf(spring.spring_length, SHOULDER.length_aim if aiming else SHOULDER.length, k)
-		spring.position.x = lerpf(spring.position.x, side, k)
-		camera.fov = lerpf(camera.fov, maxf(fov, PORTRAIT_FOV) if portrait else fov, k)
+
+	if in_sniper:
+		var zoom_mag: float = target.call("sniper_zoom")
+		var target_fov := 60.0 / zoom_mag
+		spring.spring_length = lerpf(spring.spring_length, 0.0, k * 2.0)
+		spring.position.x = lerpf(spring.position.x, 0.0, k * 2.0)
+		camera.fov = lerpf(camera.fov, target_fov, k * 2.0)
+		if target.get("model") != null:
+			target.model.visible = false
 	else:
-		spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
-		spring.position.x = lerpf(spring.position.x, 0.62 if aiming else 0.0, k)
-		camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
+		if target.get("model") != null and not target.model.visible and not target.get("dead"):
+			target.model.visible = true
+		if shoulder:
+			var portrait := vp.y > vp.x
+			var side: float = (SHOULDER.side_aim if aiming else SHOULDER.side) * (PORTRAIT_SIDE if portrait else 1.0)
+			var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov
+			spring.spring_length = lerpf(spring.spring_length, SHOULDER.length_aim if aiming else SHOULDER.length, k)
+			spring.position.x = lerpf(spring.position.x, side, k)
+			camera.fov = lerpf(camera.fov, maxf(fov, PORTRAIT_FOV) if portrait else fov, k)
+		else:
+			spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
+			spring.position.x = lerpf(spring.position.x, 0.62 if aiming else 0.0, k)
+			camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
 	_shake_t = maxf(0.0, _shake_t - delta)
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
@@ -137,10 +156,12 @@ func aim_ray() -> Array[Vector3]:
 	return [camera.global_position, -camera.global_basis.z]
 
 
-## Ponto sob a retícula: o que o raio da câmera acerta (cenário e personagens), ou 30 m à frente.
+## Ponto sob a retícula: o que o raio da câmera acerta (cenário e personagens), ou até 120 m à frente.
 ## Acertos a menos de 2 m da câmera (o ombro dela, uma quina) não contam: a arma viraria de repente.
 func aim_point(exclude: Array[RID]) -> Vector3:
 	var ray := aim_ray()
-	var q := PhysicsRayQueryParameters3D.create(ray[0] + ray[1] * 2.0, ray[0] + ray[1] * 30.0, 1 | 2, exclude)
+	var in_sniper: bool = target and target.has_method("is_sniper_zoomed") and target.is_sniper_zoomed()
+	var max_range: float = 120.0 if in_sniper else 30.0
+	var q := PhysicsRayQueryParameters3D.create(ray[0] + ray[1] * (0.5 if in_sniper else 2.0), ray[0] + ray[1] * max_range, 1 | 2, exclude)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	return hit.position if hit else ray[0] + ray[1] * 30.0
+	return hit.position if hit else ray[0] + ray[1] * max_range

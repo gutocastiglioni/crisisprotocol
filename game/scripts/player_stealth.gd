@@ -60,7 +60,7 @@ func update(delta: float) -> void:
 	_last_prompt = cur
 
 
-## Inimigo (soldado ou velociraptor; nunca o alossauro) ao alcance para abate furtivo ou golpe crítico sem mirar, ou null.
+## Inimigo (soldado, velociraptor ou sniper; nunca o alossauro) ao alcance para abate furtivo ou golpe crítico sem mirar, ou null.
 func target() -> Node3D:
 	if p == null or not p.is_inside_tree() or p.dead or p.grabbed or p._down_t > 0.0 or p.is_dazed() or p._stun > 0.0 or p.moves.busy():
 		return null
@@ -70,7 +70,7 @@ func target() -> Node3D:
 	var best_d := INF
 	for node in p.get_tree().get_nodes_in_group("enemies") + p.get_tree().get_nodes_in_group("dummies"):
 		var e := node as Node3D
-		if e == null or bool(e.get("dead")) or not (e is Soldier or e is Raptor or e is TargetDummy):
+		if e == null or bool(e.get("dead")) or not (e is Soldier or e is Raptor or e is Sniper or e is TargetDummy):
 			continue
 		if e.can_crit_strike(p) or e.can_assassinate(p):
 			var d := p.global_position.distance_to(e.global_position)

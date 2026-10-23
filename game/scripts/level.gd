@@ -13,7 +13,7 @@ const TEX := {
 	"chest_m79": preload("res://assets/textures/chest_m79.png"),
 }
 const SIZE := 26.0
-const WALL_H := 4.5
+const WALL_H := 5.2
 
 
 ## Sala de um ponto no eixo X: 0 galpão, 1 pátio da mata, 2 pedreira (as divisas são as paredes das portas).
@@ -74,6 +74,17 @@ static func build(parent: Node) -> void:
 		block(parent, Vector3(SIZE, WALL_H, 0.4), Vector3(0, WALL_H * 0.5, s * h), "wall", 0.5)
 		if s == 1:
 			block(parent, Vector3(0.4, WALL_H, SIZE), Vector3(s * h, WALL_H * 0.5, 0), "wall", 0.5)
+	# Barreira de contenção física espessa atrás da parede sul (z=13.0) para prevenir saída do mapa
+	var back_barrier := StaticBody3D.new()
+	back_barrier.collision_layer = 1
+	back_barrier.collision_mask = 0
+	var barrier_col := CollisionShape3D.new()
+	var barrier_shape := BoxShape3D.new()
+	barrier_shape.size = Vector3(SIZE + 4.0, WALL_H * 2.0, 4.0)
+	barrier_col.shape = barrier_shape
+	back_barrier.add_child(barrier_col)
+	back_barrier.position = Vector3(0, WALL_H, h + 2.0)
+	parent.add_child(back_barrier)
 	# parede oeste com a porta para o pátio da mata (segunda sala) e o pátio em si
 	Yard.west_wall(parent)
 	Yard.build(parent)
@@ -93,11 +104,53 @@ static func build(parent: Node) -> void:
 	]
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
+	_rear_crates(parent)
 	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar) e a faixa de perigo na frente dela
 	block(parent, Vector3(6.0, 1.3, 2.0), Vector3(0, 0.65, -h + 1.2), "concrete", 0.35)
 	block(parent, Vector3(6.0, 0.02, 0.6), Vector3(0, 0.01, -10.5), "hazard", 1.0)
 	_details(parent)
 	_lights(parent)
+
+
+## Caixas decorativas de carga empilhadas atrás da heroína.
+## Bloqueiam a visão direta e a linha reta para a escada e mezanino,
+## fazendo parecer inicialmente que não há saída para trás (fundo fechado do galpão).
+## Cria uma chicane com curva em S pela esquerda, exigindo que a heroína circule
+## por trás da pilha de caixas para descobrir a passagem secreta até a escada.
+static func _rear_crates(parent: Node) -> void:
+	var crates: Array = [
+		# --- GRUPO 1: PILHA PRINCIPAL TRASEIRA (bloqueia o centro e a visão direta da escada) ---
+		# Bloqueio em frente à escada (X = 2.2, Z = 9.1, deixando corredor livre em Z = 9.7..10.8)
+		[Vector3(1.5, 1.4, 1.2), Vector3(2.2, 0.7, 9.1), 0.0],
+		[Vector3(1.4, 1.2, 1.1), Vector3(2.18, 2.0, 9.1), 0.03],
+		# Centro-direita (X = 0.85)
+		[Vector3(1.5, 1.4, 1.2), Vector3(0.85, 0.7, 9.1), -0.04],
+		[Vector3(1.3, 1.2, 1.1), Vector3(0.82, 2.0, 9.08), 0.05],
+		# Centro-esquerda (X = -0.45, sobrepondo visualmente a chicane)
+		[Vector3(1.4, 1.4, 1.2), Vector3(-0.45, 0.7, 9.15), 0.06],
+		[Vector3(1.3, 1.2, 1.1), Vector3(-0.48, 2.0, 9.12), -0.04],
+
+		# --- GRUPO 2: FECHAMENTO DA LATERAL DIREITA (impede passagem direta pela direita da escada) ---
+		# Caixas empilhadas à direita da escada rente à passarela (X = 3.6)
+		[Vector3(1.4, 1.4, 1.3), Vector3(3.6, 0.7, 9.3), 0.08],
+		[Vector3(1.3, 1.2, 1.2), Vector3(3.58, 2.0, 9.32), -0.05],
+		[Vector3(1.4, 1.4, 1.3), Vector3(3.6, 0.7, 10.6), 0.0],
+		[Vector3(1.3, 1.2, 1.2), Vector3(3.6, 2.0, 10.6), 0.0],
+
+		# --- GRUPO 3: TELA FRONTAL ESQUERDA (Chicane / Esquina Cega que oculta a saída) ---
+		# Caixa interna da tela (X = -1.1, Z = 7.7) - sobrepõe em X a caixa centro-esquerda do Grupo 1
+		[Vector3(1.4, 1.4, 1.2), Vector3(-1.1, 0.7, 7.7), -0.05],
+		[Vector3(1.3, 1.2, 1.1), Vector3(-1.12, 2.0, 7.72), 0.04],
+		# Caixa média da tela (X = -2.3, Z = 7.7)
+		[Vector3(1.4, 1.4, 1.2), Vector3(-2.3, 0.7, 7.7), 0.05],
+		[Vector3(1.3, 1.2, 1.1), Vector3(-2.28, 2.0, 7.68), -0.06],
+		# Caixa externa e caixote baixo de apoio (X = -3.4, Z = 7.8)
+		[Vector3(1.3, 1.4, 1.2), Vector3(-3.4, 0.7, 7.8), -0.08],
+		[Vector3(1.2, 1.2, 1.1), Vector3(-3.42, 2.0, 7.82), 0.06],
+		[Vector3(1.1, 0.8, 1.0), Vector3(-4.4, 0.4, 8.0), 0.15],
+	]
+	for c in crates:
+		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
 
 
 ## Detalhes sem colisão (acima do alcance ou rente à parede): vigas, canos e luminárias.

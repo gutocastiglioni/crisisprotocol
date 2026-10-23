@@ -71,7 +71,7 @@ func test_suspicion_then_spot() -> void:
 			break
 	check(seen.has("suspicious"), "vê de longe: primeiro desconfia (para e olha)", str(seen.keys()))
 	check(first_roar > 10, "não nota na hora a 8 m", str(first_roar))
-	check(r.state == "roar" and r.alert_level() == 2, "depois nota: grita e fica alertado", r.state)
+	check(r.state == "roar" and r.alert_level() == 3, "depois nota: grita e fica alertado", r.state)
 	check(r._marker.text == "!", "indicador ! sobre a cabeça", r._marker.text)
 
 
@@ -440,14 +440,16 @@ func test_doors_seal_rooms() -> void:
 		check(r.alert_level() == 0, "porta fechada: nenhum raptor alertado", str(r.global_position))
 	check(main.allosaurus.alert_level() == 0, "porta fechada: o alossauro não ouve nada")
 	# a porta abre com E, perto dela
-	check(p.pick_door() != null and p.pick_door().room == 0, "perto da porta do galpão: aviso de abrir")
-	Input.action_press("interact")
-	await t._frames(4)
-	Input.action_release("interact")
 	var shed_door: Door = null
 	for d: Door in doors:
 		if d.room == 0:
 			shed_door = d
+	check(p.pick_door() == shed_door, "perto da porta do galpão: aviso de abrir")
+	if shed_door.is_locked():
+		p.add_key(shed_door.lock)
+	Input.action_press("interact")
+	await t._frames(4)
+	Input.action_release("interact")
 	check(shed_door.opened and shed_door.collision_layer == 0, "E abre a porta e tira a colisão")
 	check(Level.connected(t, 0, 1) and not Level.connected(t, 0, 2), "porta do galpão aberta, a do portão ainda fechada")
 	p.make_noise(26.0, 2.2)

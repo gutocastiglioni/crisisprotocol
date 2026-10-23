@@ -38,6 +38,7 @@ var _bite_after_charge := false
 var _spin := 0.0
 var _ticks := 0
 var last_hit_at := Vector3.ZERO  # onde o último golpe pegou nela (garra no salto, cabeça na investida)
+var _study_dist := STUDY_DIST
 
 
 func _ready() -> void:
@@ -71,6 +72,7 @@ func _physics_process(delta: float) -> void:
 	_tick(delta)
 	if not _calm_state(delta):
 		_combat_state(delta)
+	EnemyCrowd.apply_separation(self)
 	move_and_slide()
 
 
@@ -145,6 +147,7 @@ func start_study() -> void:
 	if not _has_target():
 		_enter("idle", "Idle")
 		return
+	_study_dist = STUDY_DIST + rng.randf_range(-0.5, 0.5)
 	_enter("study", "Walk", 0.25)
 	_dur = rng.randf_range(1.1, 2.4)
 	_circle = 1.0 if rng.randf() < 0.5 else -1.0
@@ -241,9 +244,12 @@ func _study(delta: float) -> void:
 	var move := Vector3.ZERO
 	if not looking:
 		var tangent := dir.cross(Vector3.UP) * _circle
-		move = (tangent + dir * clampf((dist - STUDY_DIST) * 0.8, -1.0, 1.0)).normalized()
-	elif absf(dist - STUDY_DIST) > 1.5:
-		move = dir * signf(dist - STUDY_DIST)
+		if EnemyCrowd.is_enemy_in_path(self, tangent, 2.2):
+			_circle = -_circle
+			tangent = dir.cross(Vector3.UP) * _circle
+		move = (tangent + dir * clampf((dist - _study_dist) * 0.8, -1.0, 1.0)).normalized()
+	elif absf(dist - _study_dist) > 1.5:
+		move = dir * signf(dist - _study_dist)
 	if move.length() > 0.1:
 		# anda para onde o corpo aponta (nunca de lado) e a passada acompanha a velocidade: pés não patinam
 		_face(move, delta, 3.0)
@@ -470,7 +476,7 @@ func crit_strike(dir := Vector3.ZERO, at: Variant = null) -> void:
 	var d := dir.normalized() if dir.length() > 0.01 else -global_basis.z
 	Blood.splash(get_parent(), hit, d, Vector3.UP, 1.5)
 	Sfx.play(model, "impact_flesh", hit)
-	die(d, hit)
+	die(d, hit, true)
 
 
 func wound() -> float:
@@ -479,7 +485,7 @@ func wound() -> float:
 
 ## Morre virando ragdoll: tomba na direção do tiro, levando junto o embalo que tinha (salto, investida); a poça de
 ## sangue cresce embaixo do corpo.
-func die(dir := Vector3.ZERO, at: Variant = null) -> void:
+func die(dir := Vector3.ZERO, at: Variant = null, silent := false) -> void:
 	_release(-global_basis.z * 2.0)
 	var was_down := state == "down"
 	dead = true
@@ -491,6 +497,10 @@ func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	velocity = Vector3.ZERO
 	model.start_ragdoll(carry + flat * (0.6 if was_down else 1.8), flat * (12.0 if was_down else 30.0), at)
 	Blood.pool(model.ragdoll.bodies["Spine"], 2.4)
+	if not silent and is_inside_tree():
+		get_tree().call_group("enemies", "hear_noise", global_position, 6.0, 1.2)
+	if is_inside_tree():
+		get_tree().call_group("enemies", "on_nearby_kill", global_position, 8.0)
 	_update_marker()
 	killed.emit()
 

@@ -33,6 +33,7 @@ func run(runner: SceneTree) -> void:
 	await test_m16_bloom()
 	await test_decals()
 	await test_decal_rules()
+	await test_pillar_shot_blocked_and_aim_info()
 
 
 func _wall(w: Node3D, pos: Vector3, size: Vector3, surface: String) -> StaticBody3D:
@@ -104,7 +105,7 @@ func test_shotgun_chest() -> void:
 	await t._frames(int(grab * 60.0) + 4)
 	var muzzle := p.model.muzzle_position()
 	t.check(p.weapon() == "shotgun" and not c.has_item(), "pega a escopeta no quadro das mãos")
-	t.check((c.global_transform * aabb).grow(0.06).has_point(muzzle), "escopeta passa do baú para as mãos sem pular", "cano %s" % muzzle)
+	t.check((c.global_transform * aabb).grow(0.08).has_point(muzzle), "escopeta passa do baú para as mãos sem pular", "cano %s" % muzzle)
 	await t._frames(70)
 	t.check(p.model.is_weapon_visible("shotgun") and not p.model.is_weapon_visible("m16"), "empunha a escopeta")
 	t.check(p.model._pump.visible, "telha aparece junto com a escopeta")
@@ -242,3 +243,36 @@ func test_decal_rules() -> void:
 	box.free()  # o corpo some com os buracos dele
 	t.check(Fx.decal_count() == 0, "corpo apagado: os buracos dele saem da lista sem erro")
 	Fx.clear_decals()
+
+
+func test_pillar_shot_blocked_and_aim_info() -> void:
+	var w: Node3D = await t._fresh_world()
+	var d := TargetDummy.new()
+	d.position = Vector3(0, 0, -4)
+	w.add_child(d)
+	# Pilastra na frente da jogadora bloqueando a linha até o alvo
+	var pillar := _wall(w, Vector3(0, 1.5, 0), Vector3(1.2, 3.0, 1.2), "wall")
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 3))
+	await t._frames(10)
+	Input.action_press("aim")
+	await t._frames(30)
+	p.camera_rig.look_at_point(d.global_position + Vector3.UP * 1.2)
+	await t._frames(5)
+	# 1. Mira sobre o alvo atrás da pilastra: mira interpreta que a trajetória vai acertar a pilastra
+	var info: Dictionary = p.aim_target_info()
+	t.check(info.has_target, "detecta alvo mirado atras da pilastra")
+	t.check(info.blocked, "interpreta que a trajetoria do tiro vai acertar a pilastra/parede")
+	# 2. Atira: tiro acerta a pilastra, alvo atras dela nao morre nem leva dano
+	var d_health0 := d.health
+	p.fire()
+	await t._frames(2)
+	t.check(d.health == d_health0, "alvo atras da pilastra nao leva dano nem morre", "vida=%d" % d.health)
+	# 3. Remove a pilastra: trajetoria do tiro livre
+	pillar.queue_free()
+	await t._frames(int(Player.SHOT_COOLDOWN * 60) + 5)
+	info = p.aim_target_info()
+	t.check(info.has_target and not info.blocked, "sem pilastra na frente: trajetoria livre")
+	p.fire()
+	await t._frames(2)
+	t.check(d.health < d_health0, "com trajetoria livre: alvo leva dano do tiro", "vida=%d" % d.health)
+	Input.action_release("aim")

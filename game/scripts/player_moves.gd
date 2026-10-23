@@ -38,7 +38,7 @@ var _hit_frame := 0.0
 var _ladder: Ladder
 var _ladder_y := 0.0
 var _ladder_sound_y := 0.0
-const CLIMB_SPEED := 1.3
+const CLIMB_SPEED := 0.9
 const RUNG_SOUND_DIST := 0.3
 
 

@@ -14,6 +14,12 @@ func run(runner: SceneTree) -> void:
 	await test_shared_alarm()
 	await test_soldier_loses_target()
 	await test_soldier_drops()
+	await test_soldier_catwalk_los_and_boundaries()
+	await test_soldier_idle_head_look()
+	await test_stealth_alert_states_and_corpse_detection()
+	await test_searching_enemy_spots_on_noise_or_nearby_kill()
+	await test_enemies_separation_and_no_overlap()
+	await test_soldier_hunts_player_behind_rear_crates()
 
 
 func _spawn_soldier(player_pos: Vector3, soldier_pos := Vector3.ZERO, yaw := PI) -> Array:
@@ -108,7 +114,7 @@ func test_soldier_patrol_and_spot() -> void:
 		if s.state == "engage":
 			break
 	check(seen.has("suspicious") and seen.has("alert") and s.state == "engage", "soldado: desconfia, reage, combate", str(seen.keys()))
-	check(s.alert_level() == 2 and s._marker.text == "!", "soldado alertado mostra !", s._marker.text)
+	check(s.alert_level() == 3 and s._marker.text == "!", "soldado alertado mostra !", s._marker.text)
 
 
 func test_soldier_shoots_and_misses() -> void:
@@ -337,3 +343,244 @@ func test_soldier_drops() -> void:
 	await t._frames(5)
 	check("sniper" in p.weapons and p.weapon() == "sniper", "jogadora pegou o rifle Sniper dropado")
 	check(p.ammo_of("sniper") == 5, "jogadora recebeu municao do Sniper", str(p.ammo_of("sniper")))
+
+
+func test_soldier_catwalk_los_and_boundaries() -> void:
+	var w: Node3D = await t._fresh_world()
+	var catwalk := Catwalk.new()
+	w.add_child(catwalk)
+	
+	var p := Player.new()
+	p.position = Vector3(0, Catwalk.FLOOR_Y, 12.0)
+	p.health = 100000
+	w.add_child(p)
+	
+	var s := Soldier.new()
+	s.position = Vector3(0, 0, 4.0)
+	s.target = p
+	w.add_child(s)
+	await t._frames(3)
+	
+	# 1. Alvo elevado detectado e mira inclinada para cima
+	check(s._is_target_elevated(), "soldado identifica que a heroina esta no mezanino/elevada")
+	s.start_engage()
+	await t._frames(15)
+	check(s.model.aim_pitch != null and s.model.aim_pitch.pitch > 0.05, "soldado inclina o tronco e a arma para cima mirando na passarela", str(s.model.aim_pitch.pitch if s.model.aim_pitch else 0.0))
+	
+	# 2. Em combate com alvo na passarela, soldado nao avanca para baixo do mezanino (z <= Catwalk.FRONT_Z - 1.0)
+	var max_z := -999.0
+	for i in 60:
+		await t._frames(1)
+		max_z = maxf(max_z, s.global_position.z)
+	check(max_z <= Catwalk.FRONT_Z - 0.9, "soldado mantem distancia e nao entra debaixo do mezanino (max_z=%.2f <= %.2f)" % [max_z, Catwalk.FRONT_Z - 0.9])
+	check(s.global_position.y >= 0.0, "soldado permanece no chão sem cair no vácuo (y=%.2f)" % s.global_position.y)
+	check(s.shots_fired > 0, "soldado atira contra a heroina no mezanino", str(s.shots_fired))
+	
+	# 3. Soldado colocado muito perto do mezanino recua para abrir campo de visao
+	s.global_position = Vector3(0, 0, 7.5)
+	s._lost_t = 0.0
+	await t._frames(35)
+	check(s.global_position.z < 7.5, "soldado muito proximo do mezanino recua para abrir o campo de visao (z=%.2f < 7.5)" % s.global_position.z)
+	
+	# 4. Ao perder de vista alvo no mezanino, soldado recua/manobra em vez de correr para debaixo dele
+	s._lost_t = 1.0  # simula perda temporaria de visada
+	await t._frames(30)
+	check(s.global_position.z <= Catwalk.FRONT_Z - 0.9, "sem visao de alvo elevado, soldado nao corre para debaixo do mezanino", str(s.global_position.z))
+	
+	# 5. start_hunt e start_investigate limitam o destino fora de debaixo do mezanino
+	s.start_hunt(Vector3(0, Catwalk.FLOOR_Y, 12.5))
+	check(s._goal.z <= Catwalk.FRONT_Z - 4.5, "start_hunt com alvo no mezanino mira no patio em frente (goal.z=%.2f)" % s._goal.z)
+	check(s._goal.y == 0.0, "start_hunt mantém o soldado no chão (goal.y=0)")
+	
+	s.start_investigate(Vector3(0, Catwalk.FLOOR_Y, 12.5))
+	check(s._goal.z <= Catwalk.FRONT_Z - 4.5, "start_investigate com barulho no mezanino mira no patio em frente (goal.z=%.2f)" % s._goal.z)
+	
+	# 6. Trava física _clamp_to_bounds
+	s.global_position = Vector3(0, -2.0, 12.8)
+	s._clamp_to_bounds()
+	check(s.global_position.y >= 0.0, "_clamp_to_bounds impede y negativo", str(s.global_position.y))
+	check(s.global_position.z <= Catwalk.FRONT_Z - 1.0 + 0.01, "_clamp_to_bounds trava z antes do mezanino", str(s.global_position.z))
+
+func test_soldier_idle_head_look() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 20), Vector3(-11.4, 0, -6.6), -PI * 0.5)
+	var s: Soldier = pr[1]
+	s.route = []
+	s._vigil_t = 0.05
+	var initial_yaw := s.rotation.y
+	var saw_head_turn := false
+	var body_stayed_planted := true
+	
+	for i in 120:
+		await t._frames(1)
+		if absf(s.head_yaw) > 0.1:
+			saw_head_turn = true
+		if absf(s.rotation.y - initial_yaw) > 0.001:
+			body_stayed_planted = false
+	
+	check(body_stayed_planted, "guarda parado: corpo não desliza para rotacionar (fica fixo no posto)")
+	check(saw_head_turn, "guarda parado: vigia movendo a cabeça suavemente")
+	check(s.model.head_look != null and absf(s.model.get_head_yaw()) > 0.05, "modelo 3D recebe rotação da cabeça via HeadLook")
+
+
+func test_stealth_alert_states_and_corpse_detection() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -25), Vector3(0, 0, 0), PI)
+	var p: Player = pr[0]
+	var sentry: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	sentry.route = []
+	
+	var patrol := Soldier.new()
+	patrol.position = Vector3(0, 0, 4)
+	patrol.rotation.y = 0.0
+	patrol.target = p
+	w.add_child(patrol)
+	await t._frames(3)
+	
+	check(sentry.alert_level() == 0 and not sentry._marker.visible, "sentinela começa calma (nível 0)")
+	
+	# Guarda de ronda morre baleado a 4 metros de distância da sentinela
+	patrol.die(Vector3.FORWARD, null, false, false)
+	await t._frames(3)
+	
+	# Sentinela ouve a queda do corpo / percebe o companheiro abatido: entra em desconfiado (Amarelo, nível 1, "?")
+	check(sentry.state == "suspicious" and sentry.alert_level() == 1, "sentinela desconfia ao ouvir baque/ver o corpo (nível 1 Amarelo)", "%s %d" % [sentry.state, sentry.alert_level()])
+	check(sentry._marker.text == "?" and sentry._marker.modulate.r > 0.9 and sentry._marker.modulate.b < 0.3, "marcador amarelo ? sobre a cabeça")
+	
+	# Após olhar brevemente, a sentinela inicia busca ativa indo investigar o ponto (Laranja, nível 2, "!")
+	for i in 120:
+		await t._frames(1)
+		if sentry.state == "investigate":
+			break
+	check(sentry.state == "investigate" and sentry.alert_level() == 2, "sentinela inicia busca ativa investigando o local (nível 2 Laranja)", "%s %d" % [sentry.state, sentry.alert_level()])
+	check(sentry._marker.text == "!" and sentry._marker.modulate.g < 0.7, "marcador laranja ! na busca ativa")
+	
+	# Ao chegar ao corpo e confirmar a morte, dá o alarme e entra em caça (hunt, ainda busca ativa nível 2)
+	for i in 300:
+		await t._frames(1)
+		if sentry.state in ["hunt", "search"]:
+			break
+	check(sentry.state in ["hunt", "search"] and sentry.alert_level() == 2, "confirma a morte do companheiro e passa a caçar o invasor (nível 2 Laranja)")
+	
+	# Agora a heroína entra no campo de visão da sentinela
+	p.global_position = sentry.global_position + (-sentry.global_basis.z * 5.0)
+	for i in 60:
+		await t._frames(1)
+		if sentry.in_combat():
+			break
+	check(sentry.in_combat() and sentry.alert_level() == 3, "ao avistar a heroína entra em combate (nível 3 Vermelho)", "%s %d" % [sentry.state, sentry.alert_level()])
+	check(sentry._marker.text == "!" and sentry._marker.modulate.g < 0.3, "marcador vermelho ! em combate (encontrou)")
+
+
+func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
+	# 1. Inimigo vasculhando (Laranja / Level 2): tiro faz ir direto para Encontrou (Vermelho / Level 3)
+	var pr := await _spawn_soldier(Vector3(0, 0, -20), Vector3(0, 0, 0), PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	s.start_search()
+	await t._frames(2)
+	check(s.is_searching() and s.alert_level() == 2, "soldado está em busca ativa vasculhando (Laranja)")
+	
+	# Heroína escondida atrás dispara um tiro: revela a posição
+	p.make_noise(26.0, 2.2)
+	await t._frames(2)
+	check(s.in_combat() and s.alert_level() == 3, "vasculhando + tiro: vai direto para Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
+	check(s._marker.text == "!" and s._marker.modulate.g < 0.3, "marcador vermelho !")
+	
+	# 2. Inimigo vasculhando: barulho de passos/corrida revela a posição e encontra
+	pr = await _spawn_soldier(Vector3(0, 0, -6), Vector3(0, 0, 0), PI)
+	p = pr[0]
+	s = pr[1]
+	s.start_hunt(Vector3(5, 0, 0))
+	await t._frames(2)
+	check(s.is_searching() and s.alert_level() == 2, "soldado vasculhando em hunt")
+	p.make_noise(10.0, 0.5)
+	await t._frames(2)
+	check(s.in_combat() and s.alert_level() == 3, "vasculhando + barulho de passos: vai em Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
+	
+	# 3. Inimigo vasculhando: morte de companheiro próximo revela a posição e encontra
+	pr = await _spawn_soldier(Vector3(0, 0, -20), Vector3(0, 0, 0), PI)
+	p = pr[0]
+	s = pr[1]
+	w = pr[2]
+	s.start_search()
+	await t._frames(2)
+	var victim := Soldier.new()
+	victim.position = Vector3(3, 0, 0)
+	victim.target = p
+	w.add_child(victim)
+	await t._frames(2)
+	# Morte da vítima a 3 m do guarda que vasculha (mesmo silenciosa/assassinate)
+	victim.die(Vector3.FORWARD, null, false, true)
+	await t._frames(2)
+	check(s.in_combat() and s.alert_level() == 3, "vasculhando + abate próximo: vai em Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
+
+
+func test_enemies_separation_and_no_overlap() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p := Player.new()
+	p.position = Vector3(0, 0, 10)
+	w.add_child(p)
+	
+	# 1. Dois soldados posicionados colados (sobrepostos a 0.08 m):
+	# O sistema de separação de multidão afasta ambos suavemente para distâncias seguras (> 0.85 m)
+	var s1 := Soldier.new()
+	s1.position = Vector3(0, 0, 0)
+	s1.target = p
+	w.add_child(s1)
+	
+	var s2 := Soldier.new()
+	s2.position = Vector3(0.08, 0, 0.05)
+	s2.target = p
+	w.add_child(s2)
+	
+	await t._frames(30)
+	var d_soldiers := s1.global_position.distance_to(s2.global_position)
+	check(d_soldiers >= 0.85, "soldados sobrepostos se repelem e não ocupam o mesmo espaço (d=%.2f >= 0.85)" % d_soldiers)
+	
+	# 2. Ambos entram em combate (engage):
+	# Ao se posicionarem e strafarem mirando no alvo, mantêm separação e não entram um dentro do outro
+	s1.start_engage()
+	s2.start_engage()
+	var min_combat_dist := 999.0
+	for i in 60:
+		await t._frames(1)
+		var d := s1.global_position.distance_to(s2.global_position)
+		min_combat_dist = minf(min_combat_dist, d)
+	check(min_combat_dist >= 0.85, "em combate e strafe, soldados não vazam um dentro do outro (min_d=%.2f >= 0.85)" % min_combat_dist)
+
+
+func test_soldier_hunts_player_behind_rear_crates() -> void:
+	var w: Node3D = await t._fresh_world()
+	Level.build(w)
+	var catwalk := Catwalk.new()
+	w.add_child(catwalk)
+	
+	var p := Player.new()
+	# Heroína escondida no chão no corredor atrás das caixas decorativas
+	p.position = Vector3(-0.5, 0.0, 10.2)
+	p.health = 100000
+	w.add_child(p)
+	
+	var s := Soldier.new()
+	s.position = Vector3(0.0, 0.0, 2.0)
+	s.target = p
+	w.add_child(s)
+	await t._frames(3)
+	
+	# 1. Alvo no chão atrás das caixas não deve ser considerado elevado
+	check(not s._is_target_elevated(), "heroína no chão atrás das caixas não é considerada elevada")
+	
+	# 2. start_hunt e start_investigate não devem limitar goal.z a 5.8 quando no chão
+	s.start_hunt(p.global_position)
+	check(s._goal.z >= 10.0, "start_hunt busca a heroína atrás das caixas sem travar em z=5.8 (goal.z=%.2f)" % s._goal.z)
+	
+	s.start_investigate(p.global_position)
+	check(s._goal.z >= 10.0, "start_investigate investiga atrás das caixas sem travar em z=5.8 (goal.z=%.2f)" % s._goal.z)
+	
+	# 3. Soldado no chão pode avançar além de z=9.8 para caçar no corredor
+	s.global_position = Vector3(-0.5, 0.0, 10.2)
+	s._clamp_to_bounds()
+	check(s.global_position.z >= 10.0, "_clamp_to_bounds permite soldado no corredor atrás das caixas (z=%.2f)" % s.global_position.z)
+
+

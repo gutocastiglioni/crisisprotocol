@@ -22,6 +22,7 @@ const ALLOSAURUS_TESTS := preload("res://tests/allosaurus_tests.gd")
 const SURVIVAL_TESTS := preload("res://tests/survival_tests.gd")
 const KEY_TESTS := preload("res://tests/key_tests.gd")
 const STEALTH_KILL_TESTS := preload("res://tests/stealth_kill_tests.gd")
+const SNIPER_LADDER_TESTS := preload("res://tests/sniper_ladder_tests.gd")
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -108,6 +109,8 @@ func _run() -> void:
 	await SOLDIER_TESTS.new().run(self)
 	print("== abate furtivo e golpe crítico")
 	await STEALTH_KILL_TESTS.new().run(self)
+	print("== sniper, passarela e escada")
+	await SNIPER_LADDER_TESTS.new().run(self)
 	print("== alossauro e pedreira (última sala)")
 	await ALLOSAURUS_TESTS.new().run(self)
 	print("== sobrevivência: câmera, armas, munição e dano")

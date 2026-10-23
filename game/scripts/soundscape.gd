@@ -52,7 +52,7 @@ func _physics_process(delta: float) -> void:
 	_suspicious_t -= delta
 	var was_hunted := false
 	for lv: int in _levels.values():
-		was_hunted = was_hunted or lv == 2
+		was_hunted = was_hunted or lv >= 2
 	var now := {}
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not e.has_method("alert_level"):
@@ -60,7 +60,7 @@ func _physics_process(delta: float) -> void:
 		var lv: int = e.alert_level()
 		var before: int = _levels.get(e, 0)
 		now[e] = lv
-		if lv == 2 and not was_hunted and _alert_t <= 0.0:
+		if lv >= 2 and not was_hunted and _alert_t <= 0.0:
 			_alert_t = ALERT_GAP
 			was_hunted = true
 			Sfx.ui(self, "alert")

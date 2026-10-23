@@ -100,6 +100,7 @@ func _physics_process(delta: float) -> void:
 	_roar_cd = maxf(_roar_cd - delta, 0.0)
 	if not _calm_state(delta):
 		_combat_state(delta)
+	EnemyCrowd.apply_separation(self)
 	move_and_slide()
 
 

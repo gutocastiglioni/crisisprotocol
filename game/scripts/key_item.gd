@@ -7,7 +7,7 @@ extends Node3D
 
 signal picked(key: KeyItem)
 
-const PICK_RANGE := 1.0
+const PICK_RANGE := 1.2
 const WORLD_SCALE := 1.6  # maior que a de verdade: no chão do galpão escuro precisa aparecer
 const FALL_TIME := 0.45
 const TWINKLE := 1.3  # s entre uma piscada e outra
@@ -15,6 +15,7 @@ const BRASS := Color(0.85, 0.66, 0.26)
 const TAG := Color(0.75, 0.12, 0.1)
 
 @export var id := "container"
+@export var kind := "key"  # "key" ou "keycard"
 @export var display_name := "CHAVE DO CONTAINER"
 @export var description := "Chave de latao com etiqueta vermelha.
 Abre o cadeado de algum container."
@@ -28,8 +29,10 @@ var _light: OmniLight3D
 var _t := 0.0
 
 
-## Malha da chave (deitada no plano XZ, ~7 cm, argola em -X), usada no chão e na tela do item.
-static func build_model(parent: Node3D) -> Node3D:
+## Malha da chave ou keycard (deitada no plano XZ), usada no chão e na tela do item.
+static func build_model(parent: Node3D, item_kind := "key") -> Node3D:
+	if item_kind == "keycard":
+		return build_keycard_model(parent)
 	var root := Node3D.new()
 	parent.add_child(root)
 	var brass := StandardMaterial3D.new()
@@ -74,9 +77,76 @@ static func build_model(parent: Node3D) -> Node3D:
 	return root
 
 
+## Malha 3D do cartão de acesso por aproximação (Keycard magnético/RFID).
+static func build_keycard_model(parent: Node3D) -> Node3D:
+	var root := Node3D.new()
+	parent.add_child(root)
+	# Corpo plástico do cartão (proporção ID-1: 85,6 x 54 mm)
+	var card_mat := StandardMaterial3D.new()
+	card_mat.albedo_color = Color(0.12, 0.22, 0.38)  # azul tático
+	card_mat.roughness = 0.45
+	var card := MeshInstance3D.new()
+	var cb := BoxMesh.new()
+	cb.size = Vector3(0.086, 0.003, 0.054)
+	card.mesh = cb
+	card.material_override = card_mat
+	root.add_child(card)
+
+	# Faixa magnética escura
+	var stripe_mat := StandardMaterial3D.new()
+	stripe_mat.albedo_color = Color(0.08, 0.08, 0.08)
+	stripe_mat.roughness = 0.3
+	var stripe := MeshInstance3D.new()
+	var sb := BoxMesh.new()
+	sb.size = Vector3(0.0862, 0.0032, 0.011)
+	stripe.mesh = sb
+	stripe.material_override = stripe_mat
+	stripe.position = Vector3(0, 0, -0.015)
+	root.add_child(stripe)
+
+	# Faixa vermelha de nível de acesso (Level 1 Clearance)
+	var bar_mat := StandardMaterial3D.new()
+	bar_mat.albedo_color = Color(0.85, 0.16, 0.14)
+	bar_mat.roughness = 0.4
+	var bar := MeshInstance3D.new()
+	var bb := BoxMesh.new()
+	bb.size = Vector3(0.0862, 0.0032, 0.007)
+	bar.mesh = bb
+	bar.material_override = bar_mat
+	bar.position = Vector3(0, 0, 0.02)
+	root.add_child(bar)
+
+	# Chip de contato dourado
+	var chip_mat := StandardMaterial3D.new()
+	chip_mat.albedo_color = Color(0.88, 0.74, 0.24)
+	chip_mat.metallic = 0.8
+	chip_mat.roughness = 0.25
+	var chip := MeshInstance3D.new()
+	var chip_box := BoxMesh.new()
+	chip_box.size = Vector3(0.014, 0.0033, 0.012)
+	chip.mesh = chip_box
+	chip.material_override = chip_mat
+	chip.position = Vector3(-0.018, 0, 0.002)
+	root.add_child(chip)
+
+	# Painel de identificação / foto
+	var id_mat := StandardMaterial3D.new()
+	id_mat.albedo_color = Color(0.82, 0.86, 0.9)
+	id_mat.roughness = 0.6
+	var id_box := MeshInstance3D.new()
+	var ib := BoxMesh.new()
+	ib.size = Vector3(0.022, 0.0033, 0.02)
+	id_box.mesh = ib
+	id_box.material_override = id_mat
+	id_box.position = Vector3(0.022, 0, 0.002)
+	root.add_child(id_box)
+
+	return root
+
+
 func _ready() -> void:
 	add_to_group("keys")
-	_model = build_model(self)
+	_model = build_model(self, kind)
 	_model.scale = Vector3.ONE * WORLD_SCALE
 	_model.position.y = 0.006
 	_model.rotation.y = randf() * TAU
@@ -156,15 +226,12 @@ func _process(delta: float) -> void:
 	_light.light_energy = 0.25 + 0.9 * k
 
 
-func _physics_process(_delta: float) -> void:
+## Está ao alcance de quem está em `pos` para pegar com o botão de interação.
+func can_pick(pos: Vector3) -> bool:
 	if state != "dropped":
-		return
-	var p := get_tree().get_first_node_in_group("player") as Player
-	if p == null or p.dead or p.grabbed or p.moves.busy():
-		return
-	var d := p.global_position - global_position
-	if Vector2(d.x, d.z).length() < PICK_RANGE and absf(d.y) < 1.2:
-		take(p)
+		return false
+	var d := pos - global_position
+	return Vector2(d.x, d.z).length() < PICK_RANGE and absf(d.y) < 1.4
 
 
 ## Ela pegou: some do chão, vai para o bolso dela e avisa (`picked`).

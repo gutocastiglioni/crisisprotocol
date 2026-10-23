@@ -71,6 +71,7 @@ var atlas: Texture2D = ATLAS
 
 var skeleton: Skeleton3D
 var aim_pitch: AimPitch
+var head_look: HeadLook
 var anim_player: AnimationPlayer
 var tree: AnimationTree
 var ragdoll: Ragdoll
@@ -114,6 +115,8 @@ func _ready() -> void:
 	aim_pitch = AimPitch.new()
 	aim_pitch.influence = 0.0
 	skeleton.add_child(aim_pitch)
+	head_look = HeadLook.new()
+	skeleton.add_child(head_look)
 	_setup_braid()
 	ragdoll = Ragdoll.create(skeleton)
 	ragdoll.hit_owner = get_parent()
@@ -447,6 +450,8 @@ func start_ragdoll(impulse: Vector3, at: Variant = null) -> void:
 		Sfx.play(self, "body_fall", null, 0.0, 1.0, 0.5)
 	_stop_pump()
 	aim_pitch.influence = 0.0
+	if head_look:
+		head_look.influence = 0.0
 	tree.active = false
 	ragdoll.start(impulse, at)
 
@@ -456,6 +461,8 @@ func fling_ragdoll(vel: Vector3, at: Variant = null) -> void:
 	Sfx.play(self, "body_fall", null, 0.0, 1.0, 0.7)
 	_stop_pump()
 	aim_pitch.influence = 0.0
+	if head_look:
+		head_look.influence = 0.0
 	tree.active = false
 	await ragdoll.fling(vel, at)
 
@@ -468,7 +475,20 @@ func stop_ragdoll() -> void:
 	set_aim(false)
 	holster(false)
 	_aim = 0.0
+	if head_look:
+		head_look.influence = 1.0
+		head_look.yaw = 0.0
+		head_look.pitch = 0.0
 
 
 func is_ragdoll() -> bool:
 	return ragdoll.is_simulating_physics()
+
+func set_head_look(y: float, p: float = 0.0) -> void:
+	if head_look:
+		head_look.yaw = y
+		head_look.pitch = p
+
+
+func get_head_yaw() -> float:
+	return head_look.yaw if head_look else 0.0

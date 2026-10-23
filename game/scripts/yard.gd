@@ -17,14 +17,14 @@ const TEX := {
 	"fern_card": preload("res://assets/textures/fern_card.png"),
 	"wall": preload("res://assets/textures/wall.png"),
 }
-const DOOR_Z := -2.5  # centro da porta na parede oeste do galpão
+const DOOR_Z := -8.5  # centro do portão na parede oeste do galpão (mais ao fundo da fase)
 const DOOR_W := 3.2
 const DOOR_H := 2.8
 const X_NEAR := -13.0  # a clareira começa onde acaba o piso do galpão
 const X_FAR := -55.0
 const Z_HALF := 18.0
 ## Eixo da estrada (de terra batida), da porta até o portão.
-const ROAD := [Vector2(-13.5, -2.5), Vector2(-26, -2.5), Vector2(-34, -9.5), Vector2(-45, -9.5), Vector2(-50, -3.0), Vector2(-54, -3.0)]
+const ROAD := [Vector2(-13.5, -8.5), Vector2(-24, -8.5), Vector2(-34, -9.5), Vector2(-45, -9.5), Vector2(-50, -3.0), Vector2(-54, -3.0)]
 const ROAD_W := 4.0
 const GATE_GAP := 4.4  # vão na parede do fundo, no portão (largura)
 const GATE_X := X_FAR - 1.1  # o portão fecha o vão da parede do fundo (parede em X_FAR - 1,1)
@@ -34,7 +34,7 @@ const POSTS := [
 	{"pos": Vector3(-26, 0, 9), "route": [Vector3(-26, 0, 9), Vector3(-36, 0, 13), Vector3(-45, 0, 8), Vector3(-36, 0, 5)]},
 	{"pos": Vector3(-28, 0, -13), "route": [Vector3(-28, 0, -13), Vector3(-38, 0, -14.5), Vector3(-48, 0, -13), Vector3(-40, 0, -12)]},
 ]
-const LAMPS := [Vector3(-21, 0, 0.8), Vector3(-40, 0, -6.2), Vector3(-47.5, 0, 1.0)]
+const LAMPS := [Vector3(-21, 0, -6.5), Vector3(-40, 0, -6.2), Vector3(-47.5, 0, 1.0)]
 
 static var _mats := {}
 
@@ -67,14 +67,19 @@ static func west_wall(parent: Node) -> void:
 	for z in [z0 + 0.12, z1 - 0.12]:
 		_prop(parent, _bm(Vector3(0.5, DOOR_H, 0.24)), Vector3(-h, DOOR_H * 0.5, z), "wall", 1.5)
 	_prop(parent, _bm(Vector3(1.0, 0.02, DOOR_W)), Vector3(-h, 0.01, DOOR_Z), "wall", 1.0)
-	# porta de correr de chapa, fechada: abre para o lado, para dentro da parede (E)
-	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTA")
+	# portão de segurança trancado com leitor por aproximação (abre com o keycard do sniper)
+	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTAO")
+	door.lock = "keycard_gate"
+	door.is_locked_door = true
+	door.add_card_reader(Vector3(0.24, 1.35, DOOR_W * 0.5 + 0.35), 0.0)
 	var slab := Node3D.new()
-	slab.add_child(_prop_at(_bm(Vector3(0.18, DOOR_H, DOOR_W - 0.1)), Vector3(0, DOOR_H * 0.5, 0), "wall", 1.0))
-	for y in [0.5, 1.4, 2.3]:
-		slab.add_child(_prop_at(_bm(Vector3(0.26, 0.12, DOOR_W - 0.1)), Vector3(0, y, 0), "wall", 2.0))
-	slab.add_child(_prop_at(_bm(Vector3(0.26, 0.5, 0.1)), Vector3(0, 1.1, DOOR_W * 0.5 - 0.5), "wall", 2.0))  # puxador
-	door.add_panel(slab, Vector3(0, 0, DOOR_W + 0.1), 0.0)
+	slab.add_child(_prop_at(_bm(Vector3(0.14, DOOR_H, DOOR_W - 0.1)), Vector3(0, DOOR_H * 0.5, 0), "wall", 1.0))
+	for y in [0.4, 1.2, 2.0, 2.6]:
+		slab.add_child(_prop_at(_bm(Vector3(0.22, 0.10, DOOR_W - 0.1)), Vector3(0, y, 0), "wall", 2.0))
+	for k in 5:
+		slab.add_child(_prop_at(_bm(Vector3(0.18, DOOR_H - 0.2, 0.08)), Vector3(0, DOOR_H * 0.5, (DOOR_W - 0.4) * (k / 4.0 - 0.5)), "wall", 2.0))
+	slab.add_child(_prop_at(_bm(Vector3(0.18, 0.22, DOOR_W - 0.1)), Vector3(0, 0.7, 0), "wall", 1.0))
+	door.add_panel(slab, Vector3(0, 0, DOOR_W + 0.2), 0.0)
 
 
 # ------------------------------------------------------------------ construção

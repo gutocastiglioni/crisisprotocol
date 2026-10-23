@@ -17,6 +17,7 @@ func run(runner: SceneTree) -> void:
 	await test_grenade_hurts_player()
 	await test_m79_fire()
 	await test_main_layout()
+	await test_sniper_keycard_and_proximity_gate()
 
 
 func _release_all() -> void:
@@ -153,7 +154,13 @@ func test_key_drop_and_pickup() -> void:
 	t.check(picked.is_empty() and not p.has_key("container"), "longe: não pega")
 	p.global_position = k.global_position + Vector3(0.5, 0, 0.3)
 	await t._frames(3)
-	t.check(picked == [k] and p.has_key("container") and k.state == "taken" and not k.visible, "chegando perto pega sozinha", k.state)
+	t.check(picked.is_empty() and not p.has_key("container"), "chegando perto sem apertar botão não pega")
+	t.check(p.pick_key() == k, "chave detectada ao alcance de interação")
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(3)
+	t.check(picked == [k] and p.has_key("container") and k.state == "taken" and not k.visible, "apertando E pega a chave", k.state)
 	p.use_key("container")
 	t.check(not p.has_key("container"), "usar a chave a gasta")
 	p.add_key("container")
@@ -308,6 +315,10 @@ func test_main_layout() -> void:
 	t.check(main.key.state == "dropped", "alvo da chave morto: ela cai brilhando")
 	main.player.global_position = main.key.global_position
 	await t._frames(3)
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(3)
 	t.check(main.player.has_key("container") and main.inspect.busy, "pegou: tela do item", "pos=%s chave=%s morta=%s mov=%s" % [main.player.global_position, main.key.global_position, main.player.dead, main.player.moves.mode])
 	while main.inspect.busy:
 		await t.process_frame
@@ -316,5 +327,87 @@ func test_main_layout() -> void:
 	main.reset_all()
 	await t._frames(3)
 	t.check(locker.is_locked() and main.key.state == "hidden" and main.player.keys.is_empty(), "R: tranca de novo e a chave volta ao alvo")
+	main.queue_free()
+	await t._frames(2)
+
+
+func test_sniper_keycard_and_proximity_gate() -> void:
+	var w: Node3D = await t._fresh_world()
+	var card_m := KeyItem.build_model(w, "keycard")
+	t.check(card_m != null and card_m.get_child_count() >= 4, "modelo 3D do keycard com chip, tarja e crachá")
+	card_m.queue_free()
+
+	if t._world:
+		t._world.queue_free()
+		t._world = null
+		await t.process_frame
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	t.get_root().add_child(main)
+	await t._frames(5)
+
+	t.check(main.keycard != null and main.keycard.id == "keycard_gate", "keycard configurado na cena principal")
+	t.check(main.keycard.kind == "keycard", "tipo do item é keycard")
+	t.check(main.sniper != null and main.sniper.loot == main.keycard, "sniper possui o keycard como loot")
+	t.check(main.keycard.state == "hidden", "keycard começa oculto com o sniper")
+
+	t.check(main.soldiers.size() == 5, "5 soldados no total (2 patrulhando + 3 sentinelas)")
+	var sentinels := 0
+	var yard_patrollers := 0
+	for sd: Soldier in main.soldiers:
+		if sd.route.is_empty():
+			sentinels += 1
+		else:
+			yard_patrollers += 1
+	t.check(sentinels == 3 and yard_patrollers == 2, "3 sentinelas parados e 2 patrulhando")
+
+	var gate: Door = null
+	for d: Door in t.get_nodes_in_group("doors"):
+		if d.room == 0:
+			gate = d
+	t.check(gate != null and is_equal_approx(gate.position.z, Yard.DOOR_Z), "portão posicionado no fundo da fase (z=%.1f)" % Yard.DOOR_Z)
+	t.check(gate.is_locked() and gate.lock == "keycard_gate", "portão começa trancado exigindo o keycard")
+	t.check(gate._reader != null and gate._reader_led != null, "portão possui leitor de cartão por aproximação")
+	t.check(gate._reader_mat.albedo_color == Color(1.0, 0.15, 0.15), "leitor com LED vermelho indicando trancado")
+
+	main.player.global_position = Vector3(-11.5, 0, Yard.DOOR_Z)
+	await t._frames(3)
+	t.check(main.player.pick_door() == gate, "detecta o portão ao alcance")
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(3)
+	t.check(gate.is_locked() and not gate.opened, "sem keycard o portão continua trancado e fechado")
+
+	main.inspect.auto_close = 0.0
+	main.sniper.take_hit(999, Vector3.FORWARD, main.sniper.global_position + Vector3.UP)
+	await t._frames(int(KeyItem.FALL_TIME * 60) + 10)
+	t.check(main.keycard.state == "dropped" and main.keycard.visible, "sniper morto: keycard cai no chão brilhando")
+
+	main.player.global_position = main.keycard.global_position
+	await t._frames(3)
+	t.check(not main.player.has_key("keycard_gate"), "passar por cima do keycard não pega sozinho")
+	t.check(main.player.pick_key() == main.keycard, "pick_key detecta o keycard")
+
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(3)
+	t.check(main.player.has_key("keycard_gate") and main.keycard.state == "taken", "apertar E pega o keycard")
+	while main.inspect.busy:
+		await t.process_frame
+
+	main.player.global_position = Vector3(-11.5, 0, Yard.DOOR_Z)
+	await t._frames(3)
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(int(Door.OPEN_TIME * 60) + 10)
+	t.check(gate.opened and gate.collision_layer == 0, "com o keycard o portão destranca e abre")
+	t.check(gate._reader_mat.albedo_color == Color(0.2, 1.0, 0.3), "leitor de aproximação com LED verde indicando liberado")
+
+	main.reset_all()
+	await t._frames(3)
+	t.check(gate.is_locked() and not gate.opened, "reinício: portão volta a trancar")
+	t.check(main.keycard.state == "hidden" and not main.player.has_key("keycard_gate"), "reinício: keycard volta ao sniper")
 	main.queue_free()
 	await t._frames(2)

@@ -57,6 +57,8 @@ const BLOOM_DECAY := 4.0  # graus por segundo
 const HEAD_HIT_RADIUS := 0.17  # tiro que passa a esta distância do centro da cabeça é na cabeça
 const DRY_FIRE_TIME := 0.5  # intervalo do clique da arma vazia
 const NOTICE_GAP := 0.8  # o mesmo aviso de "vazia"/"pare" no máximo a cada tanto
+const SNIPER_ZOOM_LEVELS: Array[float] = [2.0, 4.0, 8.0, 16.0]
+const SNIPER_ZOOM_LABELS: Array[String] = ["2.0x", "4.0x", "8.0x", "16.0x"]
 const MAX_HEALTH := 100
 const PICK_RANGE := 0.9  # distância até o lugar de ajoelhar para poder pegar
 const HIP_AIM_TIME := 0.6
@@ -75,6 +77,7 @@ var dead := false
 var rolling := false
 var hopping := false  # pulinho de esquiva (survival), na parte invulnerável
 var shots_fired := 0
+var sniper_zoom_index := 0
 var weapons: Array[String] = ["pistol"]
 ## chaves pegas (id de KeyItem / Chest.lock); usar a chave a tira daqui
 var keys: Array[String] = []
@@ -163,6 +166,7 @@ func _physics_process(delta: float) -> void:
 	_bloom = maxf(0.0, _bloom - BLOOM_DECAY * delta)
 	if moves.busy():
 		aiming = false
+		model.visible = true
 		model.set_aim(false)
 		moves.update(delta)
 		return
@@ -172,6 +176,7 @@ func _physics_process(delta: float) -> void:
 		# empurrada por um golpe: desliza sem controle até o empurrão acabar
 		_stun -= delta
 		aiming = false
+		model.visible = true
 		model.set_aim(false)
 		model.set_state("crouch" if _rising else "idle")
 		_rising = _rising and _stun > 0.0
@@ -186,9 +191,14 @@ func _physics_process(delta: float) -> void:
 	aiming = (Input.is_action_pressed("aim") or _hip_aim_t > 0.0) and grounded
 
 	if grounded:
-		if Input.is_action_just_pressed("crouch"):
+		if is_sniper_zoomed():
+			if Input.is_action_just_pressed("zoom_in"):
+				zoom_in()
+			elif Input.is_action_just_pressed("zoom_out"):
+				zoom_out()
+		elif Input.is_action_just_pressed("crouch"):
 			crouching = not crouching
-		if Input.is_action_just_pressed("roll") and _roll_cd <= 0.0:
+		if not is_sniper_zoomed() and Input.is_action_just_pressed("roll") and _roll_cd <= 0.0:
 			make_noise(7.0, 0.7)
 			_roll_cd = GameMode.roll_cooldown()
 			if GameMode.short_dodge():
@@ -213,9 +223,21 @@ func _physics_process(delta: float) -> void:
 			if chest:
 				moves.start_pickup(chest)
 				return
+			var key_node := pick_key()
+			if key_node:
+				key_node.take(self)
+				return
 			var door := pick_door()
 			if door:
-				door.open()
+				if door.is_locked():
+					if has_key(door.lock):
+						door.unlock(self)
+						_say("ACESSO PERMITIDO")
+					else:
+						door.deny(self)
+						_say("ACESSO NEGADO - REQUER CARTAO")
+				else:
+					door.open()
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
 
@@ -378,6 +400,34 @@ func _face(dir: Vector3, delta: float) -> void:
 
 
 ## Arma na mão ("pistol", "m16", "shotgun" ou "m79").
+func is_sniper_zoomed() -> bool:
+	return aiming and weapon() == "sniper" and not dead and not grabbed and not moves.busy()
+
+
+func sniper_zoom() -> float:
+	return SNIPER_ZOOM_LEVELS[clampi(sniper_zoom_index, 0, SNIPER_ZOOM_LEVELS.size() - 1)]
+
+
+func sniper_zoom_label() -> String:
+	return SNIPER_ZOOM_LABELS[clampi(sniper_zoom_index, 0, SNIPER_ZOOM_LABELS.size() - 1)]
+
+
+func zoom_in() -> bool:
+	if sniper_zoom_index < SNIPER_ZOOM_LEVELS.size() - 1:
+		sniper_zoom_index += 1
+		Sfx.ui(self, "weapon_switch")
+		return true
+	return false
+
+
+func zoom_out() -> bool:
+	if sniper_zoom_index > 0:
+		sniper_zoom_index -= 1
+		Sfx.ui(self, "weapon_switch")
+		return true
+	return false
+
+
 func weapon() -> String:
 	return model.weapon
 
@@ -493,6 +543,15 @@ func pick_target() -> Node:
 
 
 ## Porta fechada ao alcance (aviso e abrir; o baú tem prioridade), ou null.
+func pick_key() -> KeyItem:
+	if dead or grabbed or moves.busy():
+		return null
+	for k: KeyItem in get_tree().get_nodes_in_group("keys"):
+		if k.can_pick(global_position):
+			return k
+	return null
+
+
 func pick_door() -> Door:
 	if dead or grabbed or moves.busy():
 		return null
@@ -555,11 +614,18 @@ func fire() -> void:
 	_bloom = minf(_bloom + float(stats.bloom), float(stats.max_spread))
 	# dano somado por alvo (os chumbos da escopeta acertam juntos: uma reação só)
 	var hits := {}
+	# Ponto no espaço 3D para onde a câmera mira
+	var cam_q := PhysicsRayQueryParameters3D.create(ray[0], ray[0] + ray[1] * float(stats.range), SHOT_MASK, exclude)
+	var cam_hit := space.intersect_ray(cam_q)
+	var target_pt: Vector3 = cam_hit.position if cam_hit else ray[0] + ray[1] * float(stats.range)
+	var to_target := target_pt - muzzle
+	var base_dir: Vector3 = to_target.normalized() if (target_pt - muzzle).dot(ray[1]) > 0.1 and to_target.length() > 0.1 else ray[1]
 	for i in int(stats.pellets):
-		var dir := _spread_dir(ray[1], cone)
-		var q := PhysicsRayQueryParameters3D.create(ray[0], ray[0] + dir * float(stats.range), SHOT_MASK, exclude)
+		var dir := _spread_dir(base_dir, cone)
+		var q := PhysicsRayQueryParameters3D.create(muzzle, muzzle + dir * float(stats.range), SHOT_MASK, exclude)
+		q.hit_from_inside = true
 		var hit := space.intersect_ray(q)
-		var end: Vector3 = hit.position if hit else ray[0] + dir * float(stats.range)
+		var end: Vector3 = hit.position if hit else muzzle + dir * float(stats.range)
 		# a escopeta mostra só alguns traçantes (8 riscos ao mesmo tempo viram um borrão)
 		if i < 3:
 			Fx.tracer(parent, muzzle, end, kind)
@@ -632,6 +698,82 @@ static func _has_headshot(who: Object) -> bool:
 	return mult != null and float(mult) > 1.0
 
 
+## Verifica se um colisor representa um alvo vivo que pode levar tiro.
+func is_alive_target(col: Object) -> bool:
+	if col == null:
+		return false
+	if col is PhysicalBone3D:
+		var who: Node = Ragdoll.owner_of(col)
+		return who != null and who != self and who.has_method("take_hit") and not who.get("dead")
+	if col != self and col.has_method("take_hit") and not col.get("dead"):
+		return true
+	return false
+
+
+## Avalia se a mira está sobre um alvo vivo e se a trajetória do tiro (do cano da heroína até o alvo)
+## está bloqueada por pilastra/parede (camada 1 de cenário).
+func aim_target_info() -> Dictionary:
+	var info := {
+		"has_target": false,
+		"blocked": false,
+		"target": null,
+		"target_pos": Vector3.ZERO,
+		"block_pos": Vector3.ZERO,
+	}
+	if not aiming or dead or grabbed:
+		return info
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return info
+	var ray := camera_rig.aim_ray()
+	var exclude: Array[RID] = [get_rid()]
+	if model and model.ragdoll:
+		exclude.append_array(model.ragdoll.body_rids())
+	var range_dist := float(weapon_stats(weapon()).range)
+
+	# 1. Raio da câmera procurando o que está sob a retícula
+	var q_cam := PhysicsRayQueryParameters3D.create(ray[0], ray[0] + ray[1] * range_dist, SHOT_MASK, exclude)
+	var cam_hit := space.intersect_ray(q_cam)
+
+	var target_node: Node = null
+	var target_pos := Vector3.ZERO
+
+	if not cam_hit.is_empty():
+		var col: Object = cam_hit.collider
+		if is_alive_target(col):
+			target_node = Ragdoll.owner_of(col) if col is PhysicalBone3D else (col as Node)
+			target_pos = cam_hit.position
+		elif col is Node and (col as Node).get_collision_layer_value(1):
+			# A câmera acertou um obstáculo do cenário (pilastra/parede na frente dela).
+			# Verifica se na mesma linha da mira, atrás do obstáculo, há um alvo.
+			var q_behind := PhysicsRayQueryParameters3D.create(cam_hit.position + ray[1] * 0.1, ray[0] + ray[1] * range_dist, 2 | Ragdoll.LAYER, exclude)
+			var behind_hit := space.intersect_ray(q_behind)
+			if not behind_hit.is_empty() and is_alive_target(behind_hit.collider):
+				target_node = Ragdoll.owner_of(behind_hit.collider) if behind_hit.collider is PhysicalBone3D else (behind_hit.collider as Node)
+				target_pos = behind_hit.position
+
+	if target_node == null:
+		return info
+
+	info.has_target = true
+	info.target = target_node
+	info.target_pos = target_pos
+
+	# 2. Interpreta se a trajetória do tiro da heroína (a partir do cano) vai acertar a parede/pilastra
+	var muzzle := model.muzzle_position()
+	var to_target := target_pos - muzzle
+	var dist := to_target.length()
+	if dist > 0.1:
+		var q_traj := PhysicsRayQueryParameters3D.create(muzzle, target_pos - to_target.normalized() * 0.05, 1, exclude)
+		q_traj.hit_from_inside = true
+		var traj_hit := space.intersect_ray(q_traj)
+		if not traj_hit.is_empty():
+			info.blocked = true
+			info.block_pos = traj_hit.position
+
+	return info
+
+
 ## Parte do corpo de `who` por onde passa o tiro que bateu na cápsula dele em `at` (nome do osso, "" = nenhuma): a
 ## cápsula cobre o corpo todo, então o raio segue mais um pouco só contra as partes do ragdoll (que acompanham a
 ## animação enquanto ele está vivo).
@@ -680,6 +822,7 @@ func daze(time: float) -> void:
 	moves.cancel()
 	crouching = false
 	aiming = false
+	model.visible = true
 	_daze = maxf(_daze, time)
 	camera_rig.shake(0.1, 0.6)
 
@@ -691,6 +834,7 @@ func is_dazed() -> bool:
 func _dazed(delta: float) -> void:
 	_daze -= delta
 	aiming = false
+	model.visible = true
 	model.set_aim(false)
 	model.set_state("dazed")
 	if not is_on_floor():
@@ -721,6 +865,7 @@ func launch(vel: Vector3, at: Variant = null) -> void:
 	moves.cancel()
 	crouching = false
 	aiming = false
+	model.visible = true
 	_stun = 0.0
 	_daze = 0.0
 	_shape.set_deferred("disabled", true)
@@ -766,6 +911,7 @@ func grab(by: Node3D) -> void:
 	moves.cancel()
 	crouching = false
 	aiming = false
+	model.visible = true
 	_stun = 0.0
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(Vector3.ZERO)
@@ -879,6 +1025,7 @@ func die(impulse: Vector3, at: Variant = null) -> void:
 	_down_t = 0.0
 	_daze = 0.0
 	aiming = false
+	model.visible = true
 	moves.cancel()
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(impulse, at)
@@ -895,6 +1042,7 @@ func respawn() -> void:
 	dead = false
 	crouching = false
 	aiming = false
+	model.visible = true
 	_jumping = false
 	reset_loadout()
 	keys.clear()

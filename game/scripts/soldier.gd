@@ -27,10 +27,17 @@ const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anter
 const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
 const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "engage", "hit"]
-## Guardas do galpão: onde começam e a rota (pontos em chão livre, fora da vista de quem começa o jogo).
+## Guardas do galpão/pátio:
+## - 1 vasculhando a ala oeste do galpão em ronda
+## - 1 fazendo ronda na ala leste/fundo
+## - 1 parado de sentinela à direita do baú da M16 no canto superior direito
+## - 2 parados de sentinela guardando o portão da primeira fase
 const GUARDS := [
-	{"route": [Vector3(-9, 0, -10), Vector3(-9, 0, -2), Vector3(-7.5, 0, -6.5)]},
-	{"route": [Vector3(10.5, 0, -2), Vector3(10.5, 0, -11), Vector3(5.5, 0, -9.5)]},
+	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, -2.5), Vector3(-7.0, 0, -6.5)]},
+	{"route": [Vector3(10.5, 0, -2), Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0)]},
+	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
+	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": []},
+	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": []},
 ]
 
 var model: HeroineModel
@@ -43,6 +50,8 @@ var _rest := 0.0
 var _strafe := 1.0
 var _strafe_t := 0.0
 var shots_fired := 0
+var engage_dist := ENGAGE_DIST
+var keep_dist := KEEP_DIST
 
 
 func _ready() -> void:
@@ -74,27 +83,65 @@ func _ready() -> void:
 		drop_amount = 15
 	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
 	can_stealth = true
+	arrival_dist = 0.7
+	engage_dist = ENGAGE_DIST + rng.randf_range(-1.0, 1.0)
+	keep_dist = KEEP_DIST + rng.randf_range(-0.4, 0.4)
 	_enemy_ready()
 
 
 func _physics_process(delta: float) -> void:
 	_tick(delta)
 	if not _calm_state(delta):
+		head_yaw = 0.0
+		head_pitch = 0.0
+		if model:
+			model.set_head_look(0.0, 0.0)
 		match state:
 			"alert":
 				_stop(delta)
 				_face(_to_target(), delta, turn_rate)
+				_update_pitch(delta)
 				if _t >= REACT_TIME:
 					start_engage()
 			"engage":
 				_engage(delta)
 			"hit":
 				_stop(delta)
+				_update_pitch(delta)
 				if _t >= STAGGER_TIME:
 					start_engage()
 			"dead":
 				_stop(delta)
+	else:
+		if state == "patrol":
+			head_yaw = lerpf(head_yaw, 0.0, 1.0 - exp(-5.0 * delta))
+			if model:
+				model.set_head_look(head_yaw, 0.0)
+		elif state in ["look", "idle"]:
+			if model:
+				model.set_head_look(head_yaw, head_pitch)
+	if not in_combat() and model and model.aim_pitch and absf(model.aim_pitch.pitch) > 0.01:
+		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, 0.0, 1.0 - exp(-6.0 * delta))
+	
+	if _is_target_elevated() and global_position.y < 1.2 and global_position.x > -12.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
+		if velocity.z > 0.0:
+			velocity.z = 0.0
+	EnemyCrowd.apply_separation(self)
 	move_and_slide()
+	if not dead:
+		_clamp_to_bounds()
+
+
+## Trava física: soldados no chão nunca saem do mapa, não caem no vácuo e não entram debaixo do mezanino
+func _clamp_to_bounds() -> void:
+	if global_position.y < 1.2:
+		global_position.y = maxf(global_position.y, 0.0)
+		if velocity.y < 0.0 and global_position.y <= 0.01:
+			velocity.y = 0.0
+		if global_position.x > -12.6:
+			global_position.x = clampf(global_position.x, -12.4, 12.4)
+			var max_z := Catwalk.FRONT_Z - 1.0 if _is_target_elevated() else 12.4
+			global_position.z = clampf(global_position.z, -12.4, max_z)
 
 
 func in_combat() -> bool:
@@ -137,6 +184,46 @@ func start_engage() -> void:
 	_strafe_t = 0.0
 
 
+func _is_target_elevated() -> bool:
+	if is_instance_valid(target):
+		if target.global_position.y > 1.8 and target.global_position.z >= Catwalk.FRONT_Z - 0.5:
+			return true
+	return _last_known.y > 1.8 and _last_known.z >= Catwalk.FRONT_Z - 0.5
+
+
+func _update_pitch(delta: float) -> void:
+	if not model or not model.aim_pitch or not _has_target():
+		return
+	var eye_y := global_position.y + eye_height
+	var target_y := target.global_position.y + (0.8 if target.crouching else 1.2)
+	var horiz_d := _to_target().length()
+	if horiz_d > 0.1:
+		var target_pitch := atan2(target_y - eye_y, horiz_d)
+		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, target_pitch, 1.0 - exp(-10.0 * delta))
+
+
+func start_hunt(at: Vector3) -> void:
+	if _has_target() and _sees_target():
+		start_alert()
+		return
+	var goal := at
+	if global_position.y < 1.2 and at.y > 1.8 and at.z >= Catwalk.FRONT_Z - 1.0:
+		goal.y = 0.0
+		goal.z = minf(goal.z, Catwalk.FRONT_Z - 5.0)
+	super.start_hunt(goal)
+
+
+func start_investigate(at: Vector3) -> void:
+	if _has_target() and _sees_target():
+		start_alert()
+		return
+	var goal := at
+	if global_position.y < 1.2 and at.y > 1.8 and at.z >= Catwalk.FRONT_Z - 1.0:
+		goal.y = 0.0
+		goal.z = minf(goal.z, Catwalk.FRONT_Z - 5.0)
+	super.start_investigate(goal)
+
+
 ## Combate: mira, atira em rajadas e se mexe (avança, recua ou anda de lado).
 func _engage(delta: float) -> void:
 	if not _has_target():
@@ -150,27 +237,69 @@ func _engage(delta: float) -> void:
 	var dist := to.length()
 	var sees := _lost_t < 0.4
 	_face(to if sees else _last_known - global_position, delta, turn_rate)
+	_update_pitch(delta)
 	var dir := Vector3.ZERO
 	var gait := "walk"
-	if not sees:
-		# sumiu de vista: vai até onde a viu, pelo caminho
-		var goal := _flat(_last_known - global_position)
-		if goal.length() > 1.0:
-			dir = _steer(_last_known, goal, delta)
-	elif dist > ENGAGE_DIST:
-		dir = _avoid(to.normalized())
-	elif dist < KEEP_DIST:
-		dir = _avoid(-to.normalized())
+	var elevated := _is_target_elevated()
+	if elevated and global_position.y < 1.2:
+		# Alvo elevado (na passarela / mezanino): manter campo de visão aberto
+		if not sees:
+			# Perdeu de vista: se estiver perto da passarela, recua para abrir o ângulo de visada;
+			# caso contrário, anda de lado e recua suavemente para tentar novo ângulo desobstruído
+			if global_position.z > 5.0:
+				dir = Vector3(0, 0, -1.0)
+				gait = "walk"
+			else:
+				_strafe_t -= delta
+				if _strafe_t <= 0.0:
+					_strafe = EnemyCrowd.get_flank_strafe(self, target.global_position, 1.0 if rng.randf() < 0.5 else -1.0)
+					_strafe_t = rng.randf_range(1.0, 2.2)
+				dir = (to.normalized().cross(Vector3.UP) * _strafe - Vector3(0, 0, 0.3)).normalized()
+				gait = "strafe"
+				if not _free(global_position + Vector3.UP * 0.6, dir) or EnemyCrowd.is_enemy_in_path(self, dir, 1.4):
+					_strafe = -_strafe
+					dir = Vector3(0, 0, -1.0)
+		elif global_position.z > 6.0:
+			# Perto demais do mezanino: a borda frontal/rodapé cortará a linha de tiro; recua
+			dir = Vector3(0, 0, -1.0)
+			gait = "walk"
+		elif global_position.z < 1.0 and dist > 14.0:
+			# Longe demais para tiro preciso: avança um pouco até a zona ideal de combate
+			dir = Vector3(0, 0, 1.0)
+			gait = "walk"
+		else:
+			# Posição ideal com visão desobstruída do mezanino: anda de lado atirando
+			_strafe_t -= delta
+			if _strafe_t <= 0.0:
+				_strafe = EnemyCrowd.get_flank_strafe(self, target.global_position, 1.0 if rng.randf() < 0.5 else -1.0)
+				_strafe_t = rng.randf_range(1.2, 2.6)
+			dir = to.normalized().cross(Vector3.UP) * _strafe
+			gait = "strafe"
+			if dir.z > 0.0 and global_position.z >= 5.2:
+				dir.z = 0.0
+			if not _free(global_position + Vector3.UP * 0.6, dir) or EnemyCrowd.is_enemy_in_path(self, dir, 1.4):
+				_strafe = -_strafe
+				dir = Vector3.ZERO
 	else:
-		_strafe_t -= delta
-		if _strafe_t <= 0.0:
-			_strafe = 1.0 if rng.randf() < 0.5 else -1.0
-			_strafe_t = rng.randf_range(1.2, 2.6)
-		dir = to.normalized().cross(Vector3.UP) * _strafe
-		gait = "strafe"
-		if not _free(global_position + Vector3.UP * 0.6, dir):
-			_strafe = -_strafe
-			dir = Vector3.ZERO
+		if not sees:
+			# sumiu de vista: vai até onde a viu, pelo caminho
+			var goal := _flat(_last_known - global_position)
+			if goal.length() > 1.0:
+				dir = _steer(_last_known, goal, delta)
+		elif dist > engage_dist:
+			dir = _avoid(to.normalized())
+		elif dist < keep_dist:
+			dir = _avoid(-to.normalized())
+		else:
+			_strafe_t -= delta
+			if _strafe_t <= 0.0:
+				_strafe = EnemyCrowd.get_flank_strafe(self, target.global_position, 1.0 if rng.randf() < 0.5 else -1.0)
+				_strafe_t = rng.randf_range(1.2, 2.6)
+			dir = to.normalized().cross(Vector3.UP) * _strafe
+			gait = "strafe"
+			if not _free(global_position + Vector3.UP * 0.6, dir) or EnemyCrowd.is_enemy_in_path(self, dir, 1.4):
+				_strafe = -_strafe
+				dir = Vector3.ZERO
 	_move_aiming(dir, gait, delta)
 	# tiro: rajadas longas e descanso curto com ela à vista; recém-sumida, fogo de supressão onde ela estava
 	_shot_t -= delta
@@ -285,7 +414,7 @@ func assassinate(dir := Vector3.ZERO, at: Variant = null) -> void:
 	var hit: Vector3 = at if at is Vector3 else global_position + Vector3.UP * 1.3
 	var d := dir.normalized() if dir.length() > 0.01 else -global_basis.z
 	Blood.splash(get_parent(), hit, d, -d, 1.2, true)
-	die(d, hit, false)
+	die(d, hit, false, true)
 
 
 func wound() -> float:
@@ -293,7 +422,7 @@ func wound() -> float:
 
 
 ## Cai em ragdoll na direção do tiro (na cabeça, o tranco vai nela e joga a cabeça para trás); a poça cresce embaixo.
-func die(dir := Vector3.ZERO, at: Variant = null, head := false) -> void:
+func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false) -> void:
 	dead = true
 	state = "dead"
 	_t = 0.0
@@ -307,6 +436,10 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false) -> void:
 	Blood.pool(model.ragdoll.bodies["Chest"], 1.1)
 	if head:
 		Blood.pool(model.ragdoll.bodies["Head"], 0.6, Blood.POOL_DELAY + 0.4)
+	if not silent and is_inside_tree():
+		get_tree().call_group("enemies", "hear_noise", global_position, 6.0, 1.2)
+	if is_inside_tree():
+		get_tree().call_group("enemies", "on_nearby_kill", global_position, 8.0)
 	_update_marker()
 	killed.emit()
 
@@ -317,8 +450,29 @@ func reset() -> void:
 	model.holster(false)
 	_reset_enemy()
 	health = MAX_HEALTH
+	engage_dist = ENGAGE_DIST + rng.randf_range(-1.0, 1.0)
+	keep_dist = KEEP_DIST + rng.randf_range(-0.4, 0.4)
 	collision_layer = 2
 	_shape.set_deferred("disabled", false)
 	_burst = 0
 	_burst_i = 0
+	if model and model.aim_pitch:
+		model.aim_pitch.pitch = 0.0
 	_enter("idle", "Idle", 0.0)
+
+func has_head_look() -> bool:
+	return true
+
+
+func _idle_vigil(delta: float) -> void:
+	_stop(delta)
+	_play("Idle", 0.3)
+	_vigil_t -= delta
+	if _vigil_t <= 0.0:
+		_vigil_t = rng.randf_range(2.0, 3.8)
+		var r := rng.randf()
+		_vigil_target_yaw = 0.0 if r < 0.3 else (rng.randf_range(0.5, 1.05) if r < 0.65 else rng.randf_range(-1.05, -0.5))
+	head_yaw = lerpf(head_yaw, _vigil_target_yaw, 1.0 - exp(-3.0 * delta))
+	head_pitch = lerpf(head_pitch, 0.0, 1.0 - exp(-3.0 * delta))
+	if model:
+		model.set_head_look(head_yaw, head_pitch)

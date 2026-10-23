@@ -184,6 +184,156 @@ HIT = merge(IDLE, {
 })
 
 
+def ladder_actions(sk):
+    """Gera ciclos de subir (LadderUp), descer (LadderDown) e repouso (LadderIdle) na escada
+    com as mãos segurando firmemente os degraus e os pés pisando exatamente no topo dos degraus horizontais."""
+    import heroine_ik as IK
+    from mathutils import Vector
+
+    RUNG_Y = -0.22
+    HAND_X = 0.17
+    FOOT_X = 0.14
+
+    def solve_ladder_pose(base_pose, hl_pos, hr_pos, fl_pos, fr_pos):
+        pose = dict(base_pose)
+        def solve_h(p, s, tgt):
+            unk = IK.arm_unknowns(s, hand=True)
+            def res(m):
+                return list(IK.palm(sk, m, s) - tgt)
+            return IK.solve(sk, p, unk, res, IK.arm_bounds(s))
+
+        def solve_f(p, s, tgt):
+            unk = IK.leg_unknowns(s)
+            def res(m):
+                pt = sk.point(m, f"Foot_{s}", 0.08)
+                toe = sk.point(m, f"Foot_{s}", sk.length[f"Foot_{s}"])
+                return list(pt - tgt) + [(toe.z - tgt.z) * 0.4]
+            return IK.solve(sk, p, unk, res, IK.leg_bounds(s))
+
+        pose, _ = solve_h(pose, "L", hl_pos)
+        pose, _ = solve_h(pose, "R", hr_pos)
+        pose, _ = solve_f(pose, "L", fl_pos)
+        pose, _ = solve_f(pose, "R", fr_pos)
+        return pose
+
+    frames = 24
+    half = 12
+    up_keys = []
+    down_keys = []
+
+    for f in range(frames + 1):
+        # 1. LadderUp: subindo os degraus (mãos seguram rungs a 1.65 e 1.35; pés pisam rungs a 0.47 e 0.17)
+        if f <= half:
+            t = f / float(half)
+            s = t * t * (3.0 - 2.0 * t)
+            hl_z = 1.65 - 0.30 * s
+            hl_y = RUNG_Y
+            fr_z = 0.47 - 0.30 * s
+            fr_y = RUNG_Y
+
+            hr_z = 1.35 + 0.30 * s
+            hr_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            fl_z = 0.17 + 0.30 * s
+            fl_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            sway_x = 0.015 * math.cos(math.pi * t)
+        else:
+            t = (f - half) / float(half)
+            s = t * t * (3.0 - 2.0 * t)
+            hr_z = 1.65 - 0.30 * s
+            hr_y = RUNG_Y
+            fl_z = 0.47 - 0.30 * s
+            fl_y = RUNG_Y
+
+            hl_z = 1.35 + 0.30 * s
+            hl_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            fr_z = 0.17 + 0.30 * s
+            fr_y = RUNG_Y
+            sway_x = -0.015 * math.cos(math.pi * t)
+
+        base_up = {
+            "loc": (sway_x, 0, 0),
+            "Hips": (3, 0, -sway_x * 100),
+            "Spine": (5, 0, sway_x * 60),
+            "Chest": (6, 0, sway_x * 40),
+            "Neck": (12, 0, 0),
+            "Head": (18, 0, 0),
+            "UpperArm_L": (85, 0, -10), "LowerArm_L": (55, 0, 0), "Hand_L": (-25, 0, 0),
+            "UpperArm_R": (85, 0, -10), "LowerArm_R": (55, 0, 0), "Hand_R": (-25, 0, 0),
+            "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-50, 0, 0), "Foot_L": (15, 0, 0),
+            "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-50, 0, 0), "Foot_R": (15, 0, 0),
+        }
+        hl = Vector((HAND_X, hl_y, hl_z))
+        hr = Vector((-HAND_X, hr_y, hr_z))
+        fl = Vector((FOOT_X, fl_y, fl_z))
+        fr = Vector((-FOOT_X, fr_y, fr_z))
+        up_keys.append((f, solve_ladder_pose(base_up, hl, hr, fl, fr)))
+
+        # 2. LadderDown: descendo os degraus
+        if f <= half:
+            t = f / float(half)
+            s = t * t * (3.0 - 2.0 * t)
+            hr_z = 1.35 + 0.30 * s
+            hr_y = RUNG_Y
+            fl_z = 0.17 + 0.30 * s
+            fl_y = RUNG_Y
+
+            hl_z = 1.65 - 0.30 * s
+            hl_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            fr_z = 0.47 - 0.30 * s
+            fr_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            sway_x = -0.015 * math.cos(math.pi * t)
+        else:
+            t = (f - half) / float(half)
+            s = t * t * (3.0 - 2.0 * t)
+            hl_z = 1.35 + 0.30 * s
+            hl_y = RUNG_Y
+            fr_z = 0.17 + 0.30 * s
+            fr_y = RUNG_Y
+
+            hr_z = 1.65 - 0.30 * s
+            hr_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            fl_z = 0.47 - 0.30 * s
+            fl_y = RUNG_Y + 0.07 * math.sin(math.pi * t)
+            sway_x = 0.015 * math.cos(math.pi * t)
+
+        base_down = {
+            "loc": (sway_x, 0, 0),
+            "Hips": (3, 0, -sway_x * 100),
+            "Spine": (5, 0, sway_x * 60),
+            "Chest": (6, 0, sway_x * 40),
+            "Neck": (12, 0, 0),
+            "Head": (10, 0, 0),
+            "UpperArm_L": (85, 0, -10), "LowerArm_L": (55, 0, 0), "Hand_L": (-25, 0, 0),
+            "UpperArm_R": (85, 0, -10), "LowerArm_R": (55, 0, 0), "Hand_R": (-25, 0, 0),
+            "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-50, 0, 0), "Foot_L": (15, 0, 0),
+            "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-50, 0, 0), "Foot_R": (15, 0, 0),
+        }
+        hl = Vector((HAND_X, hl_y, hl_z))
+        hr = Vector((-HAND_X, hr_y, hr_z))
+        fl = Vector((FOOT_X, fl_y, fl_z))
+        fr = Vector((-FOOT_X, fr_y, fr_z))
+        down_keys.append((f, solve_ladder_pose(base_down, hl, hr, fl, fr)))
+
+    # 3. LadderIdle: repouso estático firme nos degraus com respiração sutil
+    base_idle = {
+        "Hips": (3, 0, 0), "Spine": (5, 0, 0), "Chest": (6, 0, 0), "Neck": (12, 0, 0), "Head": (18, 0, 0),
+        "UpperArm_L": (85, 0, -10), "LowerArm_L": (55, 0, 0), "Hand_L": (-25, 0, 0),
+        "UpperArm_R": (85, 0, -10), "LowerArm_R": (55, 0, 0), "Hand_R": (-25, 0, 0),
+        "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-50, 0, 0), "Foot_L": (15, 0, 0),
+        "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-50, 0, 0), "Foot_R": (15, 0, 0),
+    }
+    hl = Vector((HAND_X, RUNG_Y, 1.65))
+    hr = Vector((-HAND_X, RUNG_Y, 1.35))
+    fl = Vector((FOOT_X, RUNG_Y, 0.17))
+    fr = Vector((-FOOT_X, RUNG_Y, 0.47))
+    pose_idle_a = solve_ladder_pose(base_idle, hl, hr, fl, fr)
+    base_idle_b = dict(base_idle, Chest=(8, 0, 0), Spine=(6, 0, 0))
+    pose_idle_b = solve_ladder_pose(base_idle_b, hl, hr, fl, fr)
+    idle_keys = [(0, pose_idle_a), (30, pose_idle_b), (60, pose_idle_a)]
+
+    return up_keys, down_keys, idle_keys
+
+
 def actions(sk):
     """nome -> lista de (frame, pose). Caminhadas, cambalhota, escalada e fuzil saem por IK (sk = esqueleto)."""
     import heroine_gait as G
@@ -209,48 +359,7 @@ def actions(sk):
     hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
     dodge_l = M.dodge_side_keys(A, sk)
-    ladder_idle = {
-        "Spine": (5, 0, 0), "Chest": (5, 0, 0), "Neck": (10, 0, 0), "Head": (15, 0, 0),
-        "UpperArm_L": (100, 0, -8), "LowerArm_L": (35, 0, 0),
-        "UpperArm_R": (85, 0, -8), "LowerArm_R": (45, 0, 0),
-        "UpperLeg_L": (25, 0, 4), "LowerLeg_L": (-35, 0, 0), "Foot_L": (10, 0, 0),
-        "UpperLeg_R": (45, 0, 4), "LowerLeg_R": (-65, 0, 0), "Foot_R": (20, 0, 0),
-    }
-    ladder_idle_b = merge(ladder_idle, {"Chest": (3, 0, 0)})
-    ladder_step_a = {
-        "Spine": (4, 0, 0), "Chest": (6, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
-        "UpperArm_L": (115, 0, -10), "LowerArm_L": (25, 0, 0),
-        "UpperArm_R": (70, 0, -8), "LowerArm_R": (55, 0, 0),
-        "UpperLeg_L": (15, 0, 3), "LowerLeg_L": (-20, 0, 0), "Foot_L": (5, 0, 0),
-        "UpperLeg_R": (55, 0, 5), "LowerLeg_R": (-75, 0, 0), "Foot_R": (20, 0, 0),
-    }
-    ladder_step_trans_1 = {
-        "Spine": (4, 0, 0), "Chest": (5, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
-        "UpperArm_L": (90, 0, -9), "LowerArm_L": (40, 0, 0),
-        "UpperArm_R": (95, 0, -9), "LowerArm_R": (35, 0, 0),
-        "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-45, 0, 0), "Foot_L": (12, 0, 0),
-        "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-45, 0, 0), "Foot_R": (12, 0, 0),
-    }
-    ladder_step_b = {
-        "Spine": (4, 0, 0), "Chest": (6, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
-        "UpperArm_L": (70, 0, -8), "LowerArm_L": (55, 0, 0),
-        "UpperArm_R": (115, 0, -10), "LowerArm_R": (25, 0, 0),
-        "UpperLeg_L": (55, 0, 5), "LowerLeg_L": (-75, 0, 0), "Foot_L": (20, 0, 0),
-        "UpperLeg_R": (15, 0, 3), "LowerLeg_R": (-20, 0, 0), "Foot_R": (5, 0, 0),
-    }
-    ladder_step_trans_2 = {
-        "Spine": (4, 0, 0), "Chest": (5, 0, 0), "Neck": (12, 0, 0), "Head": (16, 0, 0),
-        "UpperArm_L": (95, 0, -9), "LowerArm_L": (35, 0, 0),
-        "UpperArm_R": (90, 0, -9), "LowerArm_R": (40, 0, 0),
-        "UpperLeg_L": (35, 0, 4), "LowerLeg_L": (-45, 0, 0), "Foot_L": (12, 0, 0),
-        "UpperLeg_R": (35, 0, 4), "LowerLeg_R": (-45, 0, 0), "Foot_R": (12, 0, 0),
-    }
-    ladder_up_keys = [
-        (0, ladder_step_a), (8, ladder_step_trans_1), (15, ladder_step_b), (23, ladder_step_trans_2), (30, ladder_step_a)
-    ]
-    ladder_down_keys = [
-        (0, ladder_step_a), (8, ladder_step_trans_2), (15, ladder_step_b), (23, ladder_step_trans_1), (30, ladder_step_a)
-    ]
+    ladder_up_keys, ladder_down_keys, ladder_idle_keys = ladder_actions(sk)
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
@@ -272,7 +381,7 @@ def actions(sk):
         "Hang": M.hang_keys(A, sk),
         "LadderUp": ladder_up_keys,
         "LadderDown": ladder_down_keys,
-        "LadderIdle": [(0, ladder_idle), (30, ladder_idle_b), (60, ladder_idle)],
+        "LadderIdle": ladder_idle_keys,
         "ClimbUp": M.climb_keys(A, sk),
         "Mantle": M.mantle_keys(A, sk),
         "RifleHold": [(0, hold), (30, hold_breath), (60, hold)],
