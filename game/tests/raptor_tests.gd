@@ -452,12 +452,12 @@ func test_two_consecutive_bites() -> void:
 		await t._frames(1)
 	check(not p.grabbed, "soltou")
 	check(p.health < h0, "primeira mordida causou dano", str(p.health))
-	# espera levantar
-	for i in 120:
-		if not p.model.is_ragdoll():
+	# espera levantar (até o fim da animação: levantando, ela não leva golpe)
+	for i in 400:
+		if not p.model.is_ragdoll() and not p.is_getting_up():
 			break
 		await t._frames(1)
-	check(not p.model.is_ragdoll(), "levantou")
+	check(not p.model.is_ragdoll() and not p.is_getting_up(), "levantou")
 	# segunda mordida
 	await t._frames(10)
 	r.start_bite()
@@ -517,6 +517,11 @@ func test_capsule_resync_after_getup() -> void:
 	check(not p.model.is_ragdoll(), "levantou")
 	var d := p.global_position.distance_to(Vector3(hips_pos.x, p.global_position.y, hips_pos.z))
 	check(d < 1.0, "cápsula sincronizada com o quadril onde caiu", "dist=%.2f hips=%s cap=%s" % [d, hips_pos, p.global_position])
+	for i in 300:
+		if not p.is_getting_up():
+			break
+		await t._frames(1)
+	check(not p.is_getting_up(), "termina de levantar")
 	# consegue se mover normalmente (raptor sem alvo: se ela passar atrás dele, leva rabada de verdade)
 	r.target = null
 	Input.action_press("move_forward")

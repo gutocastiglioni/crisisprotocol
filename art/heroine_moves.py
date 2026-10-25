@@ -362,9 +362,10 @@ def hang_keys(A, sk):
     return bake(sk, "Hang", keys, _palms_at(Vector(), HANG_REACH, HANG_FWD, 0, 60))
 
 
-def _knee_up(A, arm_pose):
-    """Joelho direito subindo para o topo, perna esquerda pendurada, tronco por cima da borda."""
-    return A.merge(arm_pose, legs(-30, -20, -20, 75, -120, 10),
+def _knee_up(A, arm_pose, left=(40, -55, -15)):
+    """Joelho direito subindo para o topo, perna esquerda pendurada junto da parede (coxa quase na vertical,
+    joelho dobrado: o quadril inclinado já leva a perna para trás), tronco por cima da borda."""
+    return A.merge(arm_pose, legs(*left, 75, -120, 10),
                    {"loc": (0, -0.04, 0), "Hips": (32, 0, 0), "Spine": (12, 0, 0), "Head": (-20, 0, 0), "Neck": (-5, 0, 0)})
 
 
@@ -372,13 +373,13 @@ def climb_keys(A, sk):
     lean = {"Head": (-20, 0, 0), "Neck": (-5, 0, 0)}
     keys = [
         (0, hang_pose(A)),
-        (6, A.merge(hang_pose(A), legs(24, -40, -30, 14, -30, -30), {"Spine": (4, 0, 0), "Head": (-8, 0, 0)})),
-        (14, A.merge(hang_pose(A), legs(36, -62, -25, 24, -50, -25), {"Spine": (10, 0, 0), "Chest": (6, 0, 0),
+        (6, A.merge(hang_pose(A), legs(2, -44, -25, 6, -36, -25), {"Spine": (4, 0, 0), "Head": (-8, 0, 0)})),
+        (14, A.merge(hang_pose(A), legs(4, -72, -15, 6, -64, -15), {"Spine": (10, 0, 0), "Chest": (6, 0, 0),
                                                                      "Head": (0, 0, 0)})),
-        (22, A.merge(hang_pose(A), legs(-28, -20, -20, -32, -16, -20), lean,
+        (22, A.merge(hang_pose(A), legs(34, -55, -15, 8, -65, -15), lean,
                      {"Hips": (30, 0, 0), "Spine": (10, 0, 0), "Chest": (4, 0, 0)})),
         (28, _knee_up(A, hang_pose(A))),
-        (32, _knee_up(A, arms(-10, -15, 30))),
+        (32, _knee_up(A, arms(-10, -15, 30), left=(40, -110, -10))),
         (36, A.merge(A.CROUCH, {"Spine": (24, 0, 0)})),
         (44, A.IDLE),
     ]
@@ -415,9 +416,9 @@ def mantle_keys(A, sk):
         (0, A.IDLE),
         (3, A.merge(arms(55, -10, 30), legs(42, -75, 22), {"loc": (0, -0.16, 0), "Spine": (18, 0, 0)})),
         (7, A.merge(reach, legs(40, -80, -10, 30, -60, -10), lean, {"Hips": (15, 0, 0), "Spine": (16, 0, 0)})),
-        (12, A.merge(reach, legs(-20, -30, -15, -24, -25, -15), lean, {"Hips": (30, 0, 0), "Spine": (10, 0, 0)})),
+        (12, A.merge(reach, legs(38, -55, -15, 20, -70, -15), lean, {"Hips": (30, 0, 0), "Spine": (10, 0, 0)})),
         (18, _knee_up(A, reach)),
-        (21, _knee_up(A, arms(-10, -15, 30))),
+        (21, _knee_up(A, arms(-10, -15, 30), left=(40, -110, -10))),
         (24, A.merge(A.CROUCH, {"Spine": (24, 0, 0)})),
         (30, A.IDLE),
     ]
@@ -431,62 +432,119 @@ def mantle_keys(A, sk):
 
 
 # ------------------------------------------------------------------ abate furtivo e golpe crítico
-ASSASSINATE_FRAMES = 20
-ASSASSINATE_HIT = 8
-ASSASSINATE_PATH = [(0, 0.0, 0.0), (4, 0.15, 0.0), (8, 0.42, 0.0), (14, 0.45, 0.0), (20, 0.45, 0.0)]
-CRIT_FRAMES = 22
-CRIT_HIT = 9
-CRIT_PATH = [(0, 0.0, 0.0), (5, 0.22, 0.0), (9, 0.35, 0.0), (16, 0.35, 0.0), (22, 0.35, 0.0)]
+# Sair da escada pelo topo: do LadderIdle (raiz LADDER_RISE abaixo do piso de cima) a mão direita e depois a
+# esquerda vão para a beirada (LADDER_EDGE à frente da escada, no topo do rebordo `lip`), os pés sobem os degraus
+# e o corpo sobe puxando (até 26); depois se projeta por cima da beira com os braços esticados, apoia o joelho
+# direito na beirada com a canela para dentro do furo (30-37), passa para agachada no piso (44) e fica de pé (54).
+# Entrar pelo topo (LadderIn) é a mesma animação de trás para a frente: o Godot segue o mesmo caminho ao contrário.
+# Caminho relativo à raiz na escada (os degraus LADDER_REACH à frente).
+LADDER_FRAMES = 54
+LADDER_RISE = 1.58  # da raiz no ciclo até o piso de cima: a mão esquerda do LadderIdle na barra do topo
+LADDER_REACH = 0.22  # = RUNG_Y de heroine_anims.ladder_actions
+LADDER_EDGE = 0.17  # da escada até as mãos (no alçapão: em cima do rebordo, perto da quina de fora)
+LADDER_KNEE = 0.15  # da escada até o joelho (no alçapão: em cima do rebordo)
+LADDER_LIP = 0.12  # = Hatch.CURB_H; no mezanino a beirada é o próprio piso (0)
+LADDER_PATH = [(0, 0.0, 0.0), (10, 0.0, 0.02), (18, 0.0, 0.2), (22, 0.0, 0.45), (26, 0.0, 0.72),
+               (30, -0.08, 0.98), (37, -0.05, 1.0), (44, 0.6, LADDER_RISE), (54, 0.72, LADDER_RISE)]
+LADDER_HAND_X = 0.24  # mãos mais abertas: o joelho direito apoia entre elas
 
 
-def assassinate_keys(A, sk):
-    """Golpe furtivo silencioso pelas costas: avança agachando (0-4), golpeia no pescoço/tronco (8) e recolhe (20)."""
+def ladder_path(lip):
+    """Caminho da saída para uma beirada `lip` acima do piso: com as mãos e o joelho mais baixos, o corpo também."""
+    return [(f, a, b - (LADDER_LIP - lip) if 22 <= f <= 37 else b) for f, a, b in LADDER_PATH]
+
+
+def _track(keys, lift=0.0, back=0.0):
+    """Alvo que passa de um apoio para o outro: [(quadro, ponto), ...]; no meio de cada troca sobe `lift` e
+    afasta `back` da escada (a mão/o pé contorna o degrau)."""
+    def at(f):
+        if f <= keys[0][0]:
+            return keys[0][1]
+        for (f0, a), (f1, b) in zip(keys, keys[1:]):
+            if f <= f1:
+                s = (f - f0) / (f1 - f0)
+                bump = math.sin(math.pi * s) if (b - a).length > 1e-4 else 0.0
+                return a.lerp(b, s * s * (3.0 - 2.0 * s)) + Vector((0.0, back * bump, lift * bump))
+        return keys[-1][1]
+    return at
+
+
+def ladder_out_keys(A, sk, idle, lip, name="LadderOut"):
+    m = sk.matrices(idle)
+    hl, hr = IK.palm(sk, m, "L"), IK.palm(sk, m, "R")
+    fl, fr = sk.point(m, "Foot_L"), sk.point(m, "Foot_R")
+    edge_y = -(LADDER_REACH + LADDER_EDGE)
+    edge_z = LADDER_RISE + lip + 0.03  # o punho fechado fica por cima da beirada
+    step = Vector((0.0, 0.0, 0.3))
+    lean = {"Hips": (34, 0, 0), "Spine": (18, 0, 0), "Chest": (8, 0, 0), "Neck": (-10, 0, 0), "Head": (-30, 0, 0)}
     keys = [
-        (0, A.IDLE),
-        (4, A.merge(legs(28, -52, 20, 22, -42, 16, spread=5),
-                    {"loc": (0, -0.10, 0), "Spine": (12, -15, 0), "Chest": (8, -20, 0), "Head": (-12, 20, 0),
-                     "UpperArm_R": (-22, -18, 32), "LowerArm_R": (95, 0, 0), "Hand_R": (-10, 0, 0),
-                     "UpperArm_L": (65, 10, -15), "LowerArm_L": (40, 0, 0)})),
-        (ASSASSINATE_HIT, A.merge(legs(20, -38, 12, 42, -74, 24, spread=6),
-                                  {"loc": (0, -0.18, 0), "Spine": (18, 18, 0), "Chest": (10, 24, 0),
-                                   "Head": (-18, -24, 0), "UpperArm_R": (88, 24, -18), "LowerArm_R": (25, 0, 0),
-                                   "Hand_R": (-12, 0, 0), "UpperArm_L": (48, -14, 18), "LowerArm_L": (72, 0, 0)})),
-        (14, A.merge(legs(26, -48, 18, 30, -54, 20, spread=5),
-                     {"loc": (0, -0.10, 0), "Spine": (10, 6, 0), "Chest": (6, 8, 0), "Head": (-10, -8, 0),
-                      "UpperArm_R": (42, -8, 18), "LowerArm_R": (62, 0, 0),
-                      "UpperArm_L": (24, 0, 8), "LowerArm_L": (42, 0, 0)})),
-        (ASSASSINATE_FRAMES, A.IDLE),
+        (0, idle),
+        (8, idle),
+        (14, A.merge(idle, {"Spine": (4, 0, 0), "Head": (-6, 0, 0)})),
+        (22, A.merge(idle, {"Head": (-10, 0, 0)})),
+        # puxando, o tronco começa a passar da beira
+        (26, A.merge(idle, {"Hips": (10, 0, 0), "Spine": (8, 0, 0), "Chest": (4, 0, 0), "Head": (-14, 0, 0)})),
+        # por cima da beira, braços esticados empurrando; o joelho direito sobe para a beirada, canela para dentro
+        (30, A.merge(no_legs(idle), lean, legs(0, -30, 0, 70, -90, 0))),
+        # mãos soltam e vão para a frente; o peso passa para o joelho
+        (37, A.merge(lean, {"Hips": (10, 0, 0), "Spine": (5, 0, 0)}, arms(45, -12, 25), legs(0, -40, 0, 60, -80, 0))),
+        (44, A.merge(A.CROUCH, {"Spine": (24, 0, 0)})),
+        (LADDER_FRAMES, A.IDLE),
     ]
-    plants = [Plant("foot", "L", 0, 3), Plant("foot", "R", 0, 2),
-              Plant("foot", "R", ASSASSINATE_HIT, ASSASSINATE_FRAMES), Plant("foot", "L", 14, ASSASSINATE_FRAMES)]
-    return bake(sk, "Assassinate", keys, plants, ASSASSINATE_PATH)
+    hand_l = Vector((LADDER_HAND_X, edge_y, edge_z))
+    hand_r = Vector((-LADDER_HAND_X, edge_y, edge_z))
+    plants = [
+        Plant("palm", "R", 0, 34, target=_track([(0, hr), (10, hand_r)], 0.08, 0.06)),
+        Plant("palm", "L", 0, 34, target=_track([(6, hl), (14, hand_l)], 0.06, 0.06)),
+        Plant("foot", "R", 0, 22, target=_track([(4, fr), (10, fr + step)], 0.06, 0.08)),
+        Plant("foot", "L", 0, 38, target=_track([(10, fl), (17, fl + step * 2), (21, fl + step * 2),
+                                                 (26, fl + step * 3 + Vector((0.0, 0.0, 0.08)))], 0.06, 0.08)),
+        Plant("knee", "R", 30, 37, target=Vector((-0.08, -(LADDER_REACH + LADDER_KNEE), LADDER_RISE + lip + 0.06))),
+    ]
+    plants += [Plant("foot", s, 44, LADDER_FRAMES, ground=LADDER_RISE) for s in ("L", "R")]
+    return _hands_on_edge(sk, bake(sk, name, keys, plants, ladder_path(lip)))
 
 
-def crit_strike_keys(A, sk):
-    """Golpe crítico de cima para baixo no inimigo caído: ergue o golpe (0-5), crava no chão (9) e levanta (22)."""
-    keys = [
-        (0, A.IDLE),
-        (5, A.merge(legs(20, -38, 14, 30, -56, 20, spread=5),
-                    {"loc": (0, -0.06, 0), "Spine": (-8, -10, 0), "Chest": (-10, -14, 0), "Head": (16, 10, 0),
-                     "UpperArm_R": (132, -10, 14), "LowerArm_R": (54, 0, 0),
-                     "UpperArm_L": (72, 10, -12), "LowerArm_L": (48, 0, 0)})),
-        (CRIT_HIT, A.merge(legs(62, -104, 34, 68, -110, 36, spread=7),
-                           {"loc": (0, -0.34, 0), "Hips": (10, 0, 0), "Spine": (26, 12, 0), "Chest": (16, 16, 0),
-                            "Head": (8, -12, 0), "UpperArm_R": (66, 12, -8), "LowerArm_R": (14, 0, 0),
-                            "Hand_R": (-15, 0, 0), "UpperArm_L": (34, -10, 16), "LowerArm_L": (64, 0, 0)})),
-        (16, A.merge(legs(44, -78, 26, 48, -84, 28, spread=6),
-                     {"loc": (0, -0.22, 0), "Hips": (4, 0, 0), "Spine": (14, 4, 0), "Chest": (8, 6, 0),
-                      "Head": (2, -4, 0), "UpperArm_R": (38, 0, 10), "LowerArm_R": (52, 0, 0),
-                      "UpperArm_L": (24, 0, 8), "LowerArm_L": (42, 0, 0)})),
-        (CRIT_FRAMES, A.IDLE),
-    ]
-    plants = [Plant("foot", "L", 0, 3), Plant("foot", "R", 0, 2),
-              Plant("foot", "R", CRIT_HIT, CRIT_FRAMES), Plant("foot", "L", CRIT_HIT, CRIT_FRAMES)]
-    return bake(sk, "CritStrike", keys, plants, CRIT_PATH)
+LADDER_HAND_DIR = Vector((0.0, -1.0, -0.45)).normalized()  # mão na beirada: para a frente (lado da escada), descendo
+# mão de cada lado: (começa a girar, já apoiada, solta da beirada, volta ao que a pose desenha)
+LADDER_HAND_TURN = {"R": (6, 10, 34, 38), "L": (10, 14, 34, 38)}
+
+
+def _hands_on_edge(sk, keys):
+    """Mãos apoiadas na beirada viradas para a frente, em vez do punho dobrado de quem segura o degrau: gira a mão
+    (e o antebraço) com o punho preso onde a IK dos apoios deixou."""
+    out = []
+    worst = 0.0
+    for f, pose in keys:
+        for s, (a, b, c, d) in LADDER_HAND_TURN.items():
+            w = min(max((f - a) / (b - a), 0.0), 1.0) * min(max((d - f) / (d - c), 0.0), 1.0)
+            if w <= 0.0:
+                continue
+            m = sk.matrices(pose)
+            at = IK.palm(sk, m, s)
+            now = (IK.palm(sk, m, s) - sk.point(m, f"Hand_{s}")).normalized()
+            want = now.lerp(LADDER_HAND_DIR, w * w * (3.0 - 2.0 * w)).normalized()
+
+            def res(mm, s=s, at=at, want=want):
+                tip = sk.point(mm, f"Hand_{s}")
+                return list(IK.palm(sk, mm, s) - at) + list(((IK.palm(sk, mm, s) - tip).normalized() - want) * 0.2)
+
+            pose, _ = IK.solve(sk, pose, IK.arm_unknowns(s, hand=True), res, IK.arm_bounds(s))
+            worst = max(worst, (IK.palm(sk, sk.matrices(pose), s) - at).length)
+        out.append((f, pose))
+    print(f"[moves] mãos na beirada: punho saiu do lugar no máximo {worst * 1000:.1f} mm")
+    return out
+
+
+def reverse(keys):
+    """A animação de trás para a frente (entrar na escada pelo topo = sair ao contrário)."""
+    n = keys[-1][0]
+    return [(n - f, pose) for f, pose in reversed(keys)]
 
 
 def data(gait_defs):
     """Medidas que o Godot usa (heroine_moves.json)."""
+    import heroine_strike as ST
     return {
         "fps": FPS,
         "speeds": {k: g.speed for k, g in gait_defs.items()},
@@ -498,8 +556,10 @@ def data(gait_defs):
         "mantle": {"frames": MANTLE_FRAMES, "hop": list(MANTLE_HOP), "hands": list(MANTLE_HANDS), "rel": MANTLE_REL,
                    "palm_up": MANTLE_PALM_UP, "palm_fwd": MANTLE_PALM_FWD, "wall": MANTLE_WALL, "top": MANTLE_TOP,
                    "min": MANTLE_MIN, "max": MANTLE_MAX},
-        "assassinate": {"frames": ASSASSINATE_FRAMES, "hit": ASSASSINATE_HIT, "path": ASSASSINATE_PATH},
-        "crit_strike": {"frames": CRIT_FRAMES, "hit": CRIT_HIT, "path": CRIT_PATH},
+        "ladder": {"frames": LADDER_FRAMES, "rise": LADDER_RISE, "reach": LADDER_REACH, "lip": LADDER_LIP,
+                   "path": ladder_path(LADDER_LIP), "path_low": ladder_path(0.0)},
+        "assassinate": {"frames": ST.ASSASSINATE_FRAMES, "hit": ST.ASSASSINATE_HIT, "path": ST.ASSASSINATE_PATH},
+        "crit_strike": {"frames": ST.CRIT_FRAMES, "hit": ST.CRIT_HIT, "path": ST.CRIT_PATH},
     }
 
 

@@ -48,6 +48,18 @@ def pistol_shot():
                    [(0.11, 0.22, 1400), (0.24, 0.1, 900)], 1.8)
 
 
+def pistol_sd_shot():
+    # pistola com silenciador: sopro abafado ("tup") sem estalo nem eco, e o ferrolho batendo logo depois
+    r = rng_for("pistol_sd_shot")
+    dur = 0.35
+    t = tt(dur)
+    puff = bp(noise(r, dur), 900, 0.8) * decay(dur, 0.018, 0.0008)
+    hiss = hp(noise(r, dur), 2500) * decay(dur, 0.01, 0.0003) * 0.25
+    boom = sweep(dur, 140 + 90 * np.exp(-t / 0.01)) * decay(dur, 0.03, 0.001) * 0.7
+    slide = metal_clack(r, dur, 0.03, 2400, 0.35)
+    return finish(soft_clip(puff + hiss + boom + slide, 1.4), 0.8)
+
+
 def m16_shot():
     return gunshot("m16_shot", 0.7, 0.003, 1900, 4200, 0.024, (210, 70), 0.05, 1000, 0.2, 0.13,
                    [(0.09, 0.2, 1800), (0.19, 0.08, 1100)], 2.0)
@@ -382,9 +394,40 @@ def item_get():
     return finish(x, 0.6)
 
 
+def keypad_beep():
+    # tecla do painel do portão: bipe curto de alto-falante pequeno
+    r = rng_for("keypad_beep")
+    dur = 0.16  # o bipe acaba em 0,09 s; o resto é silêncio
+    x = modes(dur, [1320.0, 2640.0, 3960.0], [0.045, 0.02, 0.01], [1.0, 0.3, 0.1], 0.0, r)
+    x *= bell(dur, 0.0, 0.004, 0.09)
+    return finish(x, 0.45)
+
+
+def keypad_error():
+    # código errado: dois zumbidos graves e ásperos (onda quadrada filtrada)
+    dur = 0.6
+    t = tt(dur)
+    sq = np.sign(np.sin(2.0 * math.pi * 196.0 * t))
+    env = bell(dur, 0.0, 0.01, 0.22) + bell(dur, 0.3, 0.31, 0.55)
+    x = lp(sq, 1800) * env
+    return finish(x, 0.5)
+
+
+def keypad_ok():
+    # código aceito: dois bipes subindo e o trinco elétrico soltando
+    r = rng_for("keypad_ok")
+    dur = 0.9
+    x = modes(dur, [1046.5, 2093.0], [0.06, 0.03], [1.0, 0.25], 0.0, r)
+    x += modes(dur, [1568.0, 3136.0], [0.09, 0.04], [1.0, 0.25], 0.12, r)
+    x *= bell(dur, 0.0, 0.005, 0.32)
+    x += metal_clack(r, dur, 0.42, 900, 1.2) + thud(r, dur, 0.43, 300, 0.05, 0.8)
+    return finish(x, 0.6)
+
+
 # ------------------------------------------------------------------ saída
 SOUNDS = {
     "pistol_shot": pistol_shot,
+    "pistol_sd_shot": pistol_sd_shot,
     "m16_shot": m16_shot,
     "shotgun_shot": shotgun_shot,
     "sniper_shot": sniper_shot,
@@ -400,6 +443,9 @@ SOUNDS = {
     "lock_rattle": lock_rattle,
     "unlock": unlock,
     "item_get": item_get,
+    "keypad_beep": keypad_beep,
+    "keypad_error": keypad_error,
+    "keypad_ok": keypad_ok,
     "roll": roll,
     "jump": jump,
     "land": land,

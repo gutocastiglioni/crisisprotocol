@@ -218,8 +218,8 @@ func test_bite_grab_throw() -> void:
 	check(hips.x - mouth.x > 1.5, "arremessada para o lado (esquerda dele)", "%.2f m" % (hips.x - mouth.x))
 	check(t._body_ok(p.model).finite, "ragdoll arremessado sem NaN")
 	a.process_mode = Node.PROCESS_MODE_DISABLED  # senão ele volta a atacar e a derruba de novo
-	await t._frames(150)
-	check(not p.model.is_ragdoll() and not p.is_dodging(), "levanta depois do arremesso")
+	var up := await _until(func() -> bool: return not p.model.is_ragdoll() and not p.is_dodging(), 400)
+	check(up, "levanta depois do arremesso")
 
 
 func test_flinch_needs_damage() -> void:

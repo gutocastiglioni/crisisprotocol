@@ -16,7 +16,12 @@ extends CharacterBody3D
 ## coice médio, escopeta tem de parar (`weapon_stats`). No "arcade" (o jogo de antes) nada disso vale.
 ## M79: em vez do raio, lança uma granada (Grenade) em arco até o ponto da retícula, que explode em área.
 ## Chaves (`keys`): pegas no chão (KeyItem); baú trancado (`Chest.lock`) não abre sem a chave dele: apertar interagir
-## nele avisa o main (`locked`), que mostra o cadeado de perto e, com a chave, destranca.
+## nele avisa o main (`locked`), que mostra o cadeado de perto e, com a chave, destranca. Porta com teclado (`Door.code`):
+## interagir avisa o main (`keypad`), que abre o painel (Inspect.keypad). Plaqueta de tubo (SubjectPlate): `read_plate`.
+## Queda: caiu mais que FALL_SAFE leva dano, a partir de FALL_LETHAL morre (`death_cause` "fall"). Baleada na escada ela
+## solta (PlayerMoves.knock_off_ladder) e cai sem controle: aí os limites são KNOCKED_SAFE/KNOCKED_LETHAL. Fora do mapa
+## (sem chão embaixo, ex.: do telhado para fora do galpão) ela morreria nunca: abaixo de VOID_Y morre na queda.
+## Cena (`cutscene`, ver Cutscene): sem controle nem dano; quem a toca move o corpo por `cutscene_walk`.
 
 signal health_changed(value: int)
 signal died
@@ -25,6 +30,10 @@ signal headshot(who: Node)
 signal notice(text: String)
 ## interagiu com um baú trancado (o main mostra o cadeado e, se ela tem a chave, destranca)
 signal locked(chest: Node)
+## interagiu com o teclado de uma porta trancada por código (o main abre o painel)
+signal keypad(door: Door)
+## interagiu com a plaqueta de um tubo da sala dos clones (o main mostra de perto)
+signal read_plate(plate: SubjectPlate)
 
 # andando, agachada e mirando, a velocidade é a dos ciclos de passo (Moves.speed): o pé não escorrega
 const RUN_SPEED := 4.4
@@ -53,6 +62,11 @@ const WEAPON_STATS := {
 	"sniper": {"cooldown": 1.1, "damage": 80, "pellets": 1, "spread": 0.0, "bloom": 0.0, "max_spread": 0.0,
 		"range": 120.0, "shake": 0.08, "push": 40.0, "hole": 0.09, "casing": "brass", "name": "SNIPER"},
 }
+## pistola com silenciador (SupplyDrop, `silencer`): os mesmos números da pistola, mas o tiro só se ouve de perto
+## (raio e força do barulho), sem o clarão que a deixa à vista, e outro nome no HUD
+const SILENCER := {"name": "PISTOLA SIL.", "noise": 3.5, "noise_power": 0.8, "loud": false}
+const SHOT_NOISE := 26.0  # tiro sem silenciador: ouvido de longe
+const SHOT_NOISE_POWER := 2.2
 const BLOOM_DECAY := 4.0  # graus por segundo
 const HEAD_HIT_RADIUS := 0.17  # tiro que passa a esta distância do centro da cabeça é na cabeça
 const DRY_FIRE_TIME := 0.5  # intervalo do clique da arma vazia
@@ -66,7 +80,14 @@ const SHOT_MASK := 1 | 2 | Ragdoll.LAYER
 const KNOCK_DECAY := 12.0
 const BITTEN_BONE := "LowerArm_L"  # a direita segura a pistola
 const DOWN_TIME := 1.1  # no chão depois de solta, antes de levantar
+const COLLAPSE_TIME := 0.9  # no chão depois de desabar de uma queda que machuca (ou derrubada da escada)
+const COLLAPSE_PUSH := 25.0  # empurrão no peito ao desabar (para o lado em que vinha)
 const C_TIME := 0.35  # quanto tempo do voo ela segura o corpo dobrado em C
+const FALL_SAFE := 3.6  # m de queda sem dano (pular do mezanino não machuca)
+const FALL_LETHAL := 5.0  # m de queda que matam (do telhado)
+const KNOCKED_SAFE := 0.8  # caindo da escada baleada (de costas, sem controle)
+const KNOCKED_LETHAL := 1.8
+const VOID_Y := -10.0  # todo chão do mapa está em y = 0: caindo abaixo disto ela saiu do mapa (morre na queda)
 
 var model: HeroineModel
 var camera_rig: CameraRig
@@ -79,6 +100,12 @@ var hopping := false  # pulinho de esquiva (survival), na parte invulnerável
 var shots_fired := 0
 var sniper_zoom_index := 0
 var weapons: Array[String] = ["pistol"]
+## a pistola ganhou o silenciador (caixa de paraquedas do telhado): troca a pistola, não é arma nova
+var silencer := false:
+	set(v):
+		silencer = v
+		if model:
+			model.silenced = v
 ## chaves pegas (id de KeyItem / Chest.lock); usar a chave a tira daqui
 var keys: Array[String] = []
 ## munição de cada arma (só vale com GameMode.limited_ammo)
@@ -86,6 +113,13 @@ var ammo := GameMode.START_AMMO.duplicate()
 var moves: PlayerMoves
 var _shape: CollisionShape3D
 var _air_t := 0.0
+var _fall_top := NAN  # no ar: ponto mais alto desde que saiu do chão (NAN = no chão)
+var _fall_knocked := false  # a queda de agora é de quem foi derrubada da escada
+## por que morreu ("fall" = queda); vazio = golpe/tiro
+var death_cause := ""
+## numa cena: sem controle nem dano; `cutscene_walk` = velocidade no plano que a cena pede
+var cutscene := false
+var cutscene_walk := Vector3.ZERO
 var _jumping := false
 var _shot_cd := 0.0
 var _hip_aim_t := 0.0
@@ -101,7 +135,8 @@ var struggle := 0
 var _down_t := 0.0
 var _fight := 0.0  # fase da luta (socos e chutes) enquanto está presa
 var _held_t := 0.0
-var _rising := false
+var _rising := false  # levantando do chão (GetUpFront/GetUpBack): sem controle e sem levar golpe
+var _rise_t := 0.0
 var _fly_t := 0.0
 var _fly_dir := Vector3.FORWARD
 var _knock := Vector3.ZERO
@@ -146,6 +181,9 @@ func _physics_process(delta: float) -> void:
 		# cápsula desligada: o corpo fica parado e quem cai é o ragdoll
 		velocity = Vector3.ZERO
 		return
+	if cutscene:
+		_cutscene_move(delta)
+		return
 	if _down_t > 0.0:
 		velocity = Vector3.ZERO
 		if _fly_t > 0.0:
@@ -154,6 +192,9 @@ func _physics_process(delta: float) -> void:
 		_down_t -= delta
 		if _down_t <= 0.0:
 			_get_up()
+		return
+	if _rising:
+		_rise(delta)
 		return
 	if _daze > 0.0:
 		_dazed(delta)
@@ -169,6 +210,11 @@ func _physics_process(delta: float) -> void:
 		model.visible = true
 		model.set_aim(false)
 		moves.update(delta)
+		# movimentos com caminho (escada, borda, cambalhota) não contam como queda; ao soltar, conta dali
+		_fall_top = NAN
+		return
+	_track_fall()
+	if dead:
 		return
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -178,8 +224,6 @@ func _physics_process(delta: float) -> void:
 		aiming = false
 		model.visible = true
 		model.set_aim(false)
-		model.set_state("crouch" if _rising else "idle")
-		_rising = _rising and _stun > 0.0
 		velocity.x = _knock.x
 		velocity.z = _knock.z
 		_knock = _knock.move_toward(Vector3.ZERO, KNOCK_DECAY * delta)
@@ -210,11 +254,15 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("jump") and _jump(wish):
 			return
 		if Input.is_action_just_pressed("interact"):
+			var hatch := pick_hatch()
+			if hatch:
+				moves.start_hatch(hatch)
+				return
 			var lad := pick_ladder()
 			if lad:
 				var info: Dictionary = lad.can_mount(global_position)
 				if info.get("can", false):
-					moves.start_ladder(lad, info.get("at_top", false))
+					moves.start_ladder(lad, info.get("at_top", false), true)
 					return
 			var chest := pick_target()
 			if chest and chest.is_locked():
@@ -227,9 +275,19 @@ func _physics_process(delta: float) -> void:
 			if key_node:
 				key_node.take(self)
 				return
+			var drop := pick_drop()
+			if drop:
+				moves.start_pickup(drop)
+				return
+			var plate := pick_plate()
+			if plate:
+				read_plate.emit(plate)
+				return
 			var door := pick_door()
 			if door:
-				if door.is_locked():
+				if door.is_locked() and door.code != "":
+					keypad.emit(door)
+				elif door.is_locked():
 					if has_key(door.lock):
 						door.unlock(self)
 						_say("ACESSO PERMITIDO")
@@ -434,7 +492,10 @@ func weapon() -> String:
 
 ## Números da arma `kind` no perfil de jogo atual (a pistola do "survival" é mais lenta, a escopeta exige parar...).
 func weapon_stats(kind: String) -> Dictionary:
-	return GameMode.weapon_stats(kind, WEAPON_STATS[kind])
+	var s := GameMode.weapon_stats(kind, WEAPON_STATS[kind])
+	if kind == "pistol" and silencer:
+		s.merge(SILENCER, true)
+	return s
 
 
 ## Munição da arma `kind` (sempre cheia no "arcade", onde não acaba).
@@ -449,6 +510,7 @@ func has_ammo(kind: String) -> bool:
 ## Volta ao que ela tem no começo: só a pistola, com a munição inicial do perfil.
 func reset_loadout() -> void:
 	weapons = ["pistol"]
+	silencer = false
 	ammo = GameMode.START_AMMO.duplicate()
 	model.set_weapon("pistol")
 
@@ -542,6 +604,16 @@ func pick_target() -> Node:
 	return null
 
 
+## Alçapão fechado ao alcance (ajoelhada na frente dele), ou null.
+func pick_hatch() -> Hatch:
+	if dead or grabbed or moves.busy():
+		return null
+	for h: Hatch in get_tree().get_nodes_in_group("hatches"):
+		if h.can_open(global_position):
+			return h
+	return null
+
+
 ## Porta fechada ao alcance (aviso e abrir; o baú tem prioridade), ou null.
 func pick_key() -> KeyItem:
 	if dead or grabbed or moves.busy():
@@ -549,6 +621,26 @@ func pick_key() -> KeyItem:
 	for k: KeyItem in get_tree().get_nodes_in_group("keys"):
 		if k.can_pick(global_position):
 			return k
+	return null
+
+
+## Caixa de paraquedas fechada ao alcance (ela na frente dela), ou null.
+func pick_drop() -> SupplyDrop:
+	if dead or grabbed or moves.busy():
+		return null
+	for d: SupplyDrop in get_tree().get_nodes_in_group("drops"):
+		if d.can_pick(global_position):
+			return d
+	return null
+
+
+## Plaqueta de tubo ao alcance (ela na frente dela), ou null.
+func pick_plate() -> SubjectPlate:
+	if dead or grabbed or moves.busy():
+		return null
+	for pl: SubjectPlate in get_tree().get_nodes_in_group("plates"):
+		if pl.can_read(global_position):
+			return pl
 	return null
 
 
@@ -582,8 +674,9 @@ func fire() -> void:
 	if GameMode.limited_ammo():
 		ammo[kind] = ammo_of(kind) - 1
 	shots_fired += 1
-	stealth.shot()
-	make_noise(26.0, 2.2)  # tiro: ouvido de longe, e o clarão a deixa visível
+	if stats.get("loud", true):
+		stealth.shot()  # o clarão a deixa visível
+	make_noise(float(stats.get("noise", SHOT_NOISE)), float(stats.get("noise_power", SHOT_NOISE_POWER)))
 	if not aiming:
 		_hip_aim_t = HIP_AIM_TIME
 		aiming = true
@@ -594,7 +687,7 @@ func fire() -> void:
 	var ray := camera_rig.aim_ray()
 	var muzzle := model.muzzle_position()
 	var parent := get_parent()
-	Fx.muzzle_flash(parent, muzzle, kind, ray[1])
+	Fx.muzzle_flash(parent, muzzle, model.gun(), ray[1])
 	if stats.get("grenade", false):
 		var skip: Array[RID] = [get_rid()]
 		skip.append_array(model.ragdoll.body_rids())
@@ -604,7 +697,8 @@ func fire() -> void:
 	if stats.casing == "brass":
 		# janela de ejeção do lado direito, atrás do cano (a escopeta ejeta ao bombear: HeroineModel.shell_ejected)
 		var right := global_basis.x
-		var port: Vector3 = muzzle - ray[1] * (0.58 if kind == "m16" else 0.12) + right * 0.03
+		var back: float = {"m16": 0.58, "pistol_sd": 0.27}.get(model.gun(), 0.12)  # o silenciador põe o cano 15 cm à frente
+		var port: Vector3 = muzzle - ray[1] * back + right * 0.03
 		Fx.casing(parent, port, right * randf_range(1.4, 2.0) + Vector3.UP * randf_range(1.0, 1.6) - ray[1] * 0.3)
 	var exclude: Array[RID] = [get_rid()]
 	exclude.append_array(model.ragdoll.body_rids())
@@ -804,7 +898,7 @@ func camera_focus() -> Vector3:
 
 
 func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
-	if dead:
+	if dead or cutscene:
 		return
 	health = maxi(0, health - amount)
 	health_changed.emit(health)
@@ -812,12 +906,73 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	if health == 0:
 		die(dir * 9.0 + Vector3.UP * 2.0, at)
 	else:
-		model.hit()
+		# na escada o tiro a derruba: a queda (sem controle) é que mata
+		moves.knock_off_ladder(dir)
+		model.hit(dir, clampf(0.6 + amount / 30.0, 0.6, 1.4))
+
+
+## Queda de `h` m: dano (0 = nada; >= MAX_HEALTH = morte). `knocked` = derrubada da escada, cai de costas.
+static func fall_damage(h: float, knocked := false) -> int:
+	var safe := KNOCKED_SAFE if knocked else FALL_SAFE
+	var lethal := KNOCKED_LETHAL if knocked else FALL_LETHAL
+	if h <= safe:
+		return 0
+	if h >= lethal:
+		return MAX_HEALTH * 10
+	return roundi(MAX_HEALTH * (h - safe) / (lethal - safe))
+
+
+## No ar guarda o ponto mais alto; ao tocar o chão, o dano da queda.
+func _track_fall() -> void:
+	var y := global_position.y
+	if not is_on_floor():
+		_fall_top = y if is_nan(_fall_top) else maxf(_fall_top, y)
+		if y < VOID_Y and not dead:
+			_fall_top = NAN
+			_fall_knocked = false
+			health = 0
+			health_changed.emit(health)
+			death_cause = "fall"
+			die(Vector3(velocity.x, -2.0, velocity.z), global_position + Vector3.UP * 0.9)
+		return
+	if is_nan(_fall_top):
+		return
+	var h := _fall_top - y
+	var knocked := _fall_knocked
+	_fall_top = NAN
+	_fall_knocked = false
+	var dmg := fall_damage(h, knocked)
+	if dmg <= 0:
+		return
+	health = maxi(0, health - dmg)
+	health_changed.emit(health)
+	camera_rig.shake(0.18, 0.35)
+	Sfx.play(model, "body_fall")
+	Blood.splash(get_parent(), global_position + Vector3.UP * 0.2, Vector3.DOWN, Vector3.UP, dmg / 40.0)
+	if health == 0:
+		death_cause = "fall"
+		die(Vector3(velocity.x, -2.0, velocity.z), global_position + Vector3.UP * 0.9)
+	else:
+		knock_down(Vector3(velocity.x, 0.0, velocity.z))
+
+
+## Na cena: anda para onde a cena manda (gravidade normal), sem controle.
+func _cutscene_move(delta: float) -> void:
+	aiming = false
+	crouching = false
+	model.set_aim(false)
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	velocity.x = cutscene_walk.x
+	velocity.z = cutscene_walk.z
+	if cutscene_walk.length() > 0.05:
+		_face(cutscene_walk, delta)
+	move_and_slide()
 
 
 ## Rugido do alossauro: atordoada por `time` segundos (não fere). Golpe, mordida ou arremesso acabam com isso.
 func daze(time: float) -> void:
-	if dead or grabbed or _down_t > 0.0:
+	if dead or grabbed or _down_t > 0.0 or _rising or cutscene:
 		return
 	moves.cancel()
 	crouching = false
@@ -846,13 +1001,16 @@ func _dazed(delta: float) -> void:
 
 ## Golpe que empurra (investida, salto, rabada): perde o controle por um instante.
 func knockback(push: Vector3) -> void:
-	if dead or grabbed:
+	if dead or grabbed or cutscene:
 		return
 	_daze = 0.0
 	moves.cancel()
 	crouching = false
+	_rising = false
 	_knock = Vector3(push.x, 0.0, push.z)
 	_stun = 0.45
+	# cambaleia para o lado do empurrão (o corpo desliza com _knock)
+	model.play("stagger_fwd" if _knock.dot(-global_basis.z) > 0.0 else "stagger_back")
 	velocity.y = maxf(velocity.y, push.y)
 	camera_rig.shake(0.12, 0.35)
 
@@ -860,7 +1018,7 @@ func knockback(push: Vector3) -> void:
 ## Golpe forte (salto, investida): ela é arremessada como ragdoll dobrada em C em volta do ponto `at`
 ## (barriga, ou onde a garra pegou), cai e levanta depois.
 func launch(vel: Vector3, at: Variant = null) -> void:
-	if dead or grabbed:
+	if dead or grabbed or cutscene:
 		return
 	moves.cancel()
 	crouching = false
@@ -868,6 +1026,7 @@ func launch(vel: Vector3, at: Variant = null) -> void:
 	model.visible = true
 	_stun = 0.0
 	_daze = 0.0
+	_rising = false
 	_shape.set_deferred("disabled", true)
 	_down_t = DOWN_TIME + 0.5
 	camera_rig.shake(0.15, 0.4)
@@ -900,7 +1059,7 @@ func is_dodging() -> bool:
 
 
 func grab(by: Node3D) -> void:
-	if dead:
+	if dead or cutscene:
 		return
 	grabbed = true
 	grabber = by
@@ -913,6 +1072,7 @@ func grab(by: Node3D) -> void:
 	aiming = false
 	model.visible = true
 	_stun = 0.0
+	_rising = false
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(Vector3.ZERO)
 
@@ -1007,16 +1167,63 @@ func _held_body(delta: float, b: Dictionary, mouth: Vector3, bone: String) -> vo
 		Ragdoll.drag(b["LowerLeg_" + leg[0]], hips + side * (0.25 + 0.2 * k) - Vector3.UP * (0.45 - 0.3 * k), 5.0, 4.0)
 
 
+## Caiu de mau jeito (queda que machuca, derrubada da escada): o corpo desaba no chão para o lado em que vinha
+## (`push`) e ela levanta depois de COLLAPSE_TIME.
+func knock_down(push: Vector3) -> void:
+	moves.cancel()
+	crouching = false
+	aiming = false
+	model.visible = true
+	_stun = 0.0
+	_daze = 0.0
+	_shape.set_deferred("disabled", true)
+	_down_t = COLLAPSE_TIME
+	var dir := push.normalized() if push.length() > 0.3 else -global_basis.z
+	model.start_ragdoll(dir * COLLAPSE_PUSH, global_position + Vector3.UP * 1.3)
+
+
+## Do ragdoll para a animação de levantar: a cápsula vira para onde a cabeça ficou (de bruços ou de costas, as duas
+## animações levantam olhando para o lado da cabeça) e anda até o quadril do quadro 0 ficar no do ragdoll.
 func _get_up() -> void:
-	var hips: Vector3 = model.ragdoll.bodies["Hips"].global_position
-	model.stop_ragdoll()
-	global_position = Vector3(hips.x, global_position.y, hips.z)
+	var hips := model.ragdoll_bone("Hips").origin
+	var along := model.ragdoll_bone("Head").origin - hips
+	along.y = 0.0
+	var face_down := model.ragdoll_face_down()
+	var old_skeleton := model.skeleton.global_transform
+	if along.length() > 0.05:
+		rotation.y = atan2(-along.x, -along.z)
+	var off := hips - model.getup_hips(face_down)
+	global_position += Vector3(off.x, 0.0, off.z)
 	reset_physics_interpolation()
+	model.get_up(face_down, old_skeleton)
 	_shape.set_deferred("disabled", false)
-	# levanta agachada, sem controle por um instante
+	# o voo do arremesso não conta como queda (o ragdoll já caiu)
+	_fall_top = NAN
+	_fall_knocked = false
 	_rising = true
-	_stun = 0.5
+	_rise_t = model.getup_length(face_down)
+	_stun = 0.0
 	_knock = Vector3.ZERO
+
+
+## Levantando: segue a animação no lugar (a cápsula não anda); no fim volta o controle e a arma na mão.
+func _rise(delta: float) -> void:
+	aiming = false
+	model.set_aim(false)
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	velocity.x = 0.0
+	velocity.z = 0.0
+	move_and_slide()
+	_rise_t -= delta
+	if _rise_t <= 0.0:
+		_rising = false
+		model.holster(false)
+		model.set_state("idle")
+
+
+func is_getting_up() -> bool:
+	return _rising
 
 
 func die(impulse: Vector3, at: Variant = null) -> void:
@@ -1024,6 +1231,7 @@ func die(impulse: Vector3, at: Variant = null) -> void:
 	dead = true
 	_down_t = 0.0
 	_daze = 0.0
+	_rising = false
 	aiming = false
 	model.visible = true
 	moves.cancel()
@@ -1060,7 +1268,13 @@ func respawn() -> void:
 	_down_t = 0.0
 	_fly_t = 0.0
 	_rising = false
+	_rise_t = 0.0
 	_knock = Vector3.ZERO
+	_fall_top = NAN
+	_fall_knocked = false
+	death_cause = ""
+	cutscene = false
+	cutscene_walk = Vector3.ZERO
 	stealth.loud_t = 0.0
 	health = 100
 	health_changed.emit(health)
@@ -1073,6 +1287,8 @@ func respawn() -> void:
 
 ## Encontra a escada mais próxima que pode ser montada
 func pick_ladder(reach := 1.2) -> Ladder:
+	if dead or grabbed or moves.busy():
+		return null
 	var best: Ladder = null
 	var best_d := reach
 	for node in get_tree().get_nodes_in_group("ladders"):
@@ -1081,7 +1297,7 @@ func pick_ladder(reach := 1.2) -> Ladder:
 			continue
 		var info: Dictionary = lad.can_mount(global_position, reach)
 		if info.get("can", false):
-			var mount_point: Vector3 = lad.top_pos if info.get("at_top", false) else lad.bottom_pos
+			var mount_point: Vector3 = lad.top_stand if info.get("at_top", false) else lad.bottom_pos
 			var d := global_position.distance_to(mount_point)
 			if d < best_d:
 				best = lad

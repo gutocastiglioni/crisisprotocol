@@ -3,6 +3,9 @@ extends Enemy
 ## Velociraptor inimigo (jeito Dino Crisis 2). Percepção, patrulha e alarme vêm de Enemy; ao ver a presa dá o grito
 ## (que é o alarme), a estuda rodeando e farejando, e ataca: salto, investida, rabada (se ela estiver perto da traseira)
 ## ou, às vezes, mordida que segura e sacode. Rolar na hora certa esquiva de qualquer ataque.
+## Emboscada (Cutscene.play_ambush): `lurk` o esconde na mata (sem corpo nem IA); `start_ambush` o faz sair correndo e
+## rodear a presa a `radius` dela sem atacar (estado "ambush", a cena manda); `ambush_roar` para e ruge; `end_ambush`
+## solta a luta já alertado (estuda e ataca).
 
 signal killed
 signal attacked(kind: String)
@@ -39,6 +42,8 @@ var _spin := 0.0
 var _ticks := 0
 var last_hit_at := Vector3.ZERO  # onde o último golpe pegou nela (garra no salto, cabeça na investida)
 var _study_dist := STUDY_DIST
+var _ring_radius := 5.0
+var _ring_roar := false
 
 
 func _ready() -> void:
@@ -69,6 +74,12 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if lurking:
+		return
+	if state == "ambush":
+		_ambush(delta)
+		move_and_slide()
+		return
 	_tick(delta)
 	if not _calm_state(delta):
 		_combat_state(delta)
@@ -190,6 +201,90 @@ func start_counter() -> void:
 	var on_left := local.x < 0.0
 	_spin = -TAIL_SPIN if on_left else TAIL_SPIN
 	_enter("counter", "TailWhip" if on_left else "TailWhipR", 0.1)
+
+
+## Escondido em `at` (na moita) até a emboscada: invisível, sem colisão e sem IA.
+func lurk(at: Vector3) -> void:
+	lurking = true
+	visible = false
+	collision_layer = 0
+	velocity = Vector3.ZERO
+	global_position = at
+	reset_physics_interpolation()
+	state = "idle"
+	_update_marker()
+
+
+## Sai da moita correndo até `radius` dela e passa a rodeá-la (`circle` = 1 ou -1, o sentido), sem atacar.
+func start_ambush(radius: float, circle: float) -> void:
+	lurking = false
+	visible = true
+	collision_layer = 2
+	_ring_radius = radius
+	_circle = circle
+	_ring_roar = false
+	if _has_target():
+		var to := _to_target()
+		rotation.y = atan2(-to.x, -to.z)
+	reset_physics_interpolation()
+	_enter("ambush", "Run", 0.1)
+
+
+## No meio da roda: para, vira para ela e ruge (a cena escolhe quem).
+func ambush_roar() -> void:
+	_ring_roar = true
+	_t = 0.0
+	_play("Roar", 0.15, 1.0, true)
+
+
+func _ambush(delta: float) -> void:
+	_t += delta
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	if not _has_target():
+		_stop(delta)
+		return
+	var to := _to_target()
+	var dist := to.length()
+	var dir := to / maxf(dist, 0.01)
+	if _ring_roar:
+		_stop(delta)
+		_face(dir, delta, 6.0)
+		if _t >= model.length_of("Roar"):
+			_ring_roar = false
+		return
+	var move: Vector3
+	var speed: float
+	if dist > _ring_radius + 1.0:
+		move = dir
+		speed = minf(4.2, (dist - _ring_radius) * 2.0 + 1.5)
+	else:
+		var tangent := dir.cross(Vector3.UP) * _circle
+		move = (tangent + dir * clampf((dist - _ring_radius) * 0.8, -1.0, 1.0)).normalized()
+		speed = 1.6
+	_face(move, delta, 5.0)
+	var fwd := -global_basis.z
+	var v := speed * maxf(fwd.dot(move), 0.2)
+	velocity.x = fwd.x * v
+	velocity.z = fwd.z * v
+	var run := v > 3.0
+	model.play("Run" if run else "Walk", 0.25, maxf(v, 0.4) / (RUN_ANIM_SPEED if run else WALK_ANIM_SPEED))
+
+
+## Fim da cena da emboscada: já sabe onde ela está e avisou os outros; estuda um tempo (`delay` a mais) e ataca.
+func end_ambush(delay := 0.0) -> void:
+	if dead:
+		return
+	if lurking:
+		start_ambush(_ring_radius, _circle)
+	alert_t = ALERT_TIME
+	aware = 1.0
+	_lost_t = 0.0
+	_alarm_delay = -1.0
+	if _has_target():
+		_last_known = target.global_position
+	start_study()
+	_dur += delay
 
 
 func _recover(time := 0.8) -> void:
@@ -507,6 +602,9 @@ func die(dir := Vector3.ZERO, at: Variant = null, silent := false) -> void:
 
 func reset() -> void:
 	model.stop_ragdoll()
+	lurking = false
+	visible = true
+	_ring_roar = false
 	_reset_enemy()
 	health = MAX_HEALTH
 	collision_layer = 2

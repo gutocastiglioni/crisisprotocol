@@ -287,7 +287,8 @@ func test_m79_fire() -> void:
 	GameMode.set_mode(GameMode.ARCADE)
 
 
-## Na fase: o container fica atrás de onde ela começa, trancado, e a chave está com um dos alvos.
+## Na fase: o container fica atrás de onde ela começa, trancado, e a chave está na mão do guerrilheiro morto no pátio
+## (a emboscada em volta dele é de ambush_tests.gd).
 func test_main_layout() -> void:
 	# sem o mundo do teste anterior (a jogadora dele também está no grupo "player")
 	if t._world:
@@ -299,21 +300,16 @@ func test_main_layout() -> void:
 	await t._frames(5)
 	var locker: Chest = main.locker
 	var start: Vector3 = main.player._spawn.origin
-	var behind: Vector3 = (locker.global_position - start)
-	t.check(behind.z > 2.0 and absf(behind.x) < 1.0, "container atrás de onde ela começa", str(behind))
-	t.check(locker.is_locked() and locker.item == "m79" and locker.lock == main.key.id, "trancado, com a M79, abre com a chave do alvo")
-	t.check(locker.global_basis.z.dot((start - locker.global_position).normalized()) > 0.9, "de frente para ela")
-	var holder: TargetDummy = null
-	for d: TargetDummy in main.dummies:
-		if d.loot == main.key:
-			holder = d
-	t.check(holder != null and main.key.state == "hidden", "a chave está escondida num alvo")
-	# matar o alvo, pegar a chave, abrir (zoom fecha sozinho), reiniciar
+	# ela começa no telhado; o container fica embaixo, no mezanino do fundo, virado para o galpão
+	t.check(start.y > Level.WALL_H and is_equal_approx(locker.global_position.y, Catwalk.FLOOR_Y) and locker.global_position.z > Catwalk.FRONT_Z,
+		"container no mezanino, embaixo de onde ela começa (telhado)", "%s %s" % [start, locker.global_position])
+	t.check(locker.is_locked() and locker.item == "m79" and locker.lock == main.key.id, "trancado, com a M79, abre com a chave do morto")
+	t.check(locker.global_basis.z.dot(Vector3.FORWARD) > 0.9, "de frente para o galpão")
+	t.check(main.corpse.key == main.key and main.key.state == "held", "a chave está na mão do guerrilheiro morto")
+	# pegar a chave (sem a cena da emboscada), abrir (zoom fecha sozinho), reiniciar
 	main.inspect.auto_close = 0.0
-	holder.take_hit(999, Vector3.FORWARD, holder.global_position + Vector3.UP)
-	await t._frames(40)
-	t.check(main.key.state == "dropped", "alvo da chave morto: ela cai brilhando")
-	main.player.global_position = main.key.global_position
+	main.corpse.armed = false
+	main.player.global_position = main.key.global_position + Vector3(0.3, -main.key.global_position.y, 0.2)
 	await t._frames(3)
 	Input.action_press("interact")
 	await t._frames(2)
@@ -326,7 +322,7 @@ func test_main_layout() -> void:
 	t.check(not locker.is_locked() and not main.player.has_key("container"), "abriu o container e gastou a chave")
 	main.reset_all()
 	await t._frames(3)
-	t.check(locker.is_locked() and main.key.state == "hidden" and main.player.keys.is_empty(), "R: tranca de novo e a chave volta ao alvo")
+	t.check(locker.is_locked() and main.key.state == "held" and main.player.keys.is_empty(), "R: tranca de novo e a chave volta para a mão dele")
 	main.queue_free()
 	await t._frames(2)
 
@@ -350,15 +346,18 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 	t.check(main.sniper != null and main.sniper.loot == main.keycard, "sniper possui o keycard como loot")
 	t.check(main.keycard.state == "hidden", "keycard começa oculto com o sniper")
 
-	t.check(main.soldiers.size() == 5, "5 soldados no total (2 patrulhando + 3 sentinelas)")
+	t.check(main.soldiers.size() == 9, "9 soldados no total (2 patrulhando + 3 sentinelas + 4 de posto na porta)")
 	var sentinels := 0
 	var yard_patrollers := 0
+	var posts := 0
 	for sd: Soldier in main.soldiers:
-		if sd.route.is_empty():
+		if sd.hold_post:
+			posts += 1
+		elif sd.route.is_empty():
 			sentinels += 1
 		else:
 			yard_patrollers += 1
-	t.check(sentinels == 3 and yard_patrollers == 2, "3 sentinelas parados e 2 patrulhando")
+	t.check(sentinels == 3 and yard_patrollers == 2 and posts == 4, "3 sentinelas parados, 2 patrulhando e 4 de posto")
 
 	var gate: Door = null
 	for d: Door in t.get_nodes_in_group("doors"):

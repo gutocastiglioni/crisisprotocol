@@ -2,8 +2,9 @@ class_name Yard
 ## Segunda sala: o pátio da mata, ao oeste do galpão (porta na parede oeste). Clareira de terra e capim cercada
 ## de mata fechada, com uma estrada de terra batida que sai da porta e vai até um portão de ferro no fundo,
 ## árvores, arbustos, samambaias, pedras, troncos caídos e touceiras de capim alto (grupo "cover": agachada
-## ali dentro, ela é vista de bem menos longe). É onde ficam os velociraptors (POSTS), cada um com a sua rota
-## de patrulha. Tudo o que bloqueia fica na camada 1 (como o galpão); a malha de navegação dos raptors sai de lá
+## ali dentro, ela é vista de bem menos longe). No meio, numa clareira (CLEARING), o guerrilheiro morto com a chave
+## do container (CORPSE, Corpse); os 3 velociraptors (POSTS) esperam escondidos nas moitas da beira dela (LURK) até a
+## emboscada e depois usam as rotas de patrulha. Tudo o que bloqueia fica na camada 1 (como o galpão); a malha de navegação dos raptors sai de lá
 ## (bake_nav). Texturas em tools/make_level_textures.py. O portão do fundo fica aberto: dá na pedreira (Arena), a
 ## última sala.
 
@@ -28,6 +29,10 @@ const ROAD := [Vector2(-13.5, -8.5), Vector2(-24, -8.5), Vector2(-34, -9.5), Vec
 const ROAD_W := 4.0
 const GATE_GAP := 4.4  # vão na parede do fundo, no portão (largura)
 const GATE_X := X_FAR - 1.1  # o portão fecha o vão da parede do fundo (parede em X_FAR - 1,1)
+const GATE_H := 4.7  # altura das folhas de chapa (acima, a viga de concreto até o topo dos paredões)
+const GATE_KEY := "allo_gate"  # id da chave que liga o teclado do portão (fica no console da sala dos clones)
+const MIST_H := 4.0  # altura do volume da neblina rasteira (do chão para cima; mais grossa embaixo)
+const MIST_DENSITY := 0.05
 ## Onde cada raptor começa e a rota de patrulha dele (pontos em chão livre, longe das árvores).
 const POSTS := [
 	{"pos": Vector3(-24, 0, -2.5), "route": [Vector3(-24, 0, -2.5), Vector3(-31.6, 0, -7.4), Vector3(-42, 0, -9.5), Vector3(-31.6, 0, -7.4)]},
@@ -35,6 +40,14 @@ const POSTS := [
 	{"pos": Vector3(-28, 0, -13), "route": [Vector3(-28, 0, -13), Vector3(-38, 0, -14.5), Vector3(-48, 0, -13), Vector3(-40, 0, -12)]},
 ]
 const LAMPS := [Vector3(-21, 0, -6.5), Vector3(-40, 0, -6.2), Vector3(-47.5, 0, 1.0)]
+## Guerrilheiro morto com a chave do container (Corpse), no meio da clareira, perto da estrada e de um poste; em volta,
+## CLEARING metros sem nada sólido (os raptors da emboscada entram e rodeiam ela ali). CORPSE_YAW 0: a cabeça dele para
+## o norte (+Z), a mão da chave para o leste (de onde ela vem pela estrada).
+const CORPSE := Vector3(-35.5, 0, -3.0)
+const CORPSE_YAW := 0.0
+const CLEARING := 10.5
+## Onde cada raptor do pátio fica escondido até a emboscada (dentro de uma moita sem colisão, na beira da clareira).
+const LURK := [Vector3(-35.0, 0, 6.5), Vector3(-44.5, 0, -6.0), Vector3(-27.0, 0, 3.0)]
 
 static var _mats := {}
 
@@ -95,9 +108,12 @@ static func build(parent: Node) -> void:
 	_boundary(parent)
 	_scatter(parent, rng)
 	_gate(parent)
+	_mist(parent)
 	_lamps(parent)
 	for post in POSTS:
 		_grass_patch(parent, post.route[1] + Vector3(2.5, 0, 2.0), 2.2, rng)
+	for p: Vector3 in LURK:
+		_lurk_bush(parent, p, rng)
 	for c in [Vector3(-20, 0, 8), Vector3(-30, 0, 4.5), Vector3(-44, 0, 2), Vector3(-34, 0, -13), Vector3(-50, 0, 12), Vector3(-22, 0, -11), Vector3(-41, 0, 9)]:
 		_grass_patch(parent, c, rng.randf_range(2.0, 2.8), rng)
 
@@ -197,10 +213,11 @@ static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
 	keep.append(Vector2(-15.5, DOOR_Z))
 	var placed: Array[Vector2] = []
 	var tries := 0
+	var corpse := Vector2(CORPSE.x, CORPSE.z)
 	while placed.size() < 30 and tries < 600:
 		tries += 1
 		var p := Vector2(rng.randf_range(X_FAR + 3.0, X_NEAR - 3.0), rng.randf_range(-Z_HALF + 3.5, Z_HALF - 3.5))
-		if not _clear(p, placed, keep, 3.6):
+		if not _clear(p, placed, keep, 3.6) or p.distance_to(corpse) < CLEARING:
 			continue
 		placed.append(p)
 		var roll := rng.randf()
@@ -216,7 +233,7 @@ static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
 	# samambaias e capim ralo: de enfeite, sem colisão, também fora da estrada
 	for i in 120:
 		var p := Vector2(rng.randf_range(X_FAR + 1.5, X_NEAR - 1.0), rng.randf_range(-Z_HALF + 1.0, Z_HALF - 1.0))
-		if road_distance(p) < ROAD_W * 0.5 + 0.2:
+		if road_distance(p) < ROAD_W * 0.5 + 0.2 or p.distance_to(corpse) < 2.2:
 			continue
 		var tuft := rng.randf() < 0.5
 		_card_pair(parent, Vector3(p.x, 0, p.y), "fern_card" if tuft else "grass_card", rng.randf_range(0.9, 1.5) if tuft else rng.randf_range(0.5, 0.8), rng.randf() * PI)
@@ -414,22 +431,77 @@ static func _grass_patch(parent: Node, center: Vector3, radius: float, rng: Rand
 		_card_pair(patch, Vector3(o.x, 0, o.y), "grass_card", rng.randf_range(1.1, 1.5), rng.randf() * PI)
 
 
-## Portão de ferro fechado no vão da parede do fundo (as duas folhas presas nos pilares): abre com E, as folhas
-## giram para dentro da pedreira e dão na última sala.
+## Portão de aço fechado no vão da parede do fundo: duas folhas de chapa cheia (não dá para ver a pedreira por
+## ele) presas em pilares de concreto, com uma viga de concreto por cima até a altura dos paredões (nada aparece
+## por cima, nem do telhado). Trancado: E no teclado do pilar (Door.add_keypad) abre a tela do painel (Inspect.keypad);
+## com a chave do console da sala dos clones (GATE_KEY) ele liga e o código (o SUBJECT do tanque vazio do alossauro)
+## destranca. Aberto, as folhas giram para dentro da pedreira e dão na última sala.
 static func _gate(parent: Node) -> void:
 	var gz: float = ROAD[ROAD.size() - 1].y
 	var gx := GATE_X
+	var top := GATE_H + 0.1  # pé da viga
 	for s in [-1, 1]:
-		_prop(parent, _bm(Vector3(0.32, 3.2, 0.32)), Vector3(gx, 1.6, gz + s * 2.4), "wall", 1.5)
-	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, 6.0, GATE_GAP + 0.4), 1, "ABRIR PORTAO")
+		Level.block(parent, Vector3(1.0, Arena.CLIFF_H, 0.8), Vector3(gx, Arena.CLIFF_H * 0.5, gz + s * (GATE_GAP * 0.5 + 0.4)), "concrete", 0.35)
+	Level.block(parent, Vector3(1.0, Arena.CLIFF_H - top, GATE_GAP + 1.6), Vector3(gx, (Arena.CLIFF_H + top) * 0.5, gz), "concrete", 0.35)
+	# faixa de perigo no pé da viga, dos dois lados
+	for sx in [-1, 1]:
+		_prop(parent, _bm(Vector3(0.04, 0.3, GATE_GAP)), Vector3(gx + sx * 0.52, top + 0.2, gz), "wall", 1.0).material_override = Level.material("hazard", 1.0)
+	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, top, GATE_GAP + 0.4), 1, "ABRIR PORTAO")
+	# trancado: a chave do console da sala dos clones liga o teclado no pilar e o código é o número do tanque vazio
+	door.lock = GATE_KEY
+	door.code = CloneLab.ALLO_SUBJECT
+	door.is_locked_door = true
+	door.add_keypad(Vector3(0.53, 1.35, GATE_GAP * 0.5 + 0.4), PI * 0.5)
+	var w := GATE_GAP * 0.5 - 0.01  # largura de cada folha (as duas se encontram no meio)
 	for s in [-1, 1]:
 		var leaf := Node3D.new()
-		leaf.position = Vector3(0, 0, s * 2.25)
-		for y in [0.5, 1.2, 1.9, 2.6]:
-			_prop(leaf, _bm(Vector3(0.08, 0.08, 2.3)), Vector3(0, y, -s * 1.15), "wall", 2.0)
-		for k in 3:
-			_prop(leaf, _bm(Vector3(0.06, 2.2, 0.06)), Vector3(0, 1.6, -s * (0.35 + k * 0.8)), "wall", 2.0)
+		leaf.position = Vector3(0, 0, s * GATE_GAP * 0.5)
+		# chapa cheia, com nervuras de reforço, montantes nas beiradas e a faixa de perigo embaixo
+		_prop(leaf, _bm(Vector3(0.1, GATE_H, w)), Vector3(0, GATE_H * 0.5, -s * w * 0.5), "wall", 1.0)
+		for y in [0.55, 1.75, 2.95, 4.15]:
+			_prop(leaf, _bm(Vector3(0.22, 0.16, w)), Vector3(0, y, -s * w * 0.5), "wall", 2.0)
+		for z in [0.06, w - 0.06]:
+			_prop(leaf, _bm(Vector3(0.24, GATE_H, 0.12)), Vector3(0, GATE_H * 0.5, -s * z), "wall", 2.0)
+		_prop(leaf, _bm(Vector3(0.14, 0.3, w)), Vector3(0, 0.15, -s * w * 0.5), "wall", 1.0).material_override = Level.material("hazard", 1.0)
 		door.add_panel(leaf, leaf.position, s * deg_to_rad(-75.0))
+
+
+## Neblina rasteira sobre o pátio (volume de névoa: precisa de `volumetric_fog_enabled` no ambiente, ver Level):
+## mais grossa no chão e rala na altura da cabeça; vista de cima (do telhado) vira um lençol que esconde o fundo.
+static func _mist(parent: Node) -> void:
+	var fv := FogVolume.new()
+	fv.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	fv.size = Vector3(X_NEAR - GATE_X + 0.4, MIST_H, Z_HALF * 2.0 + 4.0)
+	fv.position = Vector3((X_NEAR + GATE_X - 0.4) * 0.5, MIST_H * 0.5 - 0.5, 0)
+	var m := FogMaterial.new()
+	m.density = MIST_DENSITY
+	m.albedo = Color(0.7, 0.78, 0.74)
+	m.emission = Color(0.05, 0.06, 0.06)
+	m.height_falloff = 1.0
+	m.edge_fade = 0.15
+	fv.material = m
+	parent.add_child(fv)
+
+
+## Moita de esconderijo de um raptor da emboscada: folhagem e samambaias sem colisão (ele sai de dentro dela).
+static func _lurk_bush(parent: Node, pos: Vector3, rng: RandomNumberGenerator) -> void:
+	for k in 3:
+		var r := rng.randf_range(0.9, 1.2)
+		var s := SphereMesh.new()
+		s.radius = r
+		s.height = r * 1.5
+		s.radial_segments = 8
+		s.rings = 4
+		var mi := MeshInstance3D.new()
+		mi.mesh = s
+		mi.material_override = material("leaves", 1.0)
+		var off := Vector2.from_angle(TAU * k / 3.0 + rng.randf() * 0.5) * 0.7
+		mi.position = pos + Vector3(off.x, r * 0.6, off.y)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(mi)
+	for k in 5:
+		var off := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0.8, 1.8)
+		_card_pair(parent, pos + Vector3(off.x, 0, off.y), "fern_card", rng.randf_range(1.0, 1.5), rng.randf() * PI)
 
 
 ## Postes de luz na beira da estrada: luz fria esverdeada, sem sombra (só os do galpão fazem, ver Gfx.set_mode).
@@ -518,10 +590,16 @@ static func _wall_box(parent: Node, size: Vector3, pos: Vector3) -> StaticBody3D
 
 
 ## Malha de navegação dos raptors a partir de tudo o que é sólido na camada 1 (chamar depois de montar a cena).
-static func bake_nav(parent: Node) -> NavigationRegion3D:
+## `radius`/`height` = tamanho de quem anda nela; `map` vazio = o mapa do mundo; `cell` = tamanho da célula (o raio é
+## múltiplo dela); `area` vazia = a cena toda.
+static func bake_nav(parent: Node, radius := 0.75, height := 2.0, map := RID(), cell := 0.25, area := AABB()) -> NavigationRegion3D:
 	var nm := NavigationMesh.new()
-	nm.agent_radius = 0.75  # múltiplos do tamanho da célula (0,25) para a malha sair exata
-	nm.agent_height = 2.0
+	nm.cell_size = cell
+	nm.cell_height = cell
+	nm.agent_radius = radius  # múltiplos do tamanho da célula para a malha sair exata
+	nm.agent_height = height
+	if area.has_volume():
+		nm.filter_baking_aabb = area
 	nm.agent_max_climb = 0.25
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nm.geometry_collision_mask = 1
@@ -536,5 +614,23 @@ static func bake_nav(parent: Node) -> NavigationRegion3D:
 		d.collision_layer = 0 if d.opened else 1
 	var region := NavigationRegion3D.new()
 	region.navigation_mesh = nm
+	if map.is_valid():
+		region.set_navigation_map(map)
 	parent.add_child(region)
 	return region
+
+
+## Malha de gente (soldados), num mapa à parte e só no galpão (onde eles ficam): mais fina que a dos raptors, passa
+## nos corredores de 1,6 m do labirinto, no nicho da escada do mezanino e ao lado da viga do mezanino que corta a coluna 1
+## do labirinto (sobra ~0,7 m de cada lado dela: célula de 5 cm para a malha enxergar a fresta). O mapa some com a cena.
+const PEOPLE_CELL := 0.05
+static func bake_people_nav(parent: Node) -> RID:
+	var map := NavigationServer3D.map_create()
+	NavigationServer3D.map_set_cell_size(map, PEOPLE_CELL)
+	NavigationServer3D.map_set_cell_height(map, PEOPLE_CELL)
+	NavigationServer3D.map_set_active(map, true)
+	var h := Level.SIZE * 0.5
+	var shed := AABB(Vector3(-h, -1.0, -h), Vector3(Level.SIZE, Level.WALL_H + 1.0, Level.SIZE))
+	var region := bake_nav(parent, 0.25, 1.75, map, PEOPLE_CELL, shed)
+	region.tree_exited.connect(func() -> void: NavigationServer3D.free_rid(map))
+	return map

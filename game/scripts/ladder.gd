@@ -12,6 +12,16 @@ const TOP_HANDRAIL_H := 0.8  # avanço dos corrimãos acima do piso da passarela
 
 @export var height := 2.4
 @export var width := WIDTH
+## quanto as longarinas passam do topo (alçapão: fica embaixo da tampa fechada)
+@export var handrail := TOP_HANDRAIL_H
+## onde ela fica em pé ao sair pelo topo, à frente ao longo de ladder_fwd (no piso do mezanino, no telhado)
+@export var top_exit := 0.6
+## altura da beira que ela passa por cima ao entrar pelo topo (moldura do alçapão)
+@export var top_lip := 0.0
+## quanto abaixo do alto do ciclo ela ainda fica escondida dos inimigos (alçapão do telhado: alguns degraus)
+@export var hidden_top := 0.0
+## topo liberado (alçapão do telhado fechado = false: não dá para montar descendo)
+var top_open := true
 
 var bottom_pos: Vector3:
 	get:
@@ -30,6 +40,11 @@ var ladder_out: Vector3:
 		# Direção para fora da escada (onde a pessoa fica em pé no chão do galpão)
 		return -global_basis.z.normalized()
 
+## Lugar em pé no topo: onde ela sai ao terminar de subir e de onde monta para descer.
+var top_stand: Vector3:
+	get:
+		return top_pos + ladder_fwd * top_exit
+
 
 func _ready() -> void:
 	add_to_group("ladders")
@@ -41,12 +56,12 @@ func _build_mesh() -> void:
 	var mat := Level.material("wall", 0.5)
 	
 	# Longarinas verticais (esquerda e direita)
-	var left_rail := _create_box(Vector3(RAIL_RADIUS * 2, height + TOP_HANDRAIL_H, RAIL_RADIUS * 2), mat)
-	left_rail.position = Vector3(-width * 0.5, (height + TOP_HANDRAIL_H) * 0.5, 0)
+	var left_rail := _create_box(Vector3(RAIL_RADIUS * 2, height + handrail, RAIL_RADIUS * 2), mat)
+	left_rail.position = Vector3(-width * 0.5, (height + handrail) * 0.5, 0)
 	add_child(left_rail)
 	
-	var right_rail := _create_box(Vector3(RAIL_RADIUS * 2, height + TOP_HANDRAIL_H, RAIL_RADIUS * 2), mat)
-	right_rail.position = Vector3(width * 0.5, (height + TOP_HANDRAIL_H) * 0.5, 0)
+	var right_rail := _create_box(Vector3(RAIL_RADIUS * 2, height + handrail, RAIL_RADIUS * 2), mat)
+	right_rail.position = Vector3(width * 0.5, (height + handrail) * 0.5, 0)
 	add_child(right_rail)
 	
 	# Degraus horizontais
@@ -61,7 +76,7 @@ func _build_mesh() -> void:
 	
 	# Alças superiores de segurança (arcos no topo para apoio ao sair no mezanino)
 	var top_rung := _create_box(Vector3(width, RUNG_RADIUS * 2, RUNG_RADIUS * 2), mat)
-	top_rung.position = Vector3(0, height + TOP_HANDRAIL_H, 0)
+	top_rung.position = Vector3(0, height + handrail, 0)
 	add_child(top_rung)
 
 
@@ -101,8 +116,8 @@ func can_mount(player_pos: Vector3, max_dist := 1.0) -> Dictionary:
 	if absf(player_pos.y - global_position.y) < 0.6 and local.z < -0.05 and local.z > -max_dist:
 		return {"can": true, "at_top": false}
 	
-	# No topo (passarela: jogadora em cima do mezanino, z positivo)
-	if absf(player_pos.y - (global_position.y + height)) < 0.6 and local.z > -0.8 and local.z < 0.6:
+	# No topo (passarela: jogadora em cima do mezanino, z positivo; alçapão: só depois de aberto)
+	if top_open and absf(player_pos.y - (global_position.y + height)) < 0.6 and local.z > -0.8 and local.z < 0.6:
 		return {"can": true, "at_top": true}
 	
 	return {"can": false}

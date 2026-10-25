@@ -2,7 +2,7 @@ class_name CameraRig
 extends Node3D
 ## Câmera em 3ª pessoa. Perfil "arcade" (GameMode): atrás e acima dela; mirando, chega por cima do ombro direito; parado o
 ## controle, volta devagar para trás dela (jeito Syphon Filter). Perfil "survival": sempre por cima do ombro direito (jeito RE4
-## Remake), mais perto, sem voltar sozinha; mirando, chega mais perto e a mira fica lenta; o tiro dá coice (`kick`).
+## Remake: ela no terço esquerdo da tela, enquadrada da coxa para cima, câmera na altura da cabeça), sem voltar sozinha; mirando, chega mais perto e a mira fica lenta; o tiro dá coice (`kick`).
 ## Mira Sniper telescópica: ao mirar com a Sniper, a câmera entra em 1ª pessoa alinhada à mira, oculta o modelo para visão desobstruída,
 ## reduz a sensibilidade proporcionalmente ao zoom (2x / 4x / 8x / 16x) e projeta alcance de até 120 metros.
 ## Mouse/analógico giram.
@@ -11,8 +11,10 @@ const HEIGHT := 1.45
 const MOUSE_SENS := 0.0035
 const PAD_SENS := 2.6
 const FOLLOW_DELAY := 1.5
-## por cima do ombro (survival): distância atrás dela, desvio para a direita e campo de visão, andando e mirando
-const SHOULDER := {"length": 2.3, "length_aim": 1.3, "side": 0.5, "side_aim": 0.7, "fov": 60.0, "fov_aim": 46.0}
+## por cima do ombro (survival): distância atrás dela, desvio para a direita e campo de visão, andando e mirando;
+## altura do pivô (no lugar de HEIGHT) e inclinação inicial (quase reta, olhando o caminho e não o chão)
+const SHOULDER := {"length": 1.35, "length_aim": 1.1, "side": 0.6, "side_aim": 0.52, "fov": 55.0, "fov_aim": 44.0,
+	"height": 1.62, "pitch": -0.1}
 const PORTRAIT_SIDE := 0.5  # tela em pé: fração do desvio do ombro
 const PORTRAIT_FOV := 62.0  # tela em pé: campo de visão mínimo (o da largura)
 const SHOULDER_AIM_SENS := 0.6  # mirando, o mouse/analógico giram a esta fração
@@ -49,6 +51,8 @@ func _ready() -> void:
 	camera.far = 140.0
 	spring.add_child(camera)
 	camera.current = true
+	if GameMode.shoulder_cam():
+		pitch = SHOULDER.pitch
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -88,7 +92,7 @@ func _process(delta: float) -> void:
 		pitch -= back
 		_recoil -= back
 	var focus: Vector3 = target.call("camera_focus") if target.has_method("camera_focus") else target.global_position
-	var goal := focus + Vector3.UP * HEIGHT
+	var goal := focus + Vector3.UP * (SHOULDER.height if shoulder else HEIGHT)
 	if target.get("crouching"):
 		goal.y -= 0.45
 	if in_sniper:

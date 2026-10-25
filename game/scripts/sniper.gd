@@ -20,6 +20,7 @@ const AIM_LOCK_TIME := 1.25  # tempo de mira com laser vermelho antes do disparo
 const COOLDOWN_TIME := 2.2   # intervalo de recarga do ferrolho entre disparos
 const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "aim_lock", "cooldown", "hit"]
+const SEES_GRACE := 0.3  # sem vê-la por mais que isto, a mira não avança nem dispara
 const BLIND_SPOT_Z := 0.0  # metade da sala (z > 0 = início da sala no chão, protegido pelo mezanino)
 
 var model: HeroineModel
@@ -71,6 +72,7 @@ func _ready() -> void:
 	drop_amount = 5
 	drop_chance = 1.0
 	arrival_dist = 0.5
+	search_sweeps = 0
 	_enemy_ready()
 
 
@@ -229,6 +231,17 @@ func start_investigate(at: Vector3) -> void:
 	super.start_investigate(goal)
 
 
+## Preso à passarela: procura no próprio ponto dela (sem varrer pontos do chão nem da malha de outro andar).
+func _search_goal(at: Vector3) -> Vector3:
+	return at
+
+
+## No mezanino (faixa reta, sem malha de navegação própria) anda reto até o ponto: a malha mais próxima é a de outro
+## andar (topo das caixas do labirinto, telhado) e o caminho dela o levava para a quina.
+func _steer(_goal: Vector3, to: Vector3, _delta: float) -> Vector3:
+	return to.normalized()
+
+
 ## Ponto de navegação restrito estritamente à passarela/mezanino
 func _catwalk_point(pos: Vector3) -> Vector3:
 	var cx := clampf(pos.x, -3.8, 1.0)
@@ -261,7 +274,7 @@ func start_aim_lock() -> void:
 		_resume()
 		_hide_laser()
 		return
-	_lost_t = 0.0
+	# não zera `_lost_t`: quem diz se ele a vê é `_track_target` (antes cada ciclo mira/recarga zerava e ele nunca a perdia)
 	_enter("aim_lock", "Idle", 0.1)
 	if model:
 		model.set_aim(true)
@@ -275,16 +288,20 @@ func _aim_lock_process(delta: float) -> void:
 		_hide_laser()
 		return
 	if _lost_t > LOSE_TIME:
+		_lose_target()
+		return
+	velocity.x = 0.0
+	velocity.z = 0.0
+	if _lost_t > SEES_GRACE:
+		# sumiu atrás de algo: o laser apaga e a mira esfria; olha para onde a viu por último (não sabe onde ela está)
 		_hide_laser()
-		alert_t = ALERT_TIME
-		start_hunt(_last_known)
+		aim_progress = maxf(aim_progress - delta * 2.0, 0.0)
+		_face(_last_known - global_position, delta, turn_rate)
 		return
 	
 	var to: Vector3 = _to_target()
 	_face(to, delta, turn_rate * 1.5)  # mira firme e focada
 	_update_pitch(delta)
-	velocity.x = 0.0
-	velocity.z = 0.0
 	
 	aim_progress += delta
 	_update_laser(to)
@@ -303,7 +320,10 @@ func _cooldown_process(delta: float) -> void:
 	if not _has_target():
 		_resume()
 		return
-	var to: Vector3 = _to_target()
+	if _lost_t > LOSE_TIME:
+		_lose_target()
+		return
+	var to: Vector3 = _to_target() if _lost_t <= SEES_GRACE else _flat(_last_known - global_position)
 	_face(to, delta, turn_rate * 1.0)
 	_update_pitch(delta)
 	velocity.x = 0.0
@@ -312,6 +332,13 @@ func _cooldown_process(delta: float) -> void:
 	_cooldown_t -= delta
 	if _cooldown_t <= 0.0:
 		start_aim_lock()
+
+
+## Sem vê-la por LOSE_TIME: sai do combate e vai procurar na passarela onde a viu por último; sem achar, esquece.
+func _lose_target() -> void:
+	_hide_laser()
+	alert_t = ALERT_TIME
+	start_hunt(_last_known)
 
 
 func _update_pitch(delta: float) -> void:
@@ -418,7 +445,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 	if not in_combat() and _has_target():
 		_raise_alarm()
 	if model:
-		model.hit()
+		model.hit(dir)
 		model.set_aim(true)
 	_enter("hit", "Idle", 0.05)
 

@@ -17,6 +17,8 @@ const GRAVITY := Vector3(0, -9.8, 0)
 ## cor, luz (energia, alcance), duração e baforadas de fumaça
 const FLASH := {
 	"pistol": {"size": 0.26, "sprite": BURST, "tongue": Vector2(0.0, 0.0), "color": Color(1.0, 0.85, 0.35), "light": 2.5, "range": 5.0, "life": 0.05, "smoke": 0},
+	# com silenciador: só uma faísca pequena na ponta do tubo, quase sem luz
+	"pistol_sd": {"size": 0.07, "sprite": STAR, "tongue": Vector2(0.0, 0.0), "color": Color(1.0, 0.7, 0.35), "light": 0.25, "range": 1.2, "life": 0.03, "smoke": 1},
 	"m16": {"size": 0.24, "sprite": STAR, "tongue": Vector2(0.24, 0.035), "color": Color(1.0, 0.7, 0.3), "light": 1.8, "range": 4.0, "life": 0.045, "smoke": 0},
 	"sniper": {"size": 0.45, "sprite": STAR, "tongue": Vector2(0.5, 0.05), "color": Color(1.0, 0.8, 0.4), "light": 3.8, "range": 7.0, "life": 0.06, "smoke": 2},
 	"shotgun": {"size": 0.5, "sprite": BURST, "tongue": Vector2(0.45, 0.11), "color": Color(1.0, 0.78, 0.42), "light": 4.5, "range": 7.5, "life": 0.07, "smoke": 4},

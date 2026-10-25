@@ -63,13 +63,13 @@ def _skinned_object(rig, name, mb, materials):
     return obj
 
 
-def make_weapons(rig, image_path):
+def make_weapons(rig, image_path, extra=()):
     """Só as armas em malhas à parte ("Pistol", "M16", "Shotgun", "M79"), com o atlas (o corpo vem de outro lugar:
-    art/heroine_body.py)."""
+    art/heroine_body.py). `extra` = mais (nome, tipo) só deste corpo (o silenciador da pistola é só dela)."""
     image = bpy.data.images.load(str(image_path))
     image.pack()
     body = make_material("HeroineBody", image, double_sided=False)
-    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79"), ("Sniper", "sniper")):
+    for name, kind in (("Pistol", "pistol"), ("M16", "rifle"), ("Shotgun", "shotgun"), ("M79", "m79"), ("Sniper", "sniper")) + tuple(extra):
         part = _skinned_object(rig, name, heroine_mesh.build_weapon(S.BONE_NAMES, kind), [body])
         for poly in part.data.polygons:
             poly.use_smooth = False  # arma: arestas duras

@@ -35,10 +35,20 @@ var _landed := false  # pulinho: já tocou a aterrissagem
 var _enemy: Node3D
 var _hit_done := false
 var _hit_frame := 0.0
+var _strike_crouched := false  # golpe furtivo começado agachada: termina agachada
 var _ladder: Ladder
 var _ladder_y := 0.0
 var _ladder_sound_y := 0.0
+var _hatch: Hatch
+var _hatch_lifted := false
+var _mount_from := Vector3.ZERO
+var _mount_yaw := 0.0
+var _mount_turn := 0.0
+var _mount_top := false
 const CLIMB_SPEED := 0.9
+const MOUNT_TURN := 0.45  # s para virar meia volta antes de entrar na escada
+const MOUNT_SLIDE := 0.9  # m/s: pelo topo, enquanto vira, ela anda até o lugar onde a entrada começa
+const MOUNT_STEP_BOTTOM := 0.3  # s do passo até o degrau de baixo
 const RUNG_SOUND_DIST := 0.3
 
 
@@ -66,11 +76,14 @@ func update(delta: float) -> void:
 		"pickup": _pickup()
 		"assassinate", "crit_strike": _strike_move(delta)
 		"ladder": _ladder_climb(delta)
+		"ladder_mount": _ladder_mount()
+		"ladder_out", "ladder_in": _ladder_top()
+		"hatch": _hatch_open()
 
 
 ## Interrompe a ação (golpe, mordida, morte, reinício). Pegando a arma antes das mãos chegarem nela, a arma fica.
 func cancel() -> void:
-	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike", "ladder"] or (mode == "pickup" and not _got_item):
+	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike", "ladder", "ladder_mount", "ladder_out", "ladder_in", "hatch"] or (mode == "pickup" and not _got_item):
 		p.model.holster(false)
 	if is_instance_valid(_enemy):
 		_enemy.stealth_lock(false)
@@ -368,8 +381,11 @@ func start_pickup(chest: Node) -> void:
 	_from = p.global_position
 	_yaw0 = p.rotation.y
 	_got_item = false
-	_frames = float(Moves.data().rifle.pickup_frames)
+	var drop := chest is SupplyDrop
+	_frames = float(Moves.data().pistol_pickup.frames if drop else Moves.data().rifle.pickup_frames)
 	_begin("pickup")
+	if drop:
+		p.model.play("pickup_pistol")  # uma mão: a pistola com silenciador da caixa de paraquedas
 	chest.open()
 
 
@@ -379,14 +395,20 @@ func _pickup() -> void:
 	s = s * s * (3.0 - 2.0 * s)
 	p.global_position = _from.lerp(_kneel.origin, s)
 	p.rotation.y = lerp_angle(_yaw0, _kneel.basis.get_euler().y, s)
-	if not _got_item and f >= float(Moves.data().rifle.grab_frame):
-		# as mãos chegaram no fuzil: ele sai do baú e passa para as mãos dela
+	var drop := _chest is SupplyDrop
+	if not _got_item and f >= float(Moves.data().pistol_pickup.grab_frame if drop else Moves.data().rifle.grab_frame):
+		# as mãos chegaram na arma: ela sai do baú e passa para as mãos dela (a da caixa: a pistola ganha o silenciador)
 		_got_item = true
-		p.give_weapon(_chest.take_item())
+		var w: String = _chest.take_item()
+		if drop:
+			p.silencer = true
+		p.give_weapon(w)
 		Sfx.play(p.model, "weapon_pickup", p.global_position + Vector3.UP * 0.8)
 	if f >= _frames:
 		mode = ""
 		p.model.set_state("idle")
+		if drop:
+			(_chest as SupplyDrop).finish()
 
 
 # ------------------------------------------------------------------ abate furtivo e golpe crítico
@@ -411,6 +433,7 @@ func _start_strike(kind: String, enemy: Node3D, d: Dictionary) -> void:
 	_fwd = to.normalized() if to.length() > 0.01 else -p.global_basis.z
 	_yaw0 = atan2(-_fwd.x, -_fwd.z)
 	enemy.stealth_lock(true)
+	_strike_crouched = p.crouching
 	_begin(kind)
 	Sfx.play(p.model, "tail_whoosh", p.global_position + Vector3.UP * 1.2)
 
@@ -441,12 +464,16 @@ func _strike_move(delta: float) -> void:
 			_enemy.stealth_lock(false)
 			_enemy = null
 		mode = ""
+		p.crouching = _strike_crouched
 		p.model.holster(false)
-		p.model.set_state("idle")
+		p.model.set_state("crouch" if p.crouching else "idle")
 
 
 # ------------------------------------------------------------------ escada (subir e descer)
-func start_ladder(ladder: Ladder, at_top := false) -> void:
+## Monta na escada. `animate`: ela vira para os degraus (meia volta, pelo topo) e entra: por baixo um passo até o
+## degrau, pelo topo a saída ao contrário (LadderIn: agacha, joelho e mãos na beirada, desce até o ciclo); sem isso já
+## começa agarrada (capturas e testes; pelo topo, no alto do ciclo).
+func start_ladder(ladder: Ladder, at_top := false, animate := false) -> void:
 	mode = "ladder"
 	t = 0.0
 	_ladder = ladder
@@ -458,12 +485,120 @@ func start_ladder(ladder: Ladder, at_top := false) -> void:
 	_fwd = ladder.ladder_fwd
 	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
 	if at_top:
-		_ladder_y = ladder.height
+		_ladder_y = _ladder_top_y()
 	else:
 		_ladder_y = 0.15
 	_ladder_sound_y = _ladder_y
+	if animate:
+		mode = "ladder_mount"
+		_mount_top = at_top
+		_mount_from = p.global_position
+		_mount_yaw = p.rotation.y
+		var turn := absf(angle_difference(_mount_yaw, atan2(-_fwd.x, -_fwd.z)))
+		_mount_turn = clampf(turn / PI * MOUNT_TURN, 0.08, MOUNT_TURN)
+		if at_top:
+			var stand := _ladder_top_stand()
+			_mount_turn = maxf(_mount_turn, Vector2(stand.x - _mount_from.x, stand.z - _mount_from.z).length() / MOUNT_SLIDE)
+		p.rotation.y = _mount_yaw
+		p.model.set_state("walk", 0.6)
+		return
 	_update_ladder_pos()
 	p.model.play("ladder_idle")
+
+
+## Virar e entrar na escada: primeiro gira no lugar até ficar de frente para os degraus (pelo topo, andando até onde a
+## entrada começa), depois por baixo o passo até o degrau e pelo topo a entrada (`_start_ladder_top`).
+func _ladder_mount() -> void:
+	var yaw := atan2(-_fwd.x, -_fwd.z)
+	if t < _mount_turn:
+		var a := t / _mount_turn
+		a = a * a * (3.0 - 2.0 * a)
+		p.rotation.y = lerp_angle(_mount_yaw, yaw, a)
+		if _mount_top:
+			var stand := _ladder_top_stand()
+			p.global_position = _mount_from.lerp(Vector3(stand.x, _mount_from.y, stand.z), a)
+		p.model.set_state("walk", 0.6)
+		return
+	p.rotation.y = yaw
+	if _mount_top:
+		_start_ladder_top(true)
+		return
+	var k := clampf((t - _mount_turn) / MOUNT_STEP_BOTTOM, 0.0, 1.0)
+	var s := k * k * (3.0 - 2.0 * k)
+	var goal := _ladder.global_position + _ladder.ladder_out * 0.22
+	var pos := _mount_from.lerp(Vector3(goal.x, _mount_from.y, goal.z), s)
+	pos.y = lerpf(_mount_from.y, _ladder.global_position.y + _ladder_y, s)
+	p.model.set_state("ladder_up", 1.2)
+	p.global_position = pos
+	p.velocity = Vector3.ZERO
+	if k >= 1.0:
+		mode = "ladder"
+		Sfx.play(p.model, "climb")
+		_update_ladder_pos()
+		p.model.set_state("ladder_idle")
+
+
+## Na parte de cima da escada do alçapão (entrando, saindo, ou a menos de `Ladder.hidden_top` do alto do ciclo):
+## escondida dos inimigos, mesmo com linha livre até o peito.
+func hidden_on_ladder() -> bool:
+	if _ladder == null or not is_instance_valid(_ladder) or _ladder.hidden_top <= 0.0:
+		return false
+	if mode == "ladder_in" or mode == "ladder_out" or (mode == "ladder_mount" and _mount_top):
+		return true
+	return mode == "ladder" and _ladder_y > _ladder_top_y() - _ladder.hidden_top
+
+
+## Alto do ciclo da escada: daqui a saída pelo topo (heroine_moves.json "ladder") leva até de pé no piso de cima.
+func _ladder_top_y() -> float:
+	return _ladder.height - float(Moves.data().ladder.rise)
+
+
+## Raiz da saída/entrada pelo topo: a do ciclo no alto da escada.
+func _ladder_top_base() -> Vector3:
+	var at := _ladder.global_position + _ladder.ladder_out * 0.22
+	return Vector3(at.x, _ladder.global_position.y + _ladder_top_y(), at.z)
+
+
+## Onde a saída termina de pé no piso de cima (e a entrada começa).
+func _ladder_top_stand() -> Vector3:
+	var d: Dictionary = Moves.data().ladder
+	var o := Moves.path_at(d.path, float(d.frames))
+	return _ladder_top_base() + _ladder.ladder_fwd * o.x + Vector3.UP * o.y
+
+
+## Sair pelo topo (mãos na beirada, se projeta por cima, joelho na beira, levanta no piso) ou entrar por ele
+## (`enter`: a mesma animação ao contrário). Beirada baixa (mezanino, sem rebordo): a versão "_low".
+func _start_ladder_top(enter: bool) -> void:
+	var d: Dictionary = Moves.data().ladder
+	var low := _ladder.top_lip < float(d.lip) * 0.5
+	mode = "ladder_in" if enter else "ladder_out"
+	t = 0.0
+	_base = _ladder_top_base()
+	_path = d.path_low if low else d.path
+	_frames = float(d.frames)
+	p.velocity = Vector3.ZERO
+	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
+	p.model.play(mode + ("_low" if low else ""))
+
+
+func _ladder_top() -> void:
+	var f := minf(t * Moves.fps(), _frames)
+	var o := Moves.path_at(_path, _frames - f if mode == "ladder_in" else f)
+	p.velocity = Vector3.ZERO
+	p.global_position = _base + _fwd * o.x + Vector3.UP * o.y
+	if f < _frames:
+		return
+	if mode == "ladder_in":
+		mode = "ladder"
+		_ladder_y = _ladder_top_y()
+		_ladder_sound_y = _ladder_y
+		_update_ladder_pos()
+		p.model.set_state("ladder_idle")
+		return
+	mode = ""
+	p.model.holster(false)
+	p.model.set_state("idle")
+	_ladder = null
 
 
 func _ladder_climb(delta: float) -> void:
@@ -494,8 +629,9 @@ func _ladder_climb(delta: float) -> void:
 		if absf(_ladder_y - _ladder_sound_y) >= RUNG_SOUND_DIST:
 			_ladder_sound_y = _ladder_y
 			Sfx.play(p.model, "climb")
-		if _ladder_y >= _ladder.height:
-			_ladder_dismount_top()
+		if _ladder_y >= _ladder_top_y():
+			_ladder_y = _ladder_top_y()
+			_start_ladder_top(false)
 			return
 	elif dir < 0.0:
 		# Descer escada
@@ -520,17 +656,6 @@ func _update_ladder_pos() -> void:
 	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
 
 
-func _ladder_dismount_top() -> void:
-	p.global_position = _ladder.top_pos + _ladder.ladder_fwd * 0.6
-	p.global_position.y = _ladder.global_position.y + _ladder.height
-	p.velocity = Vector3.ZERO
-	mode = ""
-	p.model.holster(false)
-	p.model.set_state("idle")
-	Sfx.play(p.model, "land")
-	_ladder = null
-
-
 func _ladder_dismount_bottom() -> void:
 	p.global_position = _ladder.bottom_pos + _ladder.ladder_out * 0.45
 	p.global_position.y = _ladder.global_position.y
@@ -540,6 +665,47 @@ func _ladder_dismount_bottom() -> void:
 	p.model.set_state("idle")
 	Sfx.play(p.model, "land")
 	_ladder = null
+
+
+## Baleada na escada: solta e cai para fora dela, sem controle (a queda conta como Player.KNOCKED_*).
+func knock_off_ladder(dir: Vector3) -> void:
+	if mode != "ladder" or _ladder == null:
+		return
+	var out := _ladder.ladder_out
+	_ladder_drop()
+	p._fall_knocked = true
+	var push := Vector3(dir.x, 0.0, dir.z) * 0.8 + out * 1.2
+	p.velocity = Vector3(push.x, 0.6, push.z)
+
+
+# ------------------------------------------------------------------ alçapão do telhado
+## Ajoelha na frente do alçapão e levanta a tampa (animação HatchOpen; a tampa sobe junto, Hatch.open).
+func start_hatch(hatch: Hatch) -> void:
+	mode = "hatch"
+	t = 0.0
+	_hatch = hatch
+	_hatch_lifted = false
+	p.crouching = false
+	p.aiming = false
+	p.velocity = Vector3.ZERO
+	p.model.set_aim(false)
+	p.model.holster(true)
+	var at := hatch.kneel_point()
+	p.global_position = Vector3(at.x, p.global_position.y, at.z)
+	_fwd = hatch.facing()
+	p.rotation.y = atan2(-_fwd.x, -_fwd.z)
+	p.model.play("hatch_open")
+
+
+func _hatch_open() -> void:
+	if not _hatch_lifted and t >= Hatch.GRAB_FRAME / Hatch.FPS:
+		_hatch_lifted = true
+		_hatch.open()
+	if t >= Hatch.ANIM_FRAMES / Hatch.FPS:
+		mode = ""
+		_hatch = null
+		p.model.holster(false)
+		p.model.set_state("idle")
 
 
 func _ladder_drop() -> void:

@@ -7,12 +7,14 @@ extends StaticBody3D
 
 const OPEN_TIME := 0.9
 const REACH := 2.6  # distância no chão até o centro da porta para poder abrir
+const REACH_DY := 1.5  # diferença de altura máxima entre os pés dela e o pé da porta
 
 var room := 0
 var opened := false
 var verb := "ABRIR PORTA"
 var lock := ""  # id da chave/keycard necessária para abrir
 var is_locked_door := false
+var code := ""  # código do teclado (add_keypad); vazio = abre só com a chave/cartão
 var _col: CollisionShape3D
 var _panels: Array[Dictionary] = []
 var _tween: Tween
@@ -20,6 +22,8 @@ var _reader: Node3D
 var _reader_led: MeshInstance3D
 var _reader_mat: StandardMaterial3D
 var _reader_light: OmniLight3D
+var _keypad: Node3D
+var _keypad_screen: StandardMaterial3D
 
 
 ## Porta com o vão de tamanho `size`, com o centro do pé do vão em `pos` (as folhas, filhas dela, partem do chão).
@@ -95,6 +99,70 @@ func add_card_reader(local_pos: Vector3, rot_y: float = 0.0) -> void:
 	add_child(_reader_light)
 
 
+## Teclado numérico com fechadura ao lado do vão (`local_pos` no espaço da porta; +Z local do painel = para quem digita):
+## caixa de aço, visor (apagado até a chave ligar o painel), 12 teclas, fechadura e o LED de trancado/aberto.
+func add_keypad(local_pos: Vector3, rot_y: float = 0.0) -> void:
+	_keypad = Node3D.new()
+	_keypad.position = local_pos
+	_keypad.rotation.y = rot_y
+	add_child(_keypad)
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.32, 0.34, 0.36)
+	steel.metallic = 0.5
+	steel.roughness = 0.5
+	_kp_box(Vector3(0.26, 0.38, 0.06), Vector3.ZERO, steel)
+	_keypad_screen = StandardMaterial3D.new()
+	_keypad_screen.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_keypad_screen.albedo_color = Color(0.05, 0.08, 0.06)
+	_kp_box(Vector3(0.18, 0.06, 0.01), Vector3(0, 0.13, 0.032), _keypad_screen)
+	var key_mat := StandardMaterial3D.new()
+	key_mat.albedo_color = Color(0.75, 0.75, 0.7)
+	key_mat.roughness = 0.6
+	for row in 4:
+		for col in 3:
+			_kp_box(Vector3(0.045, 0.035, 0.016), Vector3((col - 1) * 0.06, 0.055 - row * 0.05, 0.034), key_mat)
+	var brass := StandardMaterial3D.new()
+	brass.albedo_color = Color(0.85, 0.66, 0.26)
+	brass.metallic = 0.7
+	brass.roughness = 0.35
+	_kp_box(Vector3(0.03, 0.05, 0.01), Vector3(0.105, -0.13, 0.034), brass)  # fechadura
+	_reader_mat = StandardMaterial3D.new()
+	_reader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_reader_mat.albedo_color = Color(1.0, 0.15, 0.15) if is_locked_door else Color(0.2, 1.0, 0.3)
+	_reader_led = _kp_box(Vector3(0.03, 0.03, 0.01), Vector3(-0.1, -0.13, 0.034), _reader_mat)
+	_reader_light = OmniLight3D.new()
+	_reader_light.light_color = _reader_mat.albedo_color
+	_reader_light.light_energy = 0.35
+	_reader_light.omni_range = 0.6
+	_reader_light.position = Vector3(-0.1, -0.13, 0.08)  # na frente do LED: tinge o pilar, não o painel todo
+	_keypad.add_child(_reader_light)
+
+
+func _kp_box(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var b := BoxMesh.new()
+	b.size = size
+	mi.mesh = b
+	mi.material_override = mat
+	mi.position = at
+	_keypad.add_child(mi)
+	return mi
+
+
+## Câmera da tela do teclado: de frente para o painel, um pouco acima.
+func keypad_view() -> Transform3D:
+	var c := _keypad.global_position
+	var n := _keypad.global_basis.z
+	var eye := c + n * 0.75 + Vector3.UP * 0.05
+	return Transform3D(Basis.looking_at(c - eye), eye)
+
+
+## Visor do teclado aceso (a chave ligou o painel) ou apagado.
+func keypad_power(on: bool) -> void:
+	if _keypad_screen:
+		_keypad_screen.albedo_color = Color(0.3, 1.0, 0.45) if on else Color(0.05, 0.08, 0.06)
+
+
 func is_locked() -> bool:
 	return is_locked_door and not opened and lock != ""
 
@@ -108,8 +176,8 @@ func unlock(_p: Player = null) -> void:
 		_reader_mat.albedo_color = Color(0.2, 1.0, 0.3)
 	if _reader_light:
 		_reader_light.light_color = Color(0.2, 1.0, 0.3)
-	if is_inside_tree():
-		Sfx.ui(self, "unlock")
+	if is_inside_tree() and code == "":
+		Sfx.ui(self, "unlock")  # o teclado já tocou o dele (keypad_ok)
 	open()
 
 
@@ -133,6 +201,8 @@ func can_open(p: Vector3) -> bool:
 	if opened:
 		return false
 	var d := p - global_position
+	if absf(d.y) > REACH_DY:
+		return false  # em outro andar (no telhado, em cima da porta)
 	d.y = 0.0
 	return d.length() < REACH
 
@@ -168,6 +238,7 @@ func reset() -> void:
 			_reader_mat.albedo_color = Color(1.0, 0.15, 0.15)
 		if _reader_light:
 			_reader_light.light_color = Color(1.0, 0.15, 0.15)
+	keypad_power(false)
 	collision_layer = 1
 	_col.set_deferred("disabled", false)
 	for pn in _panels:

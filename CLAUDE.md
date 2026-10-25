@@ -19,9 +19,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   deslizar; imprime `RUN_HALF` para `heroine_anims.py` — rodar com `art/heroine.blend` ao mudar a pose da corrida), `preview.py` (renders de conferência, serve para os dois), `atlas.py` (layout da textura).
   `heroine_ik.py` (FK pelas matrizes de repouso + IK numérica), `heroine_gait.py` (caminhada, agachada e passos
   laterais com o pé de apoio preso no chão por IK), `heroine_moves.py` (cambalhota, pulo/queda, pendurar, subir da
-  borda, escalar obstáculo baixo: poses + apoios presos + caminho da raiz), `heroine_rifle.py` (malha do M16, poses
+  borda, escalar obstáculo baixo, sair da escada pelo topo = LadderOut (mãos na beirada viradas para a frente, joelho na beira) e entrar = LadderIn (a mesma ao contrário; versões `Low` para beirada sem rebordo): poses + apoios presos + caminho da raiz), `heroine_strike.py` (golpes furtivos Assassinate/CritStrike, mesmo jeito), `heroine_rifle.py` (malha do M16, poses
   com o fuzil e a animação de pegar no baú), `heroine_shotgun.py` (malha da escopeta, telha à parte e a animação de
-  tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot).
+  tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot), `heroine_drop.py` (PickupPistol = ajoelhada, a direita pega a pistola com silenciador na caixa de paraquedas; posição dela na caixa = `crate_frame`, exportada em `pistol_crate.glb`), `heroine_hurt.py` (golpes: HitFront/HitBack/HitL/HitR aditivas, StaggerBack/StaggerFwd, GetUpFront/GetUpBack com mãos/joelho/pés presos por IK), `heroine_cutscene.py` (HatchOpen = abrir o
+  alçapão do telhado, Shocked = o susto na sala dos clones; quadros HATCH_GRAB/HATCH_UP usados pelo `hatch.gd`).
   Guerrilheiro encapuzado (inimigo humano): `guerrilla_mesh.py` (malha própria de homem no esqueleto dela: moletom com capuz levantado de dois lados, balaclava, colete,
   calça cargo, coturno), `guerrilla_atlas.py` (layout dela + `cargo`/`cord`),
   `build_guerrilla.py` (mesmo esqueleto/animações; gera `guerrilla.glb`; `art/guerrilla.blend` fica fora do git) e `tools/make_guerrilla_texture.py` (atlas 512 com o layout da heroína).
@@ -39,9 +40,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
 - `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
-  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`), `assets/` (gerados — não
-  editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús e `heroine_moves.json` = caminhos/medidas dos movimentos).
+  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones e emboscada do pátio), guerrilheiro morto `corpse.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `pause_tests.gd`), `assets/` (gerados — não
+  editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
 - Regerar arte: `python tools/make_textures.py && python tools/make_sounds.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_guerrilla_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py && blender --background --factory-startup --python art/build_guerrilla.py`
@@ -56,17 +57,30 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   a captura imprime `buracos=`).
   Raptor: `--shot=raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead|raptor_idle [--playercam]`
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
-  Container/chave/M79: `--shot=locked|unlock|key_drop|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
-  tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão).
+  Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
+  tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
+  Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 a roda, ~9,6 o rugido).
+  Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder: `--at` escolhe o quadro).
+  Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|lab_key|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
+  lab_key/keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem a chave; gate_open: `--at` escolhe o quadro).
+  Caixa de paraquedas: `--shot=drop [--dist=m]|drop_get|drop_pick|fire_sd` (drop_get salva quando a tela do item aparece; drop_pick = câmera de lado
+  enquanto ela pega, `--at` escolhe o quadro, `--yaw` gira; fire_sd = tiro com silenciador).
+  Golpes: `--shot=hit_crouch|stagger|getup|getup_fwd` (câmera de revisão de lado; getup = desaba de costas e levanta girando,
+  getup_fwd = arremessada pelas costas, levanta de bruços; `--at` escolhe o quadro).
   Alossauro: `--shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end [--playercam]`; pedreira: `--shot=arena`.
   Depois de regerar um .glb/.png, `godot --headless --path game --import` (rodar o jogo não reimporta sozinho).
   (a primeira execução depois de editar scripts reimporta o projeto e pode sair com a cena errada: rode de novo).
+
+## Verificação visual
+- Neste projeto NÃO testar nem capturar tela de celular em pé (retrato: 360/375/430 x ~800): gasta token e tempo à toa.
+  Isso vale por cima da matriz de tamanhos da regra global e do agente `ui-verifier`. Conferir só nas telas deitadas
+  (celular deitado ~1000x500, 720p, 1366x768, 1080p, 2K) e nas capturas `--shot` do jogo.
 
 ## Convenções
 - Perfil de jogo (`GameMode`, padrão `survival`; F3 ou `--mode=arcade|survival`): **os dois perfis ficam vivos e testados**, nada do
   jogo de ação de antes foi apagado, para servir de base a outro jogo. `arcade` = o jogo de antes (câmera livre que volta atrás dela,
   munição infinita, tiro do quadril liga a mira temporária, inimigos com o dano base, sem itens). `survival` (RE4 Remake + Dino
-  Crisis 2): câmera por cima do ombro direito sem voltar sozinha (`CameraRig.SHOULDER`, coice `kick`), anda/corre a 80%
+  Crisis 2): câmera por cima do ombro direito sem voltar sozinha (`CameraRig.SHOULDER`: 1,35 m atrás, pivô na altura da cabeça, ela no terço esquerdo da coxa para cima; mirando 1,1 m; coice `kick`), anda/corre a 80%
   (`move_scale`; SHIFT/L3 = corrida forte `Player.SPRINT_SPEED` 4,2 m/s, andar devagar passa para ALT; no arcade SHIFT segue sendo andar), esquiva = pulinho curto em vez da cambalhota (`GameMode.short_dodge`, `PlayerMoves.start_dodge`: parada ou direcional para trás = DodgeBack ~1,5 m, senão de lado DodgeL/DodgeR ~1,8 m virando o mínimo; invulnerável até `dodge.guard` do heroine_moves.json; poses em `heroine_moves.dodge_*_keys`; o primeiro X espera `PlayerMoves.DOUBLE_TAP` = 0,2 s (`dodge_wait`, já invulnerável, no embalo de antes): veio o segundo = cambalhota direto, sem pulinho; não veio = pulinho) com intervalo de 1,4 s, a retícula só existe com o botão de mirar apertado e só atira mirando (sem
   mira apertada não há tiro), inimigos machucam ×2 (`GameMode.enemy_damage`, usado em todo `take_hit` de inimigo na jogadora),
   munição limitada sem recarga (`Player.ammo`, HUD "PISTOLA 10", clique `dry_fire` e aviso quando acaba; `START_AMMO`/`WEAPON_AMMO`
@@ -96,19 +110,86 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   mais aberto (`ALERT_FOV_BONUS`, nunca nas costas) e alcance `ALERT_SIGHT * visibility()` (agachada/capim ainda esconde). Em combate só
   sabe onde ela está com linha livre (`_combat_sees`, `COMBAT_SENSE`): parede/caixa corta o rastro; sem vê-la por `LOSE_TIME` (3 s) →
   `hunt` → `search` → esquece (`alert_t`/`aware` = 0) e volta à rota.
-  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS`; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
+  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS`, os 5 de sempre (2 de ronda, 2 sentinelas na porta do pátio, 1 no baú da M16) + 4 de posto (`"hold"`) na porta do pátio, dentro do canto cercado pelas paredes de caixas `Level.DIVIDERS` (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`) os de posto têm `Enemy.hold_post`: barulho/vulto só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`alert_t` > 0); depois da busca voltam ao posto; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
   tiros instantâneos com descanso de 0,3–0,7 s, chance de acerto cai com distância/agachada/correndo e a cada tiro da rajada (`BURST_DECAY`),
   rolar esquiva; ela some atrás de algo = `SUPPRESS_TIME` de fogo de supressão onde ela estava, que não acerta; avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
-  Caminhos: `NavigationServer3D` com a malha de `Yard.bake_nav` (sem malha, anda reto desviando com raios). Testes: `ai_tests.gd`.
+  Caminhos: `NavigationServer3D` com a malha de `Yard.bake_nav` (sem malha, anda reto desviando com raios); soldados com `nav_map` = a malha
+  de gente. Destino fora da malha (alto, atrás de porta): chega ao ponto alcançável mais perto; sem encurtar o caminho por
+  `NO_PROGRESS_TIME`, desiste. Busca (`_search_goal`/`_sweep_goal`): cada um a um lugar diferente (`CLAIM_DIST`; o primeiro ao ponto
+  mais perto, os outros a pontos do chão com vista do lugar), olha `SEARCH_TIME`, vasculha `SEARCH_SWEEPS` pontos em volta (prefere os
+  que não vê de onde está), desiste e volta à rotina; sentinela sem rota anda de volta ao posto. Alarme (`broadcast_alarm`, do mais perto ao mais longe): de cada tipo só
+  os `alarm_responders` mais perto saem (soldado: 2, andando = `alarm_walks`, `search_sweeps` 3; raptors: a matilha toda, correndo); os
+  outros param, olham para o lugar (`_heed`) e seguem alertados. Sniper: mira e atira só com ela à vista (`SEES_GRACE`); sem vê-la por
+  `LOSE_TIME`, procura na passarela e esquece (`_lose_target`). Testes: `ai_tests.gd`.
 - Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), clareira de capim com estrada de terra
-  até um portão, árvores/arbustos/pedras/troncos, touceiras de capim alto (grupo "cover", meta "radius"), 3 raptors em `Yard.POSTS` com rotas.
+  até um portão, árvores/arbustos/pedras/troncos, touceiras de capim alto (grupo "cover", meta "radius"), 3 raptors em `Yard.POSTS` (rotas usadas só depois da emboscada).
+  O portão do fundo (`Yard._gate`) é de chapa cheia (`GATE_H`) com viga de concreto até `Arena.CLIFF_H`: nem pela frente nem do
+  telhado se vê a pedreira. Neblina rasteira sobre o pátio (`Yard._mist`, FogVolume; `Level` liga `volumetric_fog` com densidade 0 fora dele).
+  Guerrilheiro morto (`Corpse` em `Yard.CORPSE`, clareira de `Yard.CLEARING` m sem nada sólido): `HeroineModel` do guerrilheiro com a
+  árvore de animação desligada e `Corpse.POSE` posta no esqueleto (convenção do heroine_anims; deitado, X>0 = para o céu, Z<0 abre
+  braço/perna), sangue por `Blood.splat` (refeito no R), chave do container presa na mão direita (`KeyItem.hold`, estado "held").
+  Emboscada: os 3 raptors do pátio começam escondidos nas moitas sem colisão de `Yard.LURK` (`Raptor.lurk`: `Enemy.lurking` = sem
+  corpo, sem IA, não ouvem nem recebem alarme). Ela a `Corpse.NOTICE_RANGE` do morto, com linha livre → `Cutscene.play_ambush`
+  (anda até a mão, close do punho com a chave + "ELE ESTA SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
+  (`start_ambush`, estado "ambush"), o da frente ruge; E pula). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
+  A chave fica sem brilho (`KeyItem.shine` falso) até os 3 morrerem; dá para pegá-la antes. R: moitas, chave e cena de volta.
   Texturas `grass/dirt/bark/leaves/rock/grass_card/fern_card` vêm de `tools/make_level_textures.py`. Revisão: `--shot=yard --pos=x,z[,graus]`.
+- Golpes na heroína (`art/heroine_hurt.py`): a reação ao tiro/dano é **aditiva** (`HeroineModel.hit(dir, força)` → nó Add2 por
+  cima de tudo; HitFront/HitBack/HitL/HitR pelo lado atingido, `hit_side`; duas entradas por direção que se alternam): agachada
+  continua agachada, mirando continua mirando (nada de pose inteira em pé). `knockback` toca StaggerBack/StaggerFwd conforme o
+  empurrão. Caída em ragdoll (arremesso, mordida, `knock_down` = queda que machuca ou derrubada da escada), `Player._get_up` vira a
+  cápsula para o lado da cabeça do corpo, encaixa o quadril do quadro 0 no do ragdoll e toca GetUpFront (de bruços) ou GetUpBack
+  (de costas: gira de lado até ficar de bruços) a `GETUP_SPEED`: flexão, quatro apoios, um pé à frente, depois o outro, sem pulo;
+  `PoseFade` (modificador depois do Ragdoll) parte da pose em que o corpo ficou. Levantando (`is_getting_up`) = sem controle,
+  sem arma na mão e sem levar golpe.
 - Raptor: ataques resolvidos em `raptor.gd` (`_strike` = dano + `knockback`); a mordida chama `Player.grab()`, que liga o ragdoll dela
   com o antebraço esquerdo puxado para a boca (`Ragdoll.drag`) e a luta dela por cima; rolar (`is_dodging`) esquiva de tudo.
   Salto (golpe sai das garras dos pés) e investida chamam `Player.launch()`: ragdoll arremessado em C em volta do golpe
   (`Ragdoll.fling` + `_hold_c`), depois ela levanta. A morte do raptor é ragdoll (`RaptorModel.RAGDOLL`), não animação.
   Andando, o raptor só se move para a frente do corpo e a velocidade da animação acompanha (`WALK_ANIM_SPEED`/`RUN_ANIM_SPEED`).
+- Começo da fase: ela nasce no telhado do galpão (`Roof.START`; laje sem sombra, parapeito de 1 m que dá para
+  escalar e se jogar: a queda mata, ver Queda). Em cima da laje (`Roof.has`) os inimigos não a percebem: passos/tiro não chegam (`Enemy._reaches`) e
+  ela não é vista, nem por quem está alertado. Na beira do lado do pátio (`Roof.near_yard`, a `SMELL_DIST` da mureta oeste), uma vez
+  só (`main.smelled`, o R zera): o jogo para com `Roof.SMELL_TEXT` na faixa de baixo até confirmar (`Inspect.show_message`, jeito
+  RE/Dino Crisis). Captura `--shot=smell`. Interagir no alçapão (`Hatch`, canto do fundo à direita) = ajoelha e abre (`PlayerMoves.start_hatch`, animação
+  HatchOpen; a tampa sobe entre HATCH_GRAB e HATCH_UP, as palmas presas por IK na alça girando com ela (`heroine_cutscene.handle_at`, = `Hatch.HANDLE`) até HATCH_LET_GO, depois empurra); fechado, a escada dele (`Ladder.top_open`) não monta. A escada fica na beira
+  do furo do lado de quem chega, presa à parede do fundo por suportes, e desce até o labirinto de caixas (`Level.MAZE`: grade de
+  células de 1,6 m, pilhas de 2,7 m = acima do alcance de pendurar; frente fechada; saída única à esquerda por baixo do mezanino; a
+  escada do mezanino num beco que só abre para o corredor de cima; vigas do mezanino com colisão). Raptors não navegam no labirinto
+  (raio da malha 0,75 m); soldados usam a malha de gente (`Yard.bake_people_nav`: raio 0,25 m, célula de 5 cm, só no galpão) e entram
+  em todo corredor do labirinto e no nicho da escada do mezanino (passam ao lado da viga em x = -4, que corta a coluna 1); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
+  Na escada, entrando/saindo pelo topo e nos `Hatch.HIDDEN_RUNGS` degraus abaixo do alto do ciclo (`Ladder.hidden_top`, `PlayerMoves.hidden_on_ladder`) fica escondida de todos, mesmo alertados; abaixo, o sniper a vê se estiver olhando para o canto: o tiro
+  derruba da escada (`PlayerMoves.knock_off_ladder`) e a queda sem controle mata (`Player.KNOCKED_*`).
+- Teto da sala dos clones (`Roof.LAB_Y`, 1,5 m acima da laje: sobe escalando a parede do fundo do galpão; mureta nos três lados
+  de fora; `Roof.has` conta ele como telhado) com a caixa de paraquedas (`SupplyDrop`, no fundo, em `SupplyDrop.POS`): caixa
+  oliva torta, lona murcha e cordas; E na frente = o mesmo `PlayerMoves.start_pickup` do baú (ajoelha em `kneel_transform`,
+  tampa abre, animação PickupPistol, a mão pega no quadro `pistol_pickup.grab_frame` do heroine_moves.json, `finish` no fim
+  mostra o item) e a pistola com silenciador entra no lugar da pistola
+  (`Player.silencer`: mesma arma "pistol", mesma munição e dano; `Player.SILENCER` troca o nome no HUD "PISTOLA SIL.", o barulho
+  do tiro de 26 m para 3,5 m e tira o clarão que a mostra; `HeroineModel.silenced`/`gun()` = malha PistolSD, cano SDMuzzle, som
+  `pistol_sd_shot`, clarão `Fx.FLASH.pistol_sd`; a malha PistolSD é só o silenciador, 12 triângulos: o teste do orçamento soma
+  todas as armas do heroine.glb e está em 4996 de 5000). Tela do item `Inspect.show_drop`. R fecha a caixa e tira o silenciador.
+  Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o galpão (o alçapão aparece do começo) e
+  `LAB_FOG_DENSITY` a mais sobre o anexo (a caixa só aparece a poucos metros).
+- Queda (`Player.fall_damage`): sem dano até `FALL_SAFE` (3,6 m: pular do mezanino não machuca), morte a partir de `FALL_LETHAL`
+  (5 m); derrubada da escada usa `KNOCKED_SAFE/KNOCKED_LETHAL`. `death_cause` "fall" → Game Over "VOCE MORREU NA QUEDA".
+  Fora do galpão/pátio/pedreira não há chão: caindo abaixo de `Player.VOID_Y` (-10 m) ela morre na queda (não cai para sempre).
+- Sala dos clones (`CloneLab`): anexo atrás da plataforma de carga (piso na altura da doca, `FLOOR_Y` 1,3), portão de enrolar (`Door`
+  com `room` -1, fora da corrente de salas) aberto com E. Seis tubos com raptors (`RaptorModel` com a animação travada, azulados, sem
+  piar). Ao entrar pela primeira vez: `Cutscene.play_clones` (faixas pretas, sem HUD; `Player.cutscene` = sem controle nem dano;
+  anda, close no clone, rosto dela com Shocked e "O QUE...?!", plano geral; E pula; R reinicia e a cena volta a valer).
+  Cada tubo tem uma plaqueta num pedestal (`SubjectPlate`, "SUBJECT XXXX" de `CloneLab.SUBJECTS`, grupo "plates"): E na frente dela
+  (`Player.pick_plate` → sinal `read_plate`) = `Inspect.plate_zoom` (pausa, câmera até a plaqueta, ficha embaixo). No canto do fundo à
+  esquerda (`CloneLab.TANK`; a sala foi até `Z_FAR` -32 para caber) o tanque do alossauro: vidro de `TANK_SIDES` lados inteiro,
+  drenado, porta de vidro aberta, mangueiras soltas, luz vermelha; a plaqueta dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO") é o
+  código do portão da pedreira. Em cima do console fica a chave do painel (`main.lab_key`, `KeyItem` em `CloneLab.key_spot()`,
+  id `Yard.GATE_KEY`; a etiqueta diz "CODIGO = SUBJECT DO PROTOTIPO"); R a devolve à mesa.
 - Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
+  Porta trancada: `Door.lock` = id da chave/cartão. Com leitor (`add_card_reader`, porta do galpão) abre com o cartão no bolso. Com
+  teclado (`add_keypad` + `Door.code`, portão da pedreira: chave `Yard.GATE_KEY` + código `CloneLab.ALLO_SUBJECT`): E emite
+  `Player.keypad` → `main._on_keypad` → `Inspect.keypad` (pausa, câmera no painel; sem a chave "PAINEL DESLIGADO"; com ela o visor
+  acende e ela digita 4 algarismos: 0-9 ou setas/direcional, E confirma, C sai; errado = `keypad_error` e zera; certo = `keypad_ok`,
+  a chave é gasta e a porta abre). `Inspect.auto_code` digita sozinho (testes/capturas). R tranca de novo e apaga o visor.
 - Pedreira (`Arena`): última sala, depois do portão (fechado até abrir) no fundo do pátio; paredões de pedra, ruínas e pedras grandes
   (cobertura que o alossauro não atravessa), capim alto, postes (`Yard.lamp`). Alossauro em `Arena.ALLO` e 2 raptors em `Arena.POSTS`.
 - Alossauro (`allosaurus.gd`, herda `Enemy`; modelo `AllosaurusModel` = `RaptorModel` com outro arquivo/atlas/ragdoll/sons graves):
@@ -119,6 +200,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   heroína (animação Dazed), aviso "ATORDOADA" no HUD; golpe, mordida ou reinício acabam com ela.
 - Controles novos: F / quadrado = pular (com borda à frente: escala até MANTLE_MAX ou pula e fica pendurada; pendurada,
   frente/pular sobe e trás/agachar solta), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / X = cambalhota (survival: pulinho de esquiva).
+  ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SAIR DO JOGO; árvore pausada, não abre por
+  cima de tela de inspeção nem no game over; volta ao jogo dois passos de física depois para o botão não chegar nela).
+  START não reinicia mais; R no teclado segue reiniciando. Captura: `--shot=pause`. Testes: `pause_tests.gd`.
 - Movimentos com deslocamento (cambalhota, subir, escalar, pegar): o caminho da raiz sai do Blender (`*_PATH` em
   `heroine_moves.py`, gravado em heroine_moves.json) e o Godot segue o mesmo caminho (`Moves.hermite`, igual ao Python).
   Mudou pose/caminho: regerar a arte e rodar os testes (conferem mãos na borda e pé sem deslizar).
@@ -140,12 +224,13 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   arremessa a jogadora perto e ela leva `PLAYER_SHARE` do dano; barulho `NOISE`; `Fx.explosion` + mancha `Fx.scorch`, que conta em
   `MAX_DECALS` e some com o R). Survival: 4 granadas no baú, caixa verde em `Pickup.LAYOUT`.
 - Container trancado e chave (jeito RE/Dino Crisis): `Chest.lock` = id da chave (ferrolho + cadeado na frente). A M79 fica no
-  container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está com o alvo
-  `main.KEY_DUMMY` (`TargetDummy.loot`): morto, ela cai no chão brilhando e é pega ao chegar perto (`Player.keys`). Interagir no
+  container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está na mão do guerrilheiro
+  morto no meio do pátio (`Corpse`, ver Pátio da mata); `TargetDummy.loot` (cai do alvo morto, brilhando) segue valendo para
+  outros itens e testes. Pega com E ao chegar perto (`Player.keys`). Interagir no
   trancado emite `Player.locked` → `Inspect.lock_zoom` (jogo pausado, câmera vai até o cadeado; sem chave chacoalha e avisa, com
   chave ele cai e a chave é gasta). Pegar a chave → `Inspect.show_item` (item girando numa SubViewport). As telas de inspeção
   pausam a árvore e rodam com `PROCESS_MODE_ALWAYS` (sons delas por `Sfx.ui`); `auto_close`/`on_shown` para testes e capturas.
-  Reiniciar tranca de novo e devolve a chave ao alvo. Testes: `key_tests.gd`.
+  Reiniciar tranca de novo e devolve a chave ao morto. Testes: `key_tests.gd`, `ambush_tests.gd`.
 - Tiros: `Player.WEAPON_STATS` (cadência, dano por projétil, chumbos, dispersão/abertura em rajada, alcance com queda
   de dano, tremida, cápsula); chumbos no mesmo alvo somam num `take_hit` só. Efeitos em `Fx` por arma e por superfície
   (meta "surface" do corpo = textura do `Level.block`); buraco de bala (`Fx.decal`) só em cenário, preso ao corpo,

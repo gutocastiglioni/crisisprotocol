@@ -14,8 +14,13 @@ const SUSPECT_AT := 0.3  # atenção a partir da qual para e olha
 const AWARE_DECAY := 0.3  # por segundo, sem nada de novo
 const ALERT_TIME := 15.0  # depois de alertado, fica caçando por este tempo
 const LOSE_TIME := 3.0  # em combate, sem ver a presa por este tempo = foi atrás do último lugar onde a viu
-const SEARCH_TIME := 6.0
+const SEARCH_TIME := 3.0  # olhando em volta em cada lugar da busca (de SEARCH_TIME a SEARCH_TIME + 2 s)
+const SEARCH_SWEEPS := 2  # depois do lugar onde a viu, vasculha mais estes pontos em volta antes de desistir
+const SWEEP_RINGS := [3.0, 5.0, 7.0]  # distâncias (do lugar onde a viu) dos pontos vasculhados
+const CLAIM_DIST := 3.0  # destino a menos disto do de um colega = já tem gente indo lá
+const NO_PROGRESS_TIME := 3.0  # andando sem encurtar o caminho por este tempo (porta fechada, quina, colega no meio) = chegou o mais perto que dá
 const ASSASSINATE_RANGE := 2.2  # alcance do abate furtivo pelas costas
+const STEER_RADIUS := 0.3  # raio do corpo (cápsula de gente) ao conferir se dá para ir reto ao próximo ponto do caminho
 const CRIT_RANGE := 2.5  # alcance do golpe crítico no inimigo caído
 
 @export var target: Player
@@ -24,6 +29,8 @@ const CRIT_RANGE := 2.5  # alcance do golpe crítico no inimigo caído
 
 var state := "idle"
 var dead := false
+## escondido fora de cena (emboscada, ver Raptor.lurk): sem corpo, sem IA, não ouve nem recebe alarme
+var lurking := false
 var rng := RandomNumberGenerator.new()
 # ajustes de cada tipo de inimigo
 var sight_range := SIGHT_RANGE
@@ -67,6 +74,20 @@ var _path_i := 0
 var _repath_t := 0.0
 var _stuck_t := 0.0
 var _stuck_n := 0
+## Malha de navegação própria (soldados: a de gente, Yard.bake_people_nav); vazio = a do mundo (raptors).
+var nav_map := RID()
+var search_sweeps := SEARCH_SWEEPS  # 0 = só olha em volta onde chegou (sniper preso à passarela)
+var alarm_responders := 99  # quantos do mesmo tipo (os mais perto) saem do posto quando um dá o alarme (raptors: a matilha toda)
+var alarm_walks := false  # vai ao alarme andando, com calma (gente), em vez de correr
+## Guarda de posto (guardas da porta do pátio): barulho e vulto só o fazem parar e olhar para lá, sem sair do lugar,
+## até alguém vê-la (alerta: `alert_t` > 0); aí caça e procura como os outros e, quando desiste, volta ao posto.
+var hold_post := false
+var _heeding := false  # "look" por causa do alarme de outro: olha para o lugar dele
+var _sweeps_left := 0
+var _search_center := Vector3.ZERO  # o lugar que está procurando (onde a viu ou ouviu)
+var _visited: Array[Vector3] = []
+var _best_left := INF  # menor resto de caminho até o destino desde que entrou no estado
+var _progress_t := 0.0
 var _marker: Label3D
 var _trail := Blood.Trail.new()
 
@@ -99,12 +120,17 @@ func _enter(s: String, anim: String, blend := 0.15) -> void:
 	_t = 0.0
 	_stuck_t = 0.0
 	_stuck_n = 0
+	_best_left = INF
+	_progress_t = 0.0
 	_on_enter()
 	_play(anim, blend, 1.0, true)
 	_update_marker()
 
 ## Começo de cada passo de física: relógio do alerta, percepção (calmo) ou rastreio da presa (em luta).
 func _tick(delta: float) -> void:
+	if lurking:
+		velocity = Vector3.ZERO
+		return
 	if _stealth_locked:
 		velocity = Vector3.ZERO
 		return
@@ -137,12 +163,21 @@ func _calm_state(delta: float) -> bool:
 			_play("Idle")
 			if not route.is_empty():
 				start_patrol()
+			elif _t > 2.0 and _flat(_spawn.origin - global_position).length() > arrival_dist + 0.3:
+				_resume()  # a volta ao posto empacou (colega no caminho): tenta de novo
 			else:
+				# guarda de volta ao posto: vira para onde vigiava
+				var post_yaw := _spawn.basis.get_euler().y
+				if absf(angle_difference(rotation.y, post_yaw)) > 0.02:
+					rotation.y = lerp_angle(rotation.y, post_yaw, 1.0 - exp(-4.0 * delta))
 				_idle_vigil(delta)
 		"patrol":
 			_patrol(delta)
 		"look":
-			_look(delta, "Idle")
+			if _heeding:
+				_search_look(delta)
+			else:
+				_look(delta, "Idle")
 			if _t >= _dur:
 				start_patrol()
 		"suspicious":
@@ -154,11 +189,14 @@ func _calm_state(delta: float) -> bool:
 			if _go(_goal, hunt_speed, delta):
 				start_search()
 		"search":
-			_look(delta, "Study")
-			if _t >= _dur:
+			_search_look(delta)
+			if _t >= _dur and not _start_sweep():
 				alert_t = 0.0
 				aware = 0.0
 				_resume()
+		"sweep":
+			if _go(_goal, patrol_speed, delta):  # vasculhando: passo de ronda, com calma
+				start_search()
 		_:
 			return false
 	return true
@@ -183,7 +221,7 @@ func stealth_lock(on: bool) -> void:
 
 ## Abate furtivo disponível: vivo, fora de combate/alerta, aceita furtivo (soldado, raptor ou sniper) e ela está atrás/fora do cone a até ASSASSINATE_RANGE.
 func can_assassinate(p: Player) -> bool:
-	if not can_stealth or dead or in_combat() or state in ["down", "hunt"] or alert_t > 0.0:
+	if not can_stealth or dead or lurking or in_combat() or state in ["down", "hunt"] or alert_t > 0.0:
 		return false
 	if not is_instance_valid(p) or p.dead or absf(p.global_position.y - global_position.y) > 1.2:
 		return false
@@ -236,10 +274,16 @@ func start_patrol() -> void:
 	_repath_t = 0.0
 	_enter("patrol", "Walk", 0.3)
 
-## Volta à rotina (patrulha pelo ponto mais próximo, ou guarda parada).
+## Volta à rotina (patrulha pelo ponto mais próximo, ou guarda parada, que antes anda de volta ao posto).
 func _resume() -> void:
 	if route.is_empty():
-		_enter("idle", "Idle", 0.25)
+		if _flat(_spawn.origin - global_position).length() > arrival_dist + 0.3:
+			_goal = _spawn.origin
+			_path = PackedVector3Array()
+			_repath_t = 0.0
+			_enter("patrol", "Walk", 0.3)
+		else:
+			_enter("idle", "Idle", 0.25)
 		return
 	var best := 0
 	for i in route.size():
@@ -251,6 +295,7 @@ func _resume() -> void:
 ## Pausa num ponto da patrulha olhando em volta.
 func start_look() -> void:
 	_enter("look", "Idle", 0.3)
+	_heeding = false
 	_dur = rng.randf_range(2.0, 4.0)
 	_look_t = 0.0
 
@@ -260,29 +305,152 @@ func start_suspicious() -> void:
 
 ## Foi ver de onde veio o barulho.
 func start_investigate(at: Vector3) -> void:
-	_goal = EnemyCrowd.disperse_goal(self, at)
-	_path = PackedVector3Array()
-	_repath_t = 0.0
+	_begin_search(at)
 	_enter("investigate", "Walk", 0.3)
 
 ## Corre até o último lugar onde a presa foi vista (ou de onde veio o grito de outro).
 func start_hunt(at: Vector3) -> void:
-	_goal = EnemyCrowd.disperse_goal(self, at)
-	_path = PackedVector3Array()
-	_repath_t = 0.0
+	_begin_search(at)
 	_enter("hunt", "Run", 0.2)
 
-## Chegou e não achou ninguém: olha em volta por um tempo antes de desistir.
+func _begin_search(at: Vector3) -> void:
+	_search_center = at
+	_sweeps_left = search_sweeps
+	_visited.clear()
+	_goal = _search_goal(at)
+	_path = PackedVector3Array()
+	_repath_t = 0.0
+
+## Chegou e não achou ninguém: olha em volta por um tempo; depois vasculha outro ponto (`_start_sweep`) ou desiste.
 func start_search() -> void:
+	_visited.append(global_position)
 	_enter("search", "Study", 0.3)
-	_dur = SEARCH_TIME
+	_dur = rng.randf_range(SEARCH_TIME, SEARCH_TIME + 2.0)
 	_look_t = 0.0
+
+## Olhando em volta: primeiro vira para o lugar procurado (e ergue a cabeça se é alto, como a passarela), depois varre.
+func _search_look(delta: float) -> void:
+	var to := _flat(_search_center - global_position)
+	if _t < 0.8 and to.length() > 1.5:
+		_stop(delta)
+		_play("Study", 0.3)
+		_face(to, delta, 4.0)
+	else:
+		_look(delta, "Study")
+	if has_head_look():
+		var rise := _search_center.y + 1.0 - (global_position.y + eye_height)
+		head_pitch = lerpf(head_pitch, clampf(atan2(rise, maxf(to.length(), 0.5)), -0.3, 0.6), 1.0 - exp(-3.0 * delta))
+
+## Vai vasculhar mais um ponto em volta do lugar procurado. Devolve false se acabaram os pontos (ou não há malha).
+func _start_sweep() -> bool:
+	if _sweeps_left <= 0:
+		return false
+	_sweeps_left -= 1
+	var p: Variant = _sweep_goal()
+	if p == null:
+		return false
+	_goal = p
+	_path = PackedVector3Array()
+	_repath_t = 0.0
+	_enter("sweep", "Walk", 0.3)
+	return true
+
+# ------------------------------------------------------------------ IA: onde procurar (lê a malha de navegação)
+func _nav() -> RID:
+	return nav_map if nav_map.is_valid() else get_world_3d().navigation_map
+
+func _has_nav() -> bool:
+	var map := _nav()
+	return not NavigationServer3D.map_get_regions(map).is_empty() and NavigationServer3D.map_get_iteration_id(map) > 0
+
+## Ponto do chão (mesmo andar que ele) perto de `p`, na malha; null se ali não é chão livre.
+func _floor_at(p: Vector3) -> Variant:
+	var c := Vector3(p.x, global_position.y, p.z)
+	var q := NavigationServer3D.map_get_closest_point(_nav(), c)
+	if _flat(q - c).length() > 0.6 or absf(q.y - global_position.y) > 0.6:
+		return null
+	return q
+
+## Chega a pé em `p`: o caminho termina nele (não numa ilha da malha, como o topo das caixas).
+func _reachable(p: Vector3, max_len := 40.0) -> bool:
+	var path := NavigationServer3D.map_get_path(_nav(), global_position, p, true)
+	if path.is_empty() or _flat(path[path.size() - 1] - p).length() > 0.5:
+		return false
+	var length := 0.0
+	for k in path.size() - 1:
+		length += path[k].distance_to(path[k + 1])
+	return length <= max_len
+
+## Um colega (vivo, procurando) já vai para perto de `p`.
+func _claimed(p: Vector3) -> bool:
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var e := n as Enemy
+		if e == null or e == self or e.dead or not e.state in ["hunt", "investigate", "sweep", "search"]:
+			continue
+		var g: Vector3 = e.global_position if e.state == "search" else e._goal
+		if _flat(g - p).length() < CLAIM_DIST and absf(g.y - p.y) < 1.5:
+			return true
+	return false
+
+## Vê `at` (à altura do peito dela) parado em `p`.
+func _sees_from(p: Vector3, at: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * eye_height, at + Vector3.UP * 0.9, 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## Para onde ir procurar `at`. Sem malha: o próprio lugar (afastado dos colegas). Com malha: o ponto alcançável mais
+## perto dele (entra no corredor, vai ao pé da escada); se um colega já vai para lá, um ponto do chão em volta de onde
+## se vê o lugar (alto, como a passarela, ou atrás das caixas). Cada um pega um lugar: não ficam amontoados.
+func _search_goal(at: Vector3) -> Vector3:
+	if not _has_nav():
+		return EnemyCrowd.disperse_goal(self, at)
+	var path := NavigationServer3D.map_get_path(_nav(), global_position, at, true)
+	var near := path[path.size() - 1] if not path.is_empty() else at
+	if not _claimed(near):
+		return near
+	var spots := []
+	var blind := []  # sem vista do lugar (dentro do labirinto quase nada vê): ainda serve, desde que livre
+	for r: float in [2.5, 4.0, 6.0, 8.0, 10.0]:
+		for k in 12:
+			var a := TAU * k / 12.0
+			var q: Variant = _floor_at(at + Vector3(cos(a), 0.0, sin(a)) * r)
+			if q == null or _claimed(q):
+				continue
+			var score := r + _flat(q - global_position).length() * 0.25
+			(spots if _sees_from(q, at) else blind).append([score, q])
+	for list: Array in [spots, blind]:
+		list.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for s: Array in list.slice(0, 8):
+			if _reachable(s[1]):
+				return s[1]
+	return near
+
+## Próximo ponto a vasculhar em volta do lugar procurado: chão alcançável, longe dos já olhados e do destino dos
+## colegas; de preferência um que daqui não se vê (atrás de caixa, coluna, dentro do corredor), onde ela pode estar.
+func _sweep_goal() -> Variant:
+	if not _has_nav():
+		return null
+	var spots := []
+	for r: float in SWEEP_RINGS:
+		for k in 10:
+			var a := TAU * (k + rng.randf()) / 10.0
+			var q: Variant = _floor_at(_search_center + Vector3(cos(a), 0.0, sin(a)) * r)
+			if q == null or _claimed(q) or _visited.any(func(v: Vector3) -> bool: return _flat(v - q).length() < 2.5):
+				continue
+			var score := _flat(q - global_position).length() + rng.randf_range(0.0, 2.0)
+			if not _sees_from(global_position, q):
+				score -= 3.0
+			spots.append([score, q])
+	spots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for s: Array in spots.slice(0, 8):
+		if _reachable(s[1], 25.0):
+			return s[1]
+	return null
 
 ## 0 = calmo, 1 = amarelo (atenção chamada), 2 = laranja (busca ativa/perseguindo), 3 = vermelho (encontrou/combate)
 func alert_level() -> int:
-	if dead: return 0
+	if dead or lurking: return 0
 	if in_combat(): return 3
-	if state in ["hunt", "search", "investigate"]: return 2
+	if state in ["hunt", "search", "sweep", "investigate"]: return 2
 	return 1 if state == "suspicious" else 0
 
 func _update_marker() -> void:
@@ -294,15 +462,18 @@ func _update_marker() -> void:
 	elif lv == 1: _marker.text = "?"; _marker.modulate = Color(1.0, 0.85, 0.2)
 
 ## Som vindo de `pos` chega aqui: mesma sala, ou salas ligadas por portas abertas (a porta fechada segura tiro e grito).
+## Do telhado não chega nada (a laje abafa).
 func _reaches(pos: Vector3) -> bool:
+	if Roof.has(pos):
+		return false
 	return Level.connected(get_tree(), Level.room_of(pos.x), Level.room_of(global_position.x))
 
 func is_searching() -> bool:
-	return not in_combat() and not dead and (alert_level() == 2 or state in ["hunt", "search", "investigate"])
+	return not in_combat() and not dead and (alert_level() == 2 or state in ["hunt", "search", "sweep", "investigate"])
 
 ## Barulho em `pos` que alcança `radius` metros: se estiver vasculhando, vai direto em encontrar.
 func hear_noise(pos: Vector3, radius: float, power: float) -> void:
-	if dead or in_combat() or not _reaches(pos):
+	if dead or lurking or in_combat() or not _reaches(pos):
 		return
 	var d := _flat(pos - global_position).length()
 	if d >= radius:
@@ -318,7 +489,7 @@ func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 
 ## Morte de companheiro próximo: se estiver vasculhando, interpreta como posição revelada e encontra.
 func on_nearby_kill(at: Vector3, radius := 8.0) -> void:
-	if dead or in_combat() or not _reaches(at):
+	if dead or lurking or in_combat() or not _reaches(at):
 		return
 	if is_searching() and _flat(at - global_position).length() <= radius:
 		_last_known = at
@@ -327,15 +498,30 @@ func on_nearby_kill(at: Vector3, radius := 8.0) -> void:
 		spot()
 
 ## Grito de outro raptor que viu a presa: depois de um instante (o som viaja, eles reagem) vem caçar o lugar.
-func on_alarm(src: Node3D, at: Vector3) -> void:
-	if dead or src == self or not _reaches(src.global_position):
+## `rank` = quantos do mesmo tipo estão mais perto de `at` (0 = o mais perto): só os `alarm_responders` mais perto saem
+## do posto; os outros param, olham para lá e ficam alertados onde estão (`_heed`). Gente vai andando (`alarm_walks`).
+func on_alarm(src: Node3D, at: Vector3, rank := 0) -> void:
+	if dead or lurking or src == self or not _reaches(src.global_position):
 		return
 	_last_known = at
 	alert_t = ALERT_TIME
 	if in_combat():
 		return
+	if rank >= alarm_responders:
+		_heed(at)
+		return
 	aware = 1.0
 	_alarm_delay = global_position.distance_to(src.global_position) * 0.015 + rng.randf_range(0.2, 0.7)
+
+## Ouviu o alarme mas não é dos que vão: para, olha para o lugar e segue a rotina (alertado: vê mais longe e mais aberto).
+func _heed(at: Vector3) -> void:
+	if not state in ["idle", "patrol", "look"]:
+		return
+	_search_center = at
+	_enter("look", "Idle", 0.3)
+	_heeding = true
+	_dur = rng.randf_range(2.5, 4.0)
+	_look_t = 0.0
 
 func _wake_on_alarm(delta: float) -> void:
 	if _alarm_delay <= 0.0:
@@ -343,14 +529,27 @@ func _wake_on_alarm(delta: float) -> void:
 	_alarm_delay -= delta
 	if _alarm_delay <= 0.0:
 		_alarm_delay = -1.0
-		start_hunt(_last_known)
+		if alarm_walks:
+			start_investigate(_last_known)
+		else:
+			start_hunt(_last_known)
 
 func _raise_alarm() -> void:
 	alert_t = ALERT_TIME
 	aware = 1.0
 	_lost_t = 0.0
 	_last_known = target.global_position
-	get_tree().call_group("enemies", "on_alarm", self, _last_known)
+	broadcast_alarm(_last_known)
+
+## Avisa os outros que ela está em `at`, do mais perto ao mais longe (a ordem de cada tipo é o `rank` de `on_alarm`).
+func broadcast_alarm(at: Vector3) -> void:
+	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool: return e is Enemy and e != self and not e.dead)
+	others.sort_custom(func(a: Enemy, b: Enemy) -> bool: return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
+	var ranks := {}
+	for e: Enemy in others:
+		var kind: Script = e.get_script()
+		e.on_alarm(self, at, ranks.get(kind, 0))
+		ranks[kind] = ranks.get(kind, 0) + 1
 
 ## Viu a presa: dá o alarme aos outros e reage à sua maneira (`_on_spotted`).
 func spot() -> void:
@@ -375,20 +574,27 @@ func _perceive(delta: float) -> void:
 	if alarmed:
 		if seen:
 			spot()
-		elif state == "search" or state == "investigate":
+		elif state in ["search", "sweep", "investigate"]:
 			# barulho novo longe do que estava vendo: vai lá
 			if _stimulus.distance_to(_goal) > 3.0:
 				start_investigate(_stimulus)
+		elif _holds_post():
+			if state in ["idle", "patrol", "look"]:
+				start_suspicious()
 		elif state != "hunt":
 			start_investigate(_stimulus)
 	elif aware >= SUSPECT_AT and state in ["idle", "patrol", "look"]:
 		start_suspicious()
 
+## Guarda de posto que ainda não foi alertado: não sai do lugar para ver o que foi.
+func _holds_post() -> bool:
+	return hold_post and alert_t <= 0.0
+
 func _suspicious(delta: float) -> void:
 	_stop(delta)
 	_play("Study", 0.25)
 	_face(_stimulus - global_position, delta, 3.0)
-	if _stimulus != Vector3.ZERO and _t > 1.2:
+	if _stimulus != Vector3.ZERO and _t > 1.2 and not _holds_post():
 		start_investigate(_stimulus)
 		return
 	if aware < 0.12 and _t > 1.5:
@@ -413,7 +619,9 @@ func _look(delta: float, anim: String) -> void:
 
 func _patrol(delta: float) -> void:
 	if route.is_empty():
-		start_patrol()
+		# guarda sem rota voltando ao posto (`_resume`)
+		if _go(_goal, patrol_speed, delta):
+			_enter("idle", "Idle", 0.25)
 		return
 	if _go(_goal, patrol_speed, delta):
 		_route_i = (_route_i + 1) % route.size()
@@ -425,10 +633,14 @@ func _sight_range() -> float:
 		return ALERT_SIGHT * vis
 	return sight_range * vis
 
+## Fora do alcance de qualquer um: em cima do telhado ou na parte de cima da escada do alçapão.
+func _target_hidden() -> bool:
+	return Roof.has(target.global_position) or target.moves.hidden_on_ladder()
+
 ## Vê a presa: dentro do alcance (menor se ela anda devagar, agachada ou no capim), no cone à frente
 ## (alertado, cone mais aberto; muito perto, em volta toda) e sem nada no meio.
 func _sees_target() -> bool:
-	if not _has_target():
+	if not _has_target() or _target_hidden():
 		return false
 	var to := _to_target()
 	var d := to.length()
@@ -444,7 +656,7 @@ func _sees_target() -> bool:
 ## Em combate ele sabe onde ela está se a vê: perto (COMBAT_SENSE) ou dentro do alcance de alertado, sempre com nada no
 ## meio. Atrás de parede/caixa ou agachada no capim, longe, ele perde o rastro.
 func _combat_sees() -> bool:
-	if not _has_target():
+	if not _has_target() or _target_hidden():
 		return false
 	var d := _to_target().length()
 	return (d < COMBAT_SENSE or d < ALERT_SIGHT * target.visibility()) and _line_clear()
@@ -468,13 +680,27 @@ func _line_clear(who: Player = target) -> bool:
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## Anda até `goal` (caminho da malha de navegação; sem malha, em linha reta desviando de paredes).
-## Devolve true ao chegar ou ao desistir (preso).
+## Devolve true ao chegar ou ao desistir (preso, ou sem encurtar o caminho por NO_PROGRESS_TIME).
+## Destino fora da malha (em cima das caixas, dentro do labirinto, na passarela, atrás de porta fechada): o caminho
+## termina no ponto alcançável mais perto dele, e chegar ali conta como chegar.
 func _go(goal: Vector3, speed: float, delta: float) -> bool:
 	var to := _flat(goal - global_position)
 	if to.length() < arrival_dist:
 		_stop(delta)
 		return true
 	var dir := _steer(goal, to, delta)
+	var left := _path_left(goal)
+	if left < arrival_dist:
+		_stop(delta)
+		return true
+	if left < _best_left - 0.3:
+		_best_left = left
+		_progress_t = 0.0
+	else:
+		_progress_t += delta
+		if _progress_t > NO_PROGRESS_TIME:
+			_stop(delta)
+			return true
 	var sep := EnemyCrowd.compute_separation(self)
 	if sep.length_squared() > 0.01:
 		dir = (dir + sep * 1.2).normalized()
@@ -504,18 +730,44 @@ func _go(goal: Vector3, speed: float, delta: float) -> bool:
 func _steer(goal: Vector3, to: Vector3, delta: float) -> Vector3:
 	_repath_t -= delta
 	if _repath_t <= 0.0:
-		_repath_t = 0.4
+		_repath_t = 2.0  # não refaz a cada instante: com duas rotas parecidas ele trocaria de uma para a outra e ficaria indo e voltando (preso refaz na hora)
 		_path = PackedVector3Array()
-		var map := get_world_3d().navigation_map
+		var map := _nav()
 		if NavigationServer3D.map_get_iteration_id(map) > 0:
 			_path = NavigationServer3D.map_get_path(map, global_position, goal, true)
 		_path_i = 0
 	if _path.is_empty():
 		return _avoid(to.normalized())
-	while _path_i < _path.size() - 1 and _flat(_path[_path_i] - global_position).length() < 0.8:
-		_path_i += 1
+	while _path_i < _path.size() - 1:
+		var d := _flat(_path[_path_i] - global_position).length()
+		# já perto do ponto: pula para o seguinte só se o corpo passa reto até ele (senão corta a quina e prende nela)
+		if d < 0.25 or (d < 0.8 and _clear_to(_path[_path_i + 1])):
+			_path_i += 1
+		else:
+			break
 	var aim := _flat(_path[_path_i] - global_position)
 	return aim.normalized() if aim.length() > 0.05 else to.normalized()
+
+## O corpo (esfera de `STEER_RADIUS` na altura do joelho) anda reto daqui até `p` sem bater no cenário?
+func _clear_to(p: Vector3) -> bool:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var s := SphereShape3D.new()
+	s.radius = STEER_RADIUS
+	q.shape = s
+	q.collision_mask = 1
+	q.transform = Transform3D(Basis(), global_position + Vector3.UP * 0.6)
+	q.motion = _flat(p - global_position)
+	return get_world_3d().direct_space_state.cast_motion(q)[0] >= 1.0
+
+## Quanto falta andar: pelo caminho da malha até o fim dele (sem caminho, em linha reta até `goal`).
+func _path_left(goal: Vector3) -> float:
+	if _path.is_empty():
+		return _flat(goal - global_position).length()
+	var i := mini(_path_i, _path.size() - 1)
+	var left := _flat(_path[i] - global_position).length()
+	for k in range(i, _path.size() - 1):
+		left += _flat(_path[k + 1] - _path[k]).length()
+	return left
 
 ## Sem malha de navegação: se há parede à frente, vira para o lado que está livre.
 func _avoid(dir: Vector3) -> Vector3:

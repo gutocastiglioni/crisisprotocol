@@ -336,11 +336,15 @@ def ladder_actions(sk):
 
 def actions(sk):
     """nome -> lista de (frame, pose). Caminhadas, cambalhota, escalada e fuzil saem por IK (sk = esqueleto)."""
+    import heroine_cutscene as CS
+    import heroine_drop as DR
     import heroine_gait as G
+    import heroine_hurt as HU
     import heroine_moves as M
     import heroine_m79 as GL
     import heroine_rifle as RF
     import heroine_shotgun as SG
+    import heroine_strike as ST
 
     idle_breath = merge(IDLE, {"Chest": (-1.5, 0, 0), "Head": (2, 4, 0), "loc": (0, -0.004, 0)})
     aim_sway = merge(AIM, {"Chest": (0, 1.5, 0), "UpperArm_R": (1, 0, 0), "UpperArm_L": (1, 0, 0)})
@@ -360,6 +364,9 @@ def actions(sk):
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
     dodge_l = M.dodge_side_keys(A, sk)
     ladder_up_keys, ladder_down_keys, ladder_idle_keys = ladder_actions(sk)
+    # sair pelo topo: beirada do alçapão (rebordo) ou do mezanino (piso); entrar = o mesmo ao contrário
+    ladder_out = M.ladder_out_keys(A, sk, ladder_idle_keys[0][1], M.LADDER_LIP)
+    ladder_out_low = M.ladder_out_keys(A, sk, ladder_idle_keys[0][1], 0.0, "LadderOutLow")
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
@@ -382,6 +389,10 @@ def actions(sk):
         "LadderUp": ladder_up_keys,
         "LadderDown": ladder_down_keys,
         "LadderIdle": ladder_idle_keys,
+        "LadderOut": ladder_out,
+        "LadderIn": M.reverse(ladder_out),
+        "LadderOutLow": ladder_out_low,
+        "LadderInLow": M.reverse(ladder_out_low),
         "ClimbUp": M.climb_keys(A, sk),
         "Mantle": M.mantle_keys(A, sk),
         "RifleHold": [(0, hold), (30, hold_breath), (60, hold)],
@@ -390,10 +401,18 @@ def actions(sk):
         "ShotgunShoot": SG.shoot_keys(A, sk, rifle_aim),
         "M79Shoot": GL.shoot_keys(A, sk, rifle_aim),
         "Pickup": RF.pickup_keys(A, sk, hold),
-        "Assassinate": M.assassinate_keys(A, sk),
-        "CritStrike": M.crit_strike_keys(A, sk),
+        "PickupPistol": DR.pickup_keys(A, sk),
+        "Assassinate": ST.assassinate_keys(A, sk),
+        "CritStrike": ST.crit_strike_keys(A, sk),
         "Hit": [(0, IDLE), (3, HIT), (14, IDLE)],
+        **HU.hit_keys(A),
+        "StaggerBack": HU.stagger_back_keys(A, sk),
+        "StaggerFwd": HU.stagger_fwd_keys(A, sk),
+        "GetUpFront": HU.getup_front_keys(A, sk),
+        "GetUpBack": HU.getup_back_keys(A, sk),
         "Dazed": dazed_keys(),
+        "HatchOpen": CS.hatch_open_keys(A, sk),
+        "Shocked": CS.shocked_keys(A),
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],
     }
 

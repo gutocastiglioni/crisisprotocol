@@ -52,6 +52,18 @@ func _build_supports() -> void:
 		beam.position = Vector3(0, (FLOOR_Y - 0.8) * 0.5, -PLATFORM_D * 0.45)
 		beam.rotation.x = -atan2(FLOOR_Y - 0.8, PLATFORM_D * 0.9)
 		bracket.add_child(beam)
+		# colisão da viga: o corredor do labirinto passa por baixo do mezanino (ela não atravessa a viga)
+		var body := StaticBody3D.new()
+		body.collision_layer = 1
+		body.collision_mask = 0
+		body.set_meta("surface", "wall")
+		body.transform = beam.transform
+		var col := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = box.size
+		col.shape = shape
+		body.add_child(col)
+		bracket.add_child(body)
 		add_child(bracket)
 
 

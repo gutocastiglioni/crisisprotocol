@@ -365,6 +365,37 @@ def build_pistol(mb):
     mb.box(w + t * 0.126 + u * 0.018, a, u, (0.007, 0.012, 0.004), "pistol", hand)
 
 
+# silenciador rosqueado na boca da pistola (da caixa de paraquedas do telhado): começo e comprimento ao longo do cano,
+# meia-largura do octógono e altura do eixo do cano
+SUPPRESSOR = (0.186, 0.15, 0.0155, 0.06)
+
+
+def suppressed_muzzle_position():
+    w, t, _, u = pistol_frame()
+    t0, length, _, h = SUPPRESSOR
+    return w + t * (t0 + length + 0.005) + u * h
+
+
+def build_suppressor(mb):
+    """Tubo sextavado sem tampas (12 triângulos: o orçamento do corpo conta todas as armas) na boca da pistola; a de
+    trás encosta no ferrolho e a da frente fica aberta (o furo do cano)."""
+    w, t, _, u = pistol_frame()
+    hand = {"Hand_R": 1}
+    t0, length, r, h = SUPPRESSOR
+    t = t.normalized()
+    u = (u - t * u.dot(t)).normalized()
+    side = t.cross(u).normalized()
+    ends = []
+    for at in (t0, t0 + length):
+        c = w + t * at + u * h
+        ends.append([mb._vert(c + (u * math.cos(k * math.pi / 3) + side * math.sin(k * math.pi / 3)) * r, hand) for k in range(6)])
+    for k in range(6):
+        k1 = (k + 1) % 6
+        mb._face([ends[0][k], ends[0][k1], ends[1][k1], ends[1][k]],
+                 [mb.atlas.uv("pistol", k / 6, 0), mb.atlas.uv("pistol", (k + 1) / 6, 0),
+                  mb.atlas.uv("pistol", (k + 1) / 6, 1), mb.atlas.uv("pistol", k / 6, 1)], MAT_BODY)
+
+
 RIGID_UPPER = ("Arm", "Hand", "Neck", "Head")  # braços, pistola e cabeça não passam pelo remap de altura
 
 
@@ -395,6 +426,8 @@ def build_weapon(bone_names, kind):
     mb = MeshBuilder(bone_names)
     if kind == "pistol":
         build_pistol(mb)
+    elif kind == "pistol_sd":
+        build_suppressor(mb)  # só o silenciador: o jogo mostra junto com a malha da pistola
     elif kind == "shotgun":
         import heroine_rifle
         import heroine_shotgun

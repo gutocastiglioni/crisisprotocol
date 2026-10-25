@@ -108,11 +108,16 @@ func test_ladder_climb_action() -> void:
 	Input.action_release("move_back")
 	check(player.model.state == "ladder_down", "animação de descer escada (ladder_down)", player.model.state)
 	
-	# 4. Chegar ao topo da escada (dismount para o piso da passarela)
-	moves._ladder_y = ladder.height + 0.1
+	# 4. Chegar ao alto da escada: sai pela beira do mezanino (LadderOutLow, sem rebordo) até de pé no piso
+	moves._ladder_y = ladder.height
 	Input.action_press("move_forward")
 	moves.update(0.05)
 	Input.action_release("move_forward")
+	check(moves.mode == "ladder_out" and player.model.state == "ladder_out_low", "no alto: sai pela beira do mezanino", "%s %s" % [moves.mode, player.model.state])
+	for i in 40:
+		if moves.mode == "":
+			break
+		moves.update(0.1)
 	check(moves.mode == "", "desmontou da escada ao atingir o topo")
 	check(not player.model.holstered, "arma desarma do coldre após sair da escada")
 	check(absf(player.global_position.y - (ladder.global_position.y + ladder.height)) < 0.1, "jogadora está em cima do mezanino")
@@ -418,11 +423,23 @@ func test_rear_crates_and_ladder_discovery() -> void:
 	var walk_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(0, 0.9, 6.0), Vector3(0, 0.9, 9.5), 1))
 	check(not walk_hit.is_empty() and walk_hit.collider.get_meta('surface', '') == 'crate', 'caminhada direta para trás é bloqueada por caixas')
 	
-	# 3. Flanco direito bloqueado (não permite contornar pela direita da escada)
-	var right_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(3.6, 0.9, 7.0), Vector3(3.6, 0.9, 10.5), 1))
-	check(not right_hit.is_empty() and right_hit.collider.get_meta('surface', '') == 'crate', 'flanco direito é fechado por caixas')
+	# 3. A frente do labirinto (Level.MAZE, linha 0) fecha o fundo do galpão em toda a largura, sem fresta (fora a do nicho
+	# da escada do mezanino, que não se liga ao labirinto)
+	var open_front := []
+	var x := Level.MAZE_X0 - Level.MAZE_CELL * 0.5 + 0.05
+	var niche_x := Level.maze_cell(Level.maze_ladder_cell().x, 0).x
+	while x < Level.SIZE * 0.5 - 0.25:  # até a face de dentro da parede da direita
+		if absf(x - niche_x) < Level.MAZE_CELL * 0.5 + 0.05:
+			x += 0.1
+			continue
+		for y in [0.3, 0.9, 1.6, 2.4]:
+			var front_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, y, 5.6), Vector3(x, y, 9.0), 1))
+			if front_hit.is_empty() or front_hit.collider.get_meta('surface', '') != 'crate':
+				open_front.append(Vector2(x, y))
+		x += 0.1
+	check(open_front.is_empty(), 'a frente do labirinto de caixas é fechada (sem fresta fora o nicho da escada)', str(open_front.slice(0, 6)))
 	
-	# 4. Corredor traseiro de acesso à base da escada está livre e permite montagem
+	# 4. O nicho da escada do mezanino (pela frente) está livre e permite montagem
 	var ladder_pos := catwalk.ladder.global_position
 	var mount_pos := ladder_pos + catwalk.ladder.ladder_out * 0.45
 	var mount_info: Dictionary = catwalk.ladder.can_mount(mount_pos)

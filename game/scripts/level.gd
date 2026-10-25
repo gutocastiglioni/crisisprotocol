@@ -11,6 +11,8 @@ const TEX := {
 	"chest": preload("res://assets/textures/chest.png"),
 	"chest_shotgun": preload("res://assets/textures/chest_shotgun.png"),
 	"chest_m79": preload("res://assets/textures/chest_m79.png"),
+	"drop_crate": preload("res://assets/textures/drop_crate.png"),
+	"chute": preload("res://assets/textures/chute.png"),
 }
 const SIZE := 26.0
 const WALL_H := 5.2
@@ -67,24 +69,14 @@ static func block(parent: Node, size: Vector3, pos: Vector3, tex: String, scale 
 	return body
 
 
-static func build(parent: Node) -> void:
+## Monta o galpão, o telhado (com o alçapão por onde ela entra) e a sala dos clones atrás da plataforma de carga.
+## Devolve {"hatch": Hatch, "lab": CloneLab}.
+static func build(parent: Node) -> Dictionary:
 	var h := SIZE * 0.5
 	block(parent, Vector3(SIZE, 0.4, SIZE), Vector3(0, -0.2, 0), "concrete", 0.35)
-	for s in [-1, 1]:
-		block(parent, Vector3(SIZE, WALL_H, 0.4), Vector3(0, WALL_H * 0.5, s * h), "wall", 0.5)
-		if s == 1:
-			block(parent, Vector3(0.4, WALL_H, SIZE), Vector3(s * h, WALL_H * 0.5, 0), "wall", 0.5)
-	# Barreira de contenção física espessa atrás da parede sul (z=13.0) para prevenir saída do mapa
-	var back_barrier := StaticBody3D.new()
-	back_barrier.collision_layer = 1
-	back_barrier.collision_mask = 0
-	var barrier_col := CollisionShape3D.new()
-	var barrier_shape := BoxShape3D.new()
-	barrier_shape.size = Vector3(SIZE + 4.0, WALL_H * 2.0, 4.0)
-	barrier_col.shape = barrier_shape
-	back_barrier.add_child(barrier_col)
-	back_barrier.position = Vector3(0, WALL_H, h + 2.0)
-	parent.add_child(back_barrier)
+	block(parent, Vector3(SIZE, WALL_H, 0.4), Vector3(0, WALL_H * 0.5, h), "wall", 0.5)
+	block(parent, Vector3(0.4, WALL_H, SIZE), Vector3(h, WALL_H * 0.5, 0), "wall", 0.5)
+	_north_wall(parent)
 	# parede oeste com a porta para o pátio da mata (segunda sala) e o pátio em si
 	Yard.west_wall(parent)
 	Yard.build(parent)
@@ -104,53 +96,113 @@ static func build(parent: Node) -> void:
 	]
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
-	_rear_crates(parent)
-	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar) e a faixa de perigo na frente dela
-	block(parent, Vector3(6.0, 1.3, 2.0), Vector3(0, 0.65, -h + 1.2), "concrete", 0.35)
+	_dividers(parent)
+	_maze(parent)
+	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar; o portão da sala dos clones fica atrás dela)
+	# e a faixa de perigo na frente dela
+	block(parent, Vector3(6.0, CloneLab.FLOOR_Y, 2.0), Vector3(0, CloneLab.FLOOR_Y * 0.5, -h + 1.2), "concrete", 0.35)
 	block(parent, Vector3(6.0, 0.02, 0.6), Vector3(0, 0.01, -10.5), "hazard", 1.0)
 	_details(parent)
 	_lights(parent)
+	var lab := CloneLab.new()
+	parent.add_child(lab)
+	return {"hatch": Roof.build(parent), "lab": lab}
 
 
-## Caixas decorativas de carga empilhadas atrás da heroína.
-## Bloqueiam a visão direta e a linha reta para a escada e mezanino,
-## fazendo parecer inicialmente que não há saída para trás (fundo fechado do galpão).
-## Cria uma chicane com curva em S pela esquerda, exigindo que a heroína circule
-## por trás da pilha de caixas para descobrir a passagem secreta até a escada.
-static func _rear_crates(parent: Node) -> void:
-	var crates: Array = [
-		# --- GRUPO 1: PILHA PRINCIPAL TRASEIRA (bloqueia o centro e a visão direta da escada) ---
-		# Bloqueio em frente à escada (X = 2.2, Z = 9.1, deixando corredor livre em Z = 9.7..10.8)
-		[Vector3(1.5, 1.4, 1.2), Vector3(2.2, 0.7, 9.1), 0.0],
-		[Vector3(1.4, 1.2, 1.1), Vector3(2.18, 2.0, 9.1), 0.03],
-		# Centro-direita (X = 0.85)
-		[Vector3(1.5, 1.4, 1.2), Vector3(0.85, 0.7, 9.1), -0.04],
-		[Vector3(1.3, 1.2, 1.1), Vector3(0.82, 2.0, 9.08), 0.05],
-		# Centro-esquerda (X = -0.45, sobrepondo visualmente a chicane)
-		[Vector3(1.4, 1.4, 1.2), Vector3(-0.45, 0.7, 9.15), 0.06],
-		[Vector3(1.3, 1.2, 1.1), Vector3(-0.48, 2.0, 9.12), -0.04],
+## Parede do fundo (norte) com o vão do portão da sala dos clones na altura da plataforma de carga.
+static func _north_wall(parent: Node) -> void:
+	var h := SIZE * 0.5
+	var gw := CloneLab.GATE_W * 0.5
+	var side := h - gw
+	for s in [-1, 1]:
+		block(parent, Vector3(side, WALL_H, 0.4), Vector3(s * (gw + side * 0.5), WALL_H * 0.5, -h), "wall", 0.5)
+	block(parent, Vector3(gw * 2.0, CloneLab.FLOOR_Y, 0.4), Vector3(0, CloneLab.FLOOR_Y * 0.5, -h), "wall", 0.5)
+	var top := WALL_H - CloneLab.GATE_TOP
+	block(parent, Vector3(gw * 2.0, top, 0.4), Vector3(0, CloneLab.GATE_TOP + top * 0.5, -h), "wall", 0.5)
 
-		# --- GRUPO 2: FECHAMENTO DA LATERAL DIREITA (impede passagem direta pela direita da escada) ---
-		# Caixas empilhadas à direita da escada rente à passarela (X = 3.6)
-		[Vector3(1.4, 1.4, 1.3), Vector3(3.6, 0.7, 9.3), 0.08],
-		[Vector3(1.3, 1.2, 1.2), Vector3(3.58, 2.0, 9.32), -0.05],
-		[Vector3(1.4, 1.4, 1.3), Vector3(3.6, 0.7, 10.6), 0.0],
-		[Vector3(1.3, 1.2, 1.2), Vector3(3.6, 2.0, 10.6), 0.0],
 
-		# --- GRUPO 3: TELA FRONTAL ESQUERDA (Chicane / Esquina Cega que oculta a saída) ---
-		# Caixa interna da tela (X = -1.1, Z = 7.7) - sobrepõe em X a caixa centro-esquerda do Grupo 1
-		[Vector3(1.4, 1.4, 1.2), Vector3(-1.1, 0.7, 7.7), -0.05],
-		[Vector3(1.3, 1.2, 1.1), Vector3(-1.12, 2.0, 7.72), 0.04],
-		# Caixa média da tela (X = -2.3, Z = 7.7)
-		[Vector3(1.4, 1.4, 1.2), Vector3(-2.3, 0.7, 7.7), 0.05],
-		[Vector3(1.3, 1.2, 1.1), Vector3(-2.28, 2.0, 7.68), -0.06],
-		# Caixa externa e caixote baixo de apoio (X = -3.4, Z = 7.8)
-		[Vector3(1.3, 1.4, 1.2), Vector3(-3.4, 0.7, 7.8), -0.08],
-		[Vector3(1.2, 1.2, 1.1), Vector3(-3.42, 2.0, 7.82), 0.06],
-		[Vector3(1.1, 0.8, 1.0), Vector3(-4.4, 0.4, 8.0), 0.15],
-	]
-	for c in crates:
-		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
+## Labirinto de caixas no começo da fase, no fundo do galpão: a escada do telhado desce no canto da direita (última
+## coluna, linha de trás) e a única saída é pela esquerda, por baixo do mezanino (coluna 0, linha de trás).
+## Uma letra por célula de MAZE_CELL m: '#' = pilha de duas caixas, '.' = corredor.
+## A escada do mezanino (`maze_ladder_cell`) fica num nicho à parte, que só abre para o galpão (a fresta na frente):
+## do labirinto não se chega nela (os lados são caixa e atrás dela uma parede de caixas, `_seal`, fecha o vão para o
+## corredor de baixo do mezanino). Para pegar o sniper por trás ela sai do labirinto e dá a volta por fora.
+## As pilhas passam do alcance de pendurar (Moves hang.top + PlayerMoves.GRAB_MAX): não dá para subir e pular o labirinto.
+## Debaixo do mezanino a de cima é mais baixa (cabe sob o piso dele).
+const MAZE := [
+	"#####.######",
+	"#...#.#....#",
+	"#.#.#.#.##.#",
+	"..#.....##..",
+]
+const MAZE_CELL := 1.6
+const MAZE_X0 := -5.6  # centro da coluna 0
+const MAZE_Z0 := 7.2  # centro da linha 0 (a frente)
+const MAZE_STACK := 2.7  # altura da pilha (2,6 debaixo do mezanino)
+## Caixas que dividem o galpão: [centro no chão (x, z), caixas na pilha (2 = 2,4 m, tapa a visão; 1 = só esconde
+## agachada), giro]. Cercam o canto da porta do pátio (Soldier.GUARDS) com uma parede ao sul (z = 0,4) e outra a leste
+## (x = -3,75), cada uma com um vão de 1,6 m (x = -8,4 / z = -8,4); a terceira entrada é a quina perto da coluna.
+## Dentro, caixas baixas para chegar agachada; fora, uma parede curta separa o canto do baú da M16 do meio do galpão.
+const DIVIDERS := [
+	[Vector2(-12.2, 0.4), 2, 0.02], [Vector2(-11.0, 0.4), 2, -0.03], [Vector2(-9.8, 0.4), 2, 0.01],
+	[Vector2(-7.0, 0.4), 2, -0.02], [Vector2(-5.8, 0.4), 1, 0.03],
+	[Vector2(-3.75, -12.2), 2, 0.03], [Vector2(-3.75, -11.0), 2, -0.01], [Vector2(-3.75, -9.8), 1, 0.02],
+	[Vector2(-3.75, -7.0), 2, -0.03], [Vector2(-3.75, -5.8), 2, 0.01],
+	[Vector2(-7.4, -3.6), 1, 0.25], [Vector2(-9.6, -5.2), 1, -0.2], [Vector2(-6.4, -11.4), 1, 0.1],
+	# parede curta separando o canto do baú da M16 do meio do galpão (termina em x = 9: a ronda da ala leste passa ao lado)
+	[Vector2(6.0, -2.6), 2, 0.02], [Vector2(7.2, -2.6), 2, -0.02], [Vector2(8.4, -2.6), 1, 0.04],
+]
+const DIVIDER_CRATE := 1.22  # um pouco mais que o passo de 1,2 m: vizinhas encostadas, sem fresta para a visão
+
+
+## Centro da célula (coluna, linha) do labirinto, no chão.
+static func maze_cell(c: int, r: int) -> Vector3:
+	return Vector3(MAZE_X0 + c * MAZE_CELL, 0, MAZE_Z0 + r * MAZE_CELL)
+
+
+## Célula do nicho onde fica o pé da escada do mezanino.
+static func maze_ladder_cell() -> Vector2i:
+	return Vector2i(roundi((Catwalk.LADDER_X - MAZE_X0) / MAZE_CELL), roundi((Catwalk.FRONT_Z - 0.4 - MAZE_Z0) / MAZE_CELL))
+
+
+static func _maze(parent: Node) -> void:
+	_seal(parent)
+	for r in MAZE.size():
+		var row: String = MAZE[r]
+		for c in row.length():
+			if row[c] != "#":
+				continue
+			var at := maze_cell(c, r)
+			# variação fixa por célula: as pilhas não ficam alinhadas como tijolos
+			# vizinhas encostadas (sem fresta para a visão nem para o tiro)
+			var k := float((c * 7 + r * 13) % 5) / 4.0 - 0.5
+			var size := Vector3(MAZE_CELL + 0.02, 1.4, MAZE_CELL + 0.02)
+			var under := absf(at.x) - size.x * 0.5 < Catwalk.PLATFORM_W * 0.5 and at.z + size.z * 0.5 > Catwalk.FRONT_Z
+			var top_h := (Catwalk.FLOOR_Y - 0.4 if under else MAZE_STACK) - size.y
+			block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, k * 0.03)
+			var top := Vector3(size.x - 0.04, top_h, size.z - 0.04)
+			block(parent, top, at + Vector3(-k * 0.02, size.y + top_h * 0.5, k * 0.02), "crate", 1.0 / top.x, -k * 0.04)
+
+
+static func _dividers(parent: Node) -> void:
+	for d in DIVIDERS:
+		var at := Vector3(d[0].x, 0, d[0].y)
+		var size := Vector3.ONE * DIVIDER_CRATE
+		block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, d[2])
+		if d[1] > 1:
+			# a de cima um pouco menor e torta, como nas pilhas do labirinto
+			var top := Vector3(size.x - 0.04, size.y, size.z - 0.04)
+			block(parent, top, at + Vector3(0, size.y + top.y * 0.5, 0), "crate", 1.0 / top.x, -d[2] * 1.5)
+
+
+## Parede de caixas logo atrás da escada do mezanino, do chão até embaixo do piso dele: o nicho da escada não se liga ao
+## corredor de baixo do mezanino.
+static func _seal(parent: Node) -> void:
+	var at := maze_cell(maze_ladder_cell().x, 0)
+	var h := Catwalk.FLOOR_Y - 0.4
+	var depth := MAZE_Z0 + (maze_ladder_cell().y + 0.5) * MAZE_CELL - (Catwalk.FRONT_Z + 0.1)
+	var size := Vector3(MAZE_CELL + 0.02, h, depth)
+	block(parent, size, Vector3(at.x, h * 0.5, Catwalk.FRONT_Z + 0.1 + depth * 0.5), "crate", 1.0 / size.x)
 
 
 ## Detalhes sem colisão (acima do alcance ou rente à parede): vigas, canos e luminárias.
@@ -160,14 +212,17 @@ static func _details(parent: Node) -> void:
 	for k in range(-2, 3):
 		var a := k * 5.0
 		for s in [-1, 1]:
+			if s == -1 and absf(a) < CloneLab.GATE_W * 0.5:
+				continue  # vão do portão da sala dos clones
 			_prop(parent, BoxMesh.new(), Vector3(0.3, WALL_H, 0.22), Vector3(a, WALL_H * 0.5, s * (h - 0.31)), "wall", 1.5)
 			_prop(parent, BoxMesh.new(), Vector3(0.22, WALL_H, 0.3), Vector3(s * (h - 0.31), WALL_H * 0.5, a), "wall", 1.5)
 	# canos correndo pelas paredes do fundo e da direita, com uma descida até o chão
-	# (de parede a parede; o da direita fica mais baixo para não cruzar os do fundo no canto)
-	for y in [3.05, 3.4]:
-		_pipe(parent, Vector3(-h + 0.2, y, -h + 0.55), Vector3(h - 0.2, y, -h + 0.55), 0.09 if y > 3.2 else 0.13)
+	# (de parede a parede; os do fundo passam por cima do portão da sala dos clones; o da direita fica mais baixo para não
+	# cruzar os do fundo no canto)
+	for y in [4.55, 4.76]:
+		_pipe(parent, Vector3(-h + 0.2, y, -h + 0.55), Vector3(h - 0.2, y, -h + 0.55), 0.09 if y > 4.6 else 0.13)
 	_pipe(parent, Vector3(h - 0.55, 2.7, -h + 0.2), Vector3(h - 0.55, 2.7, h - 0.2), 0.11)
-	_pipe(parent, Vector3(6.5, 3.05, -h + 0.55), Vector3(6.5, 0.0, -h + 0.55), 0.13)
+	_pipe(parent, Vector3(6.5, 4.55, -h + 0.55), Vector3(6.5, 0.0, -h + 0.55), 0.13)
 	# treliças do teto (de parede a parede no eixo Z), uma sobre cada fileira de luminárias
 	for x in [-7.0, 0.0, 8.0]:
 		_prop(parent, BoxMesh.new(), Vector3(0.25, 0.3, SIZE - 0.4), Vector3(x, WALL_H - 0.15, 0), "wall", 1.5)
@@ -245,6 +300,10 @@ static func _lights(parent: Node) -> void:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.03, 0.03, 0.04)
 	env.fog_density = 0.035
+	# névoa volumétrica só onde há FogVolume (a neblina rasteira do pátio, Yard._mist)
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.0
+	env.volumetric_fog_length = 80.0
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	var we := WorldEnvironment.new()
 	we.environment = env

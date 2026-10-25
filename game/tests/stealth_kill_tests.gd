@@ -162,6 +162,7 @@ func test_hud_prompts_and_boundaries() -> void:
 	main._process(0.016)
 	check(main._hud_notice.visible and main._hud_notice.text == PlayerStealth.ASSASSINATE_PROMPT, "main.gd exibe ABATE FURTIVO DISPONIVEL no _hud_notice", main._hud_notice.text)
 	var mr: Raptor = main.raptors[0]
+	mr.reset()  # fora da moita da emboscada
 	mr.route.clear()
 	mr.global_position = Vector3(0, 0, 2)
 	mr.start_down()
@@ -222,10 +223,13 @@ func test_soldier_stealth_assassination() -> void:
 	p.global_position = Vector3(0, 0, -3.5)
 	await t._frames(3)
 	check(dummy.can_assassinate(p) and p.stealth_target() == dummy and p.stealth_prompt() == PlayerStealth.ASSASSINATE_PROMPT, "boneco de treino aceita abate furtivo e exibe aviso no HUD")
+	check(not p.crouching and p.model.state != "crouch", "abate furtivo começado em pé termina em pé")
+	p.crouching = true
 	p.fire()
 	check(p.moves.mode == "assassinate", "atirar sem mirar no boneco de treino inicia assassinate")
 	await t._frames(total_frames)
 	check(dummy.dead and dummy.model.is_ragdoll() and key.state == "dropped", "boneco de treino morre em ragdoll no abate furtivo e solta a chave")
+	check(p.crouching and p.model.state == "crouch", "abate furtivo começado agachada termina agachada", p.model.state)
 	GameMode.set_mode(GameMode.ARCADE)
 
 
@@ -266,6 +270,7 @@ func test_raptor_stealth_knockdown_and_crit_strike() -> void:
 
 	# Quase no fim do tempo no chão: iniciar o 2º golpe trava o raptor para não contra-atacar no meio da animação
 	r._t = Raptor.DOWN_TIME - 0.03
+	p.crouching = true
 	p.fire()
 	check(p.moves.mode == "crit_strike" and p.model.state == "crit_strike", "2º ataque sem mirar inicia crit_strike", p.moves.mode)
 	check(r._stealth_locked, "crit_strike trava o raptor caído para impedir contra-ataque durante o golpe")
@@ -276,6 +281,7 @@ func test_raptor_stealth_knockdown_and_crit_strike() -> void:
 	await t._frames(crit_frames)
 	check(r.dead and r.health == 0 and r.state == "dead" and killed[0], "golpe crítico em sequência mata o velociraptor", "vida=%d estado=%s" % [r.health, r.state])
 	check(r.model.is_ragdoll() and r.collision_layer == 0, "velociraptor finalizado vira ragdoll")
+	check(p.crouching and p.model.state == "crouch", "golpe crítico começado agachada termina agachada", p.model.state)
 	check(other.alert_level() == 0 and other.aware == 0.0, "finalização com golpe crítico também é silenciosa")
 
 	# Se o raptor já estava muito ferido (<= 70% da vida), o primeiro abate furtivo já o mata direto

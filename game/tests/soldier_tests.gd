@@ -16,6 +16,7 @@ func run(runner: SceneTree) -> void:
 	await test_soldier_drops()
 	await test_soldier_catwalk_los_and_boundaries()
 	await test_soldier_idle_head_look()
+	await test_post_guard_holds_until_spotted()
 	await test_stealth_alert_states_and_corpse_detection()
 	await test_searching_enemy_spots_on_noise_or_nearby_kill()
 	await test_enemies_separation_and_no_overlap()
@@ -236,9 +237,9 @@ func test_shared_alarm() -> void:
 			break
 	for i in 120:
 		await t._frames(1)
-		if s.state == "hunt":
+		if s.state == "investigate":
 			break
-	check(s.state == "hunt" and s.alert_level() == 2, "raptor grita: o soldado vem caçar", s.state)
+	check(s.state == "investigate" and s.alert_level() == 2, "raptor grita: o soldado vem procurar (andando, com calma)", s.state)
 	pr = await _spawn_soldier(Vector3(0, 0, 8))
 	w = pr[2]
 	s = pr[1]
@@ -422,8 +423,52 @@ func test_soldier_idle_head_look() -> void:
 	check(s.model.head_look != null and absf(s.model.get_head_yaw()) > 0.05, "modelo 3D recebe rotação da cabeça via HeadLook")
 
 
+## Guarda de posto (`hold_post`, os da porta do pátio): barulho só o faz parar e olhar para lá, sem sair do lugar; depois
+## volta a vigiar o posto. Só quando a vê entra em combate. O guarda comum (sem `hold_post`) vai investigar o mesmo barulho.
+func test_post_guard_holds_until_spotted() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -18), Vector3.ZERO, PI)  # atrás dele e longe: não a vê
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	s.hold_post = true
+	var post := s.global_position
+	var states := {}
+	var moved := 0.0
+	var turned := 0.0
+	s.hear_noise(Vector3(6, 0, 0), 26.0, 2.2)
+	for i in 240:
+		await t._frames(1)
+		states[s.state] = true
+		moved = maxf(moved, Enemy._flat(s.global_position - post).length())
+		turned = maxf(turned, absf(angle_difference(s.rotation.y, PI)))
+	check(states.has("suspicious") and not states.has("investigate"), "guarda de posto: o barulho só o faz olhar (não vai investigar)", str(states.keys()))
+	check(moved < 0.3, "guarda de posto não sai do lugar com o barulho", "%.2f m" % moved)
+	check(turned > 0.5, "guarda de posto vira para o lado do barulho", "%.2f rad" % turned)
+	for i in 600:
+		await t._frames(1)
+		if s.state == "idle" and absf(angle_difference(s.rotation.y, PI)) < 0.1:
+			break
+	check(s.state == "idle" and absf(angle_difference(s.rotation.y, PI)) < 0.1, "depois volta a vigiar para onde vigiava", "%s %.2f" % [s.state, s.rotation.y])
+	# viu: sai do posto como qualquer guarda
+	p.global_position = Vector3(0, 0, 6)
+	p.reset_physics_interpolation()
+	for i in 120:
+		await t._frames(1)
+		if s.in_combat():
+			break
+	check(s.in_combat() and s.alert_t > 0.0, "guarda de posto que a vê entra em combate", s.state)
+	# o guarda comum vai investigar o mesmo barulho
+	var pr2 := await _spawn_soldier(Vector3(0, 0, -18), Vector3.ZERO, PI)
+	var s2: Soldier = pr2[1]
+	s2.hear_noise(Vector3(6, 0, 0), 26.0, 2.2)
+	for i in 180:
+		await t._frames(1)
+		if s2.state == "investigate":
+			break
+	check(s2.state == "investigate", "guarda comum vai investigar o barulho", s2.state)
+
+
 func test_stealth_alert_states_and_corpse_detection() -> void:
-	var pr := await _spawn_soldier(Vector3(0, 0, -25), Vector3(0, 0, 0), PI)
+	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3(0, 0, 0), PI)  # atrás dele, ainda no chão do mundo de teste (40 m)
 	var p: Player = pr[0]
 	var sentry: Soldier = pr[1]
 	var w: Node3D = pr[2]

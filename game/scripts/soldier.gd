@@ -32,12 +32,18 @@ const COMBAT := ["alert", "engage", "hit"]
 ## - 1 fazendo ronda na ala leste/fundo
 ## - 1 parado de sentinela à direita do baú da M16 no canto superior direito
 ## - 2 parados de sentinela guardando o portão da primeira fase
+## - 4 de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
+##   raptors, atrás das paredes de caixas (`Level.DIVIDERS`): no vão do sul, no vão do leste, no canto do fundo e na quina
 const GUARDS := [
 	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, -2.5), Vector3(-7.0, 0, -6.5)]},
 	{"route": [Vector3(10.5, 0, -2), Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0)]},
 	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
 	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": []},
 	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": []},
+	{"pos": Vector3(-9.6, 0, -2.2), "rot_y": -2.7, "route": [], "hold": true},
+	{"pos": Vector3(-6.0, 0, -8.4), "rot_y": -PI * 0.5, "route": [], "hold": true},
+	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true},
+	{"pos": Vector3(-5.6, 0, -1.6), "rot_y": -2.74, "route": [], "hold": true},
 ]
 
 var model: HeroineModel
@@ -84,6 +90,10 @@ func _ready() -> void:
 	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
 	can_stealth = true
 	arrival_dist = 0.7
+	# gente procura com calma: só os 2 mais perto saem quando um dá o alarme, andando, e vasculham mais pontos
+	alarm_responders = 2
+	alarm_walks = true
+	search_sweeps = 3
 	engage_dist = ENGAGE_DIST + rng.randf_range(-1.0, 1.0)
 	keep_dist = KEEP_DIST + rng.randf_range(-0.4, 0.4)
 	_enemy_ready()
@@ -117,13 +127,13 @@ func _physics_process(delta: float) -> void:
 			head_yaw = lerpf(head_yaw, 0.0, 1.0 - exp(-5.0 * delta))
 			if model:
 				model.set_head_look(head_yaw, 0.0)
-		elif state in ["look", "idle"]:
+		elif state in ["look", "idle", "search"]:
 			if model:
 				model.set_head_look(head_yaw, head_pitch)
 	if not in_combat() and model and model.aim_pitch and absf(model.aim_pitch.pitch) > 0.01:
 		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, 0.0, 1.0 - exp(-6.0 * delta))
 	
-	if _is_target_elevated() and global_position.y < 1.2 and global_position.x > -12.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
+	if in_combat() and _is_target_elevated() and global_position.y < 1.2 and global_position.x > -12.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
 		if velocity.z > 0.0:
 			velocity.z = 0.0
 	EnemyCrowd.apply_separation(self)
@@ -132,7 +142,8 @@ func _physics_process(delta: float) -> void:
 		_clamp_to_bounds()
 
 
-## Trava física: soldados no chão nunca saem do mapa, não caem no vácuo e não entram debaixo do mezanino
+## Trava física: soldados no chão nunca saem do mapa nem caem no vácuo; em combate com ela no mezanino não entram
+## debaixo dele (perderiam a linha de tiro). Procurando, entram (corredor e pé da escada).
 func _clamp_to_bounds() -> void:
 	if global_position.y < 1.2:
 		global_position.y = maxf(global_position.y, 0.0)
@@ -140,7 +151,7 @@ func _clamp_to_bounds() -> void:
 			velocity.y = 0.0
 		if global_position.x > -12.6:
 			global_position.x = clampf(global_position.x, -12.4, 12.4)
-			var max_z := Catwalk.FRONT_Z - 1.0 if _is_target_elevated() else 12.4
+			var max_z := Catwalk.FRONT_Z - 1.0 if in_combat() and _is_target_elevated() else 12.4
 			global_position.z = clampf(global_position.z, -12.4, max_z)
 
 
@@ -202,26 +213,20 @@ func _update_pitch(delta: float) -> void:
 		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, target_pitch, 1.0 - exp(-10.0 * delta))
 
 
+## Ela no mezanino ou em cima das caixas: Enemy._search_goal manda um ao pé da escada e os outros a pontos do chão de
+## onde se vê o lugar.
 func start_hunt(at: Vector3) -> void:
 	if _has_target() and _sees_target():
 		start_alert()
 		return
-	var goal := at
-	if global_position.y < 1.2 and at.y > 1.8 and at.z >= Catwalk.FRONT_Z - 1.0:
-		goal.y = 0.0
-		goal.z = minf(goal.z, Catwalk.FRONT_Z - 5.0)
-	super.start_hunt(goal)
+	super.start_hunt(at)
 
 
 func start_investigate(at: Vector3) -> void:
 	if _has_target() and _sees_target():
 		start_alert()
 		return
-	var goal := at
-	if global_position.y < 1.2 and at.y > 1.8 and at.z >= Catwalk.FRONT_Z - 1.0:
-		goal.y = 0.0
-		goal.z = minf(goal.z, Catwalk.FRONT_Z - 5.0)
-	super.start_investigate(goal)
+	super.start_investigate(at)
 
 
 ## Combate: mira, atira em rajadas e se mexe (avança, recua ou anda de lado).
@@ -395,7 +400,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 		return
 	if not in_combat() and _has_target():
 		_raise_alarm()  # levou tiro sem tê-la notado: já sabe onde ela está e avisa os outros
-	model.hit()
+	model.hit(dir)
 	_enter("hit", "Idle", 0.05)
 	model.set_aim(true)
 

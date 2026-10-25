@@ -1,5 +1,6 @@
 """Texturas 256x256 do galpão (visual de PS2 do começo): piso de concreto, parede de painéis metálicos,
-caixa de madeira, faixa de perigo e os baús de armas (metal verde-oliva, estêncil do M16 e da escopeta). Cada uma cobre
+caixa de madeira, faixa de perigo, os baús de armas (metal verde-oliva, estêncil do M16 e da escopeta) e a caixa de
+paraquedas do telhado com a lona (drop_crate, chute). Cada uma cobre
 ~2 m no mundo (world_uv_scale 0.5). Mais os decalques de buraco de bala (bullet_holes.png) e os quadros dos efeitos
 do tiro (shot_fx.png: clarões e baforada) e do sangue (blood_fx.png: esguicho, respingo, gotas, poça), com alfa.
 
@@ -150,9 +151,10 @@ def crate():
         for bx, by in ((8, 8), (21, 21)):
             d.ellipse([cx + bx - 3, cy + by - 3, cx + bx + 3, cy + by + 3], fill=(140, 144, 148))
     # estêncil
-    d.rectangle([84, 100, 172, 156], fill=(46, 38, 30))
-    d.text((104, 104), "SC", fill=(186, 164, 120), font_size=34)
-    d.text((92, 140), "BIOLAB-07", fill=(170, 150, 110), font_size=11)
+    d.rectangle([70, 98, 186, 158], fill=(46, 38, 30))
+    for text, ty, size, fill in (("NORTH", 102, 26, (186, 164, 120)), ("COUNTRY", 132, 20, (170, 150, 110))):
+        tw = d.textlength(text, font_size=size)
+        d.text(((N - tw) / 2, ty), text, fill=fill, font_size=size)
     return img
 
 
@@ -535,12 +537,15 @@ def blood_fx():
 
 
 def main():
+    import drop_textures  # caixa de paraquedas e lona (usa os blocos daqui)
+
     OUT.mkdir(parents=True, exist_ok=True)
     for name, fn in (("concrete", concrete), ("wall", wall), ("crate", crate), ("hazard", hazard), ("chest", chest),
                      ("chest_shotgun", chest_shotgun), ("bullet_holes", bullet_holes),
                      ("grass", grass), ("dirt", dirt), ("bark", bark), ("leaves", leaves), ("rock", rock),
                      ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx),
-                     ("blood_fx", blood_fx), ("chest_m79", chest_m79), ("scorch", scorch)):
+                     ("blood_fx", blood_fx), ("chest_m79", chest_m79), ("scorch", scorch),
+                     ("drop_crate", drop_textures.drop_crate), ("chute", drop_textures.chute)):
         fn().save(OUT / f"{name}.png")
         print(OUT / f"{name}.png")
 

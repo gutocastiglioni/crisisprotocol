@@ -26,11 +26,18 @@ const STATES := {
 	"dodge_l": "DodgeL", "dodge_r": "DodgeR", "dodge_back": "DodgeBack",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
 	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
+	"pickup_pistol": "PickupPistol",
 	"assassinate": "Assassinate", "crit_strike": "CritStrike",
 	"death": "Death", "dazed": "Dazed", "ladder_up": "LadderUp", "ladder_down": "LadderDown", "ladder_idle": "LadderIdle",
+	"ladder_out": "LadderOut", "ladder_in": "LadderIn", "ladder_out_low": "LadderOutLow", "ladder_in_low": "LadderInLow",
+	"hatch_open": "HatchOpen", "shocked": "Shocked",
+	"stagger_back": "StaggerBack", "stagger_fwd": "StaggerFwd", "getup_front": "GetUpFront", "getup_back": "GetUpBack",
 }
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
-const SCALED := ["walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "ladder_up", "ladder_down"]
+const SCALED := [
+	"walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "ladder_up", "ladder_down",
+	"getup_front", "getup_back",
+]
 ## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
@@ -40,6 +47,8 @@ const CARRY := [
 const WEAPONS := {
 	"pistol": ["Pistol", "Muzzle"], "m16": ["M16", "RifleMuzzle"], "shotgun": ["Shotgun", "ShotgunMuzzle"],
 	"m79": ["M79", "M79Muzzle"], "sniper": ["Sniper", "SniperMuzzle"],
+	# só no corpo da heroína: o silenciador da caixa de paraquedas (`silenced`), mostrado junto com a malha da pistola
+	"pistol_sd": ["PistolSD", "SDMuzzle"],
 }
 ## armas longas: pose de carregar, mira e pegar do fuzil (escopeta e M79 têm o cabo e a telha nos mesmos pontos)
 const LONG_GUNS := ["m16", "shotgun", "m79", "sniper"]
@@ -57,11 +66,17 @@ const STEP_DB := {
 const AIR := ["jump", "fall"]
 const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem
 ## entram mais rápido (a mistura longa com a corrida cruzava as pernas no começo do pulinho)
-const QUICK := ["dodge_l", "dodge_r", "dodge_back", "assassinate", "crit_strike"]
+const QUICK := ["dodge_l", "dodge_r", "dodge_back", "assassinate", "crit_strike", "stagger_back", "stagger_fwd"]
 const XFADE := 0.15
 const QUICK_XFADE := 0.05
+## levantar do chão: sem mistura com o estado de antes do ragdoll (o PoseFade parte da pose em que o corpo caiu)
+const GETUP := ["getup_front", "getup_back"]
+const GETUP_SPEED := 1.25  # o levantar é desenhado com calma; no jogo toca um pouco mais rápido
+## reação ao golpe (aditiva, ver art/heroine_hurt.py): lado do corpo atingido -> animação
+const HIT_ANIMS := {"front": "HitFront", "back": "HitBack", "left": "HitL", "right": "HitR"}
+const HIT_XFADE := 0.06
 ## som ao entrar no estado
-const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb"}
+const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb", "ladder_out": "climb", "ladder_in": "climb", "ladder_out_low": "climb", "ladder_in_low": "climb"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
@@ -75,9 +90,16 @@ var head_look: HeadLook
 var anim_player: AnimationPlayer
 var tree: AnimationTree
 var ragdoll: Ragdoll
+var pose_fade: PoseFade
 var state := "idle"
 var weapon := "pistol"
 var holstered := false
+## a pistola tem silenciador (SupplyDrop): a malha dele aparece na boca dela, cano mais à frente e o tiro abafado
+var silenced := false:
+	set(v):
+		silenced = v
+		if is_node_ready():
+			_show_weapon()
 var _meshes := {}
 var _muzzles := {}
 var _aim := 0.0
@@ -93,6 +115,7 @@ var _foot_up := [false, false]
 var _foot_rest := 0.08  # altura do tornozelo em repouso (lida do esqueleto)
 var _air_t := 0.0
 var _quiet := true  # montando (_ready): a primeira arma na mão não faz barulho
+var _hit_slot := false  # alterna as duas entradas de cada direção do golpe
 
 
 func _ready() -> void:
@@ -120,6 +143,8 @@ func _ready() -> void:
 	_setup_braid()
 	ragdoll = Ragdoll.create(skeleton)
 	ragdoll.hit_owner = get_parent()
+	pose_fade = PoseFade.new()
+	skeleton.add_child(pose_fade)
 	set_weapon(weapon)
 	_foot_bones = [skeleton.find_bone("Foot_L"), skeleton.find_bone("Foot_R")]
 	_foot_rest = skeleton.get_bone_global_rest(_foot_bones[0]).origin.y
@@ -243,19 +268,36 @@ func _build_tree() -> void:
 	bt.connect_node("long_shoot", 0, "a_shoot_pose_m16")
 	bt.connect_node("long_shoot", 1, "heavy_shoot")
 	bt.connect_node("shoot_pose", 1, "long_shoot")
-	bt.add_node("a_hit", _anim("Hit"))
 	bt.add_node("aim", aim)
 	bt.add_node("shoot", shoot)
-	bt.add_node("hit", hit)
 	bt.connect_node("aim", 0, "carry")
 	bt.connect_node("aim", 1, "aim_pose")
 	bt.connect_node("shoot", 0, "aim")
 	bt.connect_node("shoot", 1, "shoot_pose")
+	# golpe: somado por cima de tudo (andando, agachada, mirando), sem endireitar o corpo. Cada direção tem duas
+	# entradas que se alternam: o golpe seguinte começa do zero misturando com o anterior, sem salto.
+	var hit_dir := AnimationNodeTransition.new()
+	hit_dir.xfade_time = HIT_XFADE
+	var j := 0
+	for d in HIT_ANIMS:
+		for k in ["a", "b"]:
+			hit_dir.add_input(d + k)
+			bt.add_node("a_hit_" + d + k, _anim(HIT_ANIMS[d]))
+			hit_dir.set_input_reset(j, true)
+			j += 1
+	bt.add_node("hit_dir", hit_dir)
+	j = 0
+	for d in HIT_ANIMS:
+		for k in ["a", "b"]:
+			bt.connect_node("hit_dir", j, "a_hit_" + d + k)
+			j += 1
+	bt.add_node("hit", AnimationNodeAdd2.new())
 	bt.connect_node("hit", 0, "shoot")
-	bt.connect_node("hit", 1, "a_hit")
+	bt.connect_node("hit", 1, "hit_dir")
 	bt.connect_node("output", 0, "hit")
 	tree.tree_root = bt
 	tree.active = true
+	tree.set("parameters/hit/add_amount", 0.0)  # nada até o primeiro golpe (a entrada inicial tocaria uma vez)
 	state = ""
 	set_state("idle")
 
@@ -354,7 +396,8 @@ func set_state(s: String, speed_scale := 1.0) -> void:
 	if STATE_SOUNDS.has(s) and not (s == "jump" and state in AIR):
 		Sfx.play(self, STATE_SOUNDS[s])
 	state = s
-	(tree.tree_root as AnimationNodeBlendTree).get_node("base").xfade_time = QUICK_XFADE if s in QUICK else XFADE
+	var xf := 0.0 if s in GETUP else (QUICK_XFADE if s in QUICK else XFADE)
+	(tree.tree_root as AnimationNodeBlendTree).get_node("base").xfade_time = xf
 	tree.set("parameters/base/transition_request", s)
 
 
@@ -400,7 +443,7 @@ func holster(on: bool) -> void:
 func _show_weapon() -> void:
 	for w in _meshes:
 		if _meshes[w]:
-			_meshes[w].visible = w == weapon and not holstered
+			_meshes[w].visible = (w == weapon or w == gun()) and not holstered
 	if _pump:
 		_pump.visible = weapon == "shotgun" and not holstered
 
@@ -420,26 +463,47 @@ func is_aimed() -> bool:
 
 func shoot() -> void:
 	tree.set("parameters/shoot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
-	Sfx.play(self, weapon + "_shot", muzzle_position())
+	Sfx.play(self, gun() + "_shot", muzzle_position())
 	if weapon == "shotgun":
 		_pump_t = 0.0
 		_ejected = false
 		_pump_sounds = 0
 
 
-func hit() -> void:
-	tree.set("parameters/hit/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+## Golpe que anda na direção `dir` (do atirador para ela; zero = de frente), com força `strength` (1 = normal).
+func hit(dir := Vector3.ZERO, strength := 1.0) -> void:
+	_hit_slot = not _hit_slot
+	tree.set("parameters/hit_dir/transition_request", hit_side(dir) + ("a" if _hit_slot else "b"))
+	tree.set("parameters/hit/add_amount", strength)
 	Sfx.play(self, "impact_flesh", global_position + Vector3.UP * 1.2)
 	_stop_pump()  # o golpe tira a mão da telha (a animação do tiro é cortada)
 
 
+## Lado do corpo que o golpe pegou: "front", "back", "left" ou "right".
+func hit_side(dir: Vector3) -> String:
+	var flat := Vector3(dir.x, 0.0, dir.z)
+	if flat.length_squared() < 0.0001:
+		return "front"
+	var along := flat.dot(-global_basis.z)  # > 0: vai para onde ela olha = veio de trás
+	var across := flat.dot(global_basis.x)  # > 0: vai para a direita dela = veio da esquerda
+	if absf(along) >= absf(across):
+		return "back" if along > 0.0 else "front"
+	return "left" if across > 0.0 else "right"
+
+
 func muzzle_position() -> Vector3:
-	var m: Node3D = _muzzles.get(weapon)
+	var m: Node3D = _muzzles.get(gun())
 	return m.global_position if m else global_position + Vector3.UP * 1.3
 
 
+## Arma na mão com o que ela tem: "pistol_sd" = pistola com silenciador (se o corpo tem a malha dele), senão `weapon`.
+func gun() -> String:
+	return "pistol_sd" if weapon == "pistol" and silenced and _meshes.get("pistol_sd") else weapon
+
+
 func is_weapon_visible(w: String) -> bool:
-	return _meshes[w] != null and _meshes[w].visible
+	var k := gun() if w == weapon else w
+	return _meshes[k] != null and _meshes[k].visible
 
 
 ## Liga o ragdoll (golpe `impulse` em `at`): com golpe, pancada e o corpo batendo no chão logo depois; sem golpe
@@ -453,6 +517,7 @@ func start_ragdoll(impulse: Vector3, at: Variant = null) -> void:
 	if head_look:
 		head_look.influence = 0.0
 	tree.active = false
+	pose_fade.recording = true
 	ragdoll.start(impulse, at)
 
 
@@ -464,14 +529,17 @@ func fling_ragdoll(vel: Vector3, at: Variant = null) -> void:
 	if head_look:
 		head_look.influence = 0.0
 	tree.active = false
+	pose_fade.recording = true
 	await ragdoll.fling(vel, at)
 
 
-func stop_ragdoll() -> void:
+func stop_ragdoll(next := "idle", speed := 1.0) -> void:
 	ragdoll.stop()
+	pose_fade.recording = false
+	pose_fade.weight = 0.0
 	tree.active = true
 	state = ""
-	set_state("idle")
+	set_state(next, speed)
 	set_aim(false)
 	holster(false)
 	_aim = 0.0
@@ -483,6 +551,40 @@ func stop_ragdoll() -> void:
 
 func is_ragdoll() -> bool:
 	return ragdoll.is_simulating_physics()
+
+
+## Transformação global do osso `bone` no corpo do ragdoll (o corpo fica deslocado do osso por body_offset).
+func ragdoll_bone(bone: String) -> Transform3D:
+	var pb: PhysicalBone3D = ragdoll.bodies[bone]
+	return pb.global_transform * pb.body_offset.affine_inverse()
+
+
+## Caída de bruços? A frente do peito do ragdoll aponta para o chão.
+func ragdoll_face_down() -> bool:
+	var rest := skeleton.global_basis * skeleton.get_bone_global_rest(skeleton.find_bone("Chest")).basis
+	var turn := ragdoll_bone("Chest").basis.orthonormalized() * rest.orthonormalized().inverse()
+	return (turn * -global_basis.z).y < 0.0
+
+
+## Levanta do ragdoll tocando GetUpFront (de bruços) ou GetUpBack, partindo da pose em que o corpo ficou.
+## `old_skeleton` = transformação global do esqueleto antes de a cápsula ir para o lugar do corpo.
+func get_up(face_down: bool, old_skeleton: Transform3D) -> void:
+	stop_ragdoll("getup_front" if face_down else "getup_back", GETUP_SPEED)
+	holster(true)
+	pose_fade.begin(old_skeleton)
+
+
+func getup_length(face_down: bool) -> float:
+	return anim_player.get_animation(STATES["getup_front" if face_down else "getup_back"]).length / GETUP_SPEED
+
+
+## Onde fica o quadril (cabeça do osso Hips) no quadro 0 do levantar, com o modelo onde está agora.
+func getup_hips(face_down: bool) -> Vector3:
+	var a := anim_player.get_animation(STATES["getup_front" if face_down else "getup_back"])
+	for t in a.get_track_count():
+		if a.track_get_type(t) == Animation.TYPE_POSITION_3D and a.track_get_path(t).get_concatenated_subnames() == "Hips":
+			return skeleton.global_transform * a.position_track_interpolate(t, 0.0)
+	return global_position
 
 func set_head_look(y: float, p: float = 0.0) -> void:
 	if head_look:

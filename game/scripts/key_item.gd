@@ -4,6 +4,8 @@ extends Node3D
 ## brilhando (estrela de 4 pontas que pisca de tempos em tempos, com uma luzinha) para ser vista de longe. Ela chegando
 ## perto (PICK_RANGE), pega sozinha: a chave vai para o bolso (`Player.add_key(id)`) e o sinal `picked` faz o main
 ## mostrar o item na tela (Inspect.show_item). Abre o baú com `Chest.lock` igual ao `id`. Reinício: volta a ficar escondida.
+## Na mão de um morto (`hold`, Corpse): aparece parada onde ele a segura e se pega igual; `shine` desligado = sem a
+## estrela nem a luz (a do guerrilheiro só brilha depois que os raptors da emboscada morrem).
 
 signal picked(key: KeyItem)
 
@@ -13,6 +15,7 @@ const FALL_TIME := 0.45
 const TWINKLE := 1.3  # s entre uma piscada e outra
 const BRASS := Color(0.85, 0.66, 0.26)
 const TAG := Color(0.75, 0.12, 0.1)
+const SPARKLE := preload("res://shaders/sparkle.gdshader")
 
 @export var id := "container"
 @export var kind := "key"  # "key" ou "keycard"
@@ -20,8 +23,14 @@ const TAG := Color(0.75, 0.12, 0.1)
 @export var description := "Chave de latao com etiqueta vermelha.
 Abre o cadeado de algum container."
 
-## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, brilhando) ou "taken"
+## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, brilhando), "held" (na mão de um morto) ou "taken"
 var state := "hidden"
+## brilha (estrela e luz) no chão ou na mão; desligado, fica só a chave
+var shine := true:
+	set(v):
+		shine = v
+		if _light:
+			_show(visible)
 var _model: Node3D
 var _sparkle: MeshInstance3D
 var _glow: MeshInstance3D
@@ -160,21 +169,17 @@ func _ready() -> void:
 	_show(false)
 
 
-## Estrela de 4 pontas (o clarão de shot_fx.png) virada para a câmera, somando luz.
+## Estrela de 4 pontas (o clarão de shot_fx.png) virada para a câmera, somando luz. Parede ou caixa na frente esconde
+## (sparkle.gdshader puxa só a profundidade um pouco para a câmera: não corta no chão nem some sob o corpo caído).
 func _star(size: float, color: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(size, size)
 	mi.mesh = q
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	m.albedo_texture = Fx.SPRITES
-	m.uv1_scale = Vector3(1.0 / 3.0, 1.0, 1.0)
-	m.albedo_color = color
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	m.no_depth_test = true  # o brilho aparece mesmo com a chave atrás do corpo caído
+	var m := ShaderMaterial.new()
+	m.shader = SPARKLE
+	m.set_shader_parameter("sprites", Fx.SPRITES)
+	m.set_shader_parameter("color", color)
 	mi.material_override = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position.y = 0.12
@@ -184,7 +189,7 @@ func _star(size: float, color: Color) -> MeshInstance3D:
 
 func _show(on: bool) -> void:
 	visible = on
-	_light.visible = on and state == "dropped"
+	_light.visible = on and state in ["dropped", "held"] and shine
 
 
 ## O dono morreu: a chave cai de `from` até o chão embaixo e começa a brilhar.
@@ -207,13 +212,24 @@ func drop(from: Vector3) -> void:
 		Sfx.play(self, "key_drop", global_position))
 
 
+## Na mão de um morto, em `xf` (no tamanho do chão: precisa aparecer no punho fechado).
+func hold(xf: Transform3D) -> void:
+	state = "held"
+	global_transform = xf
+	_model.scale = Vector3.ONE * WORLD_SCALE
+	_model.rotation.y = 0.0
+	_model.position.y = 0.0
+	_t = 0.0
+	_show(true)
+
+
 ## Brilho da estrela (0..1) agora: uma piscada forte a cada TWINKLE s.
 func twinkle() -> float:
 	return pow(maxf(0.0, sin(_t * TAU / TWINKLE)), 6.0)
 
 
 func _process(delta: float) -> void:
-	if state != "dropped":
+	if not state in ["dropped", "held"] or not shine:
 		_sparkle.visible = false
 		_glow.visible = false
 		return
@@ -228,7 +244,7 @@ func _process(delta: float) -> void:
 
 ## Está ao alcance de quem está em `pos` para pegar com o botão de interação.
 func can_pick(pos: Vector3) -> bool:
-	if state != "dropped":
+	if not state in ["dropped", "held"]:
 		return false
 	var d := pos - global_position
 	return Vector2(d.x, d.z).length() < PICK_RANGE and absf(d.y) < 1.4
@@ -245,4 +261,7 @@ func take(p: Player) -> void:
 ## Reinício: volta a ficar com o dono.
 func reset() -> void:
 	state = "hidden"
+	global_basis = Basis.IDENTITY
+	_model.scale = Vector3.ONE * WORLD_SCALE
+	_model.position.y = 0.006
 	_show(false)

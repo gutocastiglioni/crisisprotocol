@@ -15,6 +15,7 @@ const KEYS := {
 	"switch_weapon": [KEY_Q, KEY_TAB],
 	"crouch": [KEY_C, KEY_CTRL],
 	"reset": [KEY_R],
+	"pause": [KEY_ESCAPE],
 	"zoom_in": [KEY_X, KEY_SPACE],
 	"zoom_out": [KEY_O, KEY_C],
 	"debug_hit": [KEY_H],
@@ -40,7 +41,7 @@ const JOY_BUTTONS := {
 	"switch_weapon": JOY_BUTTON_BACK,
 	"aim": JOY_BUTTON_LEFT_SHOULDER,
 	"shoot": JOY_BUTTON_RIGHT_SHOULDER,
-	"reset": JOY_BUTTON_START,
+	"pause": JOY_BUTTON_START,  # menu de pausa (reiniciar fica lá dentro; no teclado R segue reiniciando)
 	"sprint": JOY_BUTTON_LEFT_STICK,
 }
 # ação: [eixo, sentido]

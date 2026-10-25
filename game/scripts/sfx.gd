@@ -8,6 +8,7 @@ const DIR := "res://assets/sounds/"
 ## nome -> variações (0 = arquivo único), volume (dB), distância até onde toca cheio (m), alcance (m) e sorteio de tom
 const SOUNDS := {
 	"pistol_shot": {"n": 0, "db": 0.0, "unit": 6.0, "max": 80.0, "pitch": 0.05},
+	"pistol_sd_shot": {"n": 0, "db": -6.0, "unit": 2.0, "max": 18.0, "pitch": 0.06},
 	"m16_shot": {"n": 0, "db": -2.0, "unit": 6.0, "max": 80.0, "pitch": 0.06},
 	"shotgun_shot": {"n": 0, "db": 2.0, "unit": 7.0, "max": 90.0, "pitch": 0.04},
 	"sniper_shot": {"n": 0, "db": 3.0, "unit": 8.0, "max": 110.0, "pitch": 0.04},
@@ -23,6 +24,9 @@ const SOUNDS := {
 	"lock_rattle": {"n": 0, "db": -3.0, "ui": true},
 	"unlock": {"n": 0, "db": -3.0, "ui": true},
 	"item_get": {"n": 0, "db": -6.0, "ui": true},
+	"keypad_beep": {"n": 0, "db": -10.0, "ui": true},
+	"keypad_error": {"n": 0, "db": -8.0, "ui": true},
+	"keypad_ok": {"n": 0, "db": -6.0, "ui": true},
 	"casing_brass": {"n": 3, "db": -16.0, "unit": 1.0, "max": 12.0, "pitch": 0.08},
 	"casing_shell": {"n": 2, "db": -12.0, "unit": 1.0, "max": 12.0, "pitch": 0.06},
 	"impact_concrete": {"n": 3, "db": -8.0, "unit": 2.0, "max": 30.0, "pitch": 0.1},

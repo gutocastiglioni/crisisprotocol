@@ -46,7 +46,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 		return
 	health -= amount
 	if health > 0:
-		model.hit()
+		model.hit(dir)
 		return
 	dead = true
 	_shape.set_deferred("disabled", true)

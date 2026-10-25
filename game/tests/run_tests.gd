@@ -23,6 +23,12 @@ const SURVIVAL_TESTS := preload("res://tests/survival_tests.gd")
 const KEY_TESTS := preload("res://tests/key_tests.gd")
 const STEALTH_KILL_TESTS := preload("res://tests/stealth_kill_tests.gd")
 const SNIPER_LADDER_TESTS := preload("res://tests/sniper_ladder_tests.gd")
+const START_TESTS := preload("res://tests/start_tests.gd")
+const LAB_GATE_TESTS := preload("res://tests/lab_gate_tests.gd")
+const AMBUSH_TESTS := preload("res://tests/ambush_tests.gd")
+const HURT_TESTS := preload("res://tests/hurt_tests.gd")
+const SUPPLY_DROP_TESTS := preload("res://tests/supply_drop_tests.gd")
+const PAUSE_TESTS := preload("res://tests/pause_tests.gd")
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -95,6 +101,8 @@ func _run() -> void:
 	await test_strafe_right()
 	print("== movimentos novos e fuzil")
 	await MOVES_TESTS.new().run(self)
+	print("== golpes e levantar")
+	await HURT_TESTS.new().run(self)
 	print("== escopeta, buracos de bala e disparos")
 	await WEAPONS_TESTS.new().run(self)
 	print("== container trancado, chave e M79")
@@ -111,6 +119,16 @@ func _run() -> void:
 	await STEALTH_KILL_TESTS.new().run(self)
 	print("== sniper, passarela e escada")
 	await SNIPER_LADDER_TESTS.new().run(self)
+	print("== começo da fase: telhado, alçapão, labirinto, queda e sala dos clones")
+	await START_TESTS.new().run(self)
+	print("== sala dos clones: plaquetas, tanque vazio do alossauro, chave do painel e portão da pedreira com código")
+	await LAB_GATE_TESTS.new().run(self)
+	print("== menu de pausa (START / ESC)")
+	await PAUSE_TESTS.new().run(self)
+	print("== caixa de paraquedas, pistola com silenciador e neblina do telhado")
+	await SUPPLY_DROP_TESTS.new().run(self)
+	print("== guerrilheiro morto, chave e emboscada no pátio")
+	await AMBUSH_TESTS.new().run(self)
 	print("== alossauro e pedreira (última sala)")
 	await ALLOSAURUS_TESTS.new().run(self)
 	print("== sobrevivência: câmera, armas, munição e dano")
@@ -468,7 +486,7 @@ func test_hit_animation() -> void:
 	await _frames(10)
 	p.take_hit(10, Vector3.BACK, p.global_position + Vector3.UP)
 	await _frames(2)
-	# a animação Hit é tocada via OneShot, então não muda o state da base
+	# a reação ao golpe é somada por cima (Add2), então não muda o state da base
 	check(p.health == 90 and not p.dead, "dano não-letal tira vida sem matar")
 	# o teste indireto é que o modelo tem a função hit() chamada e não crashou
 	check(p.model.tree.active, "animação continua ativa após Hit")

@@ -17,6 +17,7 @@ const WEAPON_SCENES := {
 	"sniper": preload("res://assets/characters/sniper.glb"),
 }
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")
+const GLOW := preload("res://shaders/item_glow.gdshader")
 ## faixa de cada tipo (a cor diz a arma de longe)
 const COLORS := {
 	"pistol": Color(1.0, 0.85, 0.25), "m16": Color(1.0, 0.5, 0.15), "shotgun": Color(1.0, 0.25, 0.2),
@@ -26,7 +27,7 @@ const COLORS := {
 ## onde ficam: galpão (as armas dos baús já trazem a munição delas), pátio da mata (na beira da estrada, longe das árvores)
 ## e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de munição dela) ou "health".
 const LAYOUT := [
-	{"pos": Vector3(10.0, 0, 10.5), "kind": "pistol", "amount": 6},
+	{"pos": Vector3(10.4, 0, 10.4), "kind": "pistol", "amount": 6},  # no meio de um corredor do labirinto (Level.MAZE)
 	{"pos": Vector3(-11.5, 0, 3.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-18.0, 0, -3.4), "kind": "shotgun", "amount": 3},
 	{"pos": Vector3(-39.0, 0, -8.2), "kind": "pistol", "amount": 8},
@@ -108,7 +109,7 @@ func fall_to_ground(from: Vector3) -> void:
 		Sfx.play(self, "casing_brass", global_position))
 
 
-## Malha 3D da arma girando com aura colorida e beacon visual.
+## Malha 3D da arma girando, com halo suave no chão e feixe de luz da cor da arma.
 func _build_weapon() -> void:
 	var scene: PackedScene = WEAPON_SCENES[kind]
 	var inst: Node3D = scene.instantiate()
@@ -131,8 +132,31 @@ func _build_weapon() -> void:
 	inst.position = -aabb.get_center() + Vector3(0, 0.08, 0)
 	_body.add_child(holder)
 	var c: Color = COLORS.get(kind, Color.WHITE)
-	_glow(Vector3(0.5, 0.012, 0.5), Vector3(0, 0.01, 0), c)
-	_glow(Vector3(0.06, 0.22, 0.06), Vector3(0, 0.11, 0), c)
+	# brilho fora do _body: fica no chão sem girar nem balançar
+	var halo := _soft(Vector2(1.1, 1.1), c, false)
+	halo.rotation_degrees.x = -90.0
+	halo.position.y = 0.015
+	for yaw in [0.0, 90.0]:
+		var beam := _soft(Vector2(0.28, 1.1), c * Color(1, 1, 1, 0.45), true)
+		beam.rotation_degrees.y = yaw
+		beam.position.y = 0.55
+
+
+## Quadro de brilho suave (item_glow.gdshader) preso ao item, não ao corpo que gira.
+func _soft(size: Vector2, color: Color, beam: bool) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = size
+	mi.mesh = q
+	var m := ShaderMaterial.new()
+	m.shader = GLOW
+	m.set_shader_parameter("color", color)
+	m.set_shader_parameter("beam", beam)
+	m.set_shader_parameter("phase", _t)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	return mi
 
 
 func _box(size: Vector3, pos: Vector3, tex: String, tint: Color) -> void:
