@@ -1,6 +1,7 @@
 class_name Haze
 ## Ar pesado do galpão (jeito PS2 do começo, Syphon Filter/MGS2): debaixo de cada luminária um feixe de luz falso
-## (cone aberto somado à cena, `light_shaft.gdshader`) e um halo em volta do painel.
+## (cone aberto somado à cena, `light_shaft.gdshader`) e um halo em volta do painel; no galpão inteiro uma névoa rala (`air`,
+## FogVolume) que só aparece onde as lâmpadas iluminam (precisa de `volumetric_fog_enabled` no ambiente, ver Level).
 ## Nada aqui tem corpo, sombra nem luz própria: é só desenho, não muda a furtividade (`Player.visibility`) nem os tiros.
 ## Igual nos dois visuais: os materiais são próprios, fora da troca de shader do `Gfx`.
 
@@ -9,6 +10,7 @@ const TOP_R := 0.38  # raio do cone no painel
 const SPREAD := 0.5  # quanto o raio cresce por metro de queda
 const STRENGTH := 0.14  # brilho do feixe no topo, numa lâmpada de força 2
 const HALO := 1.3  # lado do halo do painel (m)
+const AIR_DENSITY := 0.04  # névoa do galpão: rala (o fundo continua visível), acende perto das lâmpadas
 
 
 ## Um feixe e um halo para cada [ponto do painel aceso, cor, força da lâmpada]; o pé do cone é o chão (y = 0).
@@ -21,12 +23,29 @@ static func build(parent: Node, lamps: Array) -> Array[Node3D]:
 		root.position = l[0]
 		root.add_to_group("haze")
 		var h: float = l[0].y
-		var k: float = l[2] / 2.0
+		# lâmpada colorida (azul, laranja) parece mais fraca: compensa pela luminância da cor
+		var k: float = l[2] / 2.0 * 0.85 / maxf((l[1] as Color).get_luminance(), 0.2)
 		root.add_child(_shaft(h, l[1], k))
 		root.add_child(_halo(l[1], k))
 		parent.add_child(root)
 		out.append(root)
 	return out
+
+
+## Névoa rala em toda a caixa `size` (centro do chão em `at`): sem brilho próprio, só a luz das lâmpadas a mostra.
+static func air(parent: Node, at: Vector3, size: Vector3) -> FogVolume:
+	var fv := FogVolume.new()
+	fv.name = "HazeAir"
+	fv.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	fv.size = size
+	fv.position = at + Vector3.UP * size.y * 0.5
+	var m := FogMaterial.new()
+	m.density = AIR_DENSITY
+	m.albedo = Color(0.8, 0.76, 0.68)
+	m.edge_fade = 0.05
+	fv.material = m
+	parent.add_child(fv)
+	return fv
 
 
 ## Raio do cone a `drop` m abaixo do painel.

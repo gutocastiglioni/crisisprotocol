@@ -252,8 +252,9 @@ static func _details(parent: Node) -> void:
 		glow.rotation_degrees.x = 90.0  # virado para baixo
 		glow.position = p + Vector3.UP * PANEL_Y
 		parent.add_child(glow)
-	# ar pesado: feixe de luz e halo debaixo de cada painel
+	# ar pesado: feixe de luz e halo debaixo de cada painel e névoa rala no galpão inteiro
 	Haze.build(parent, LAMPS.map(func(l: Array) -> Array: return [l[0] + Vector3.UP * PANEL_Y, l[1], l[2]]))
+	Haze.air(parent, Vector3.ZERO, Vector3(SIZE - 0.8, WALL_H, SIZE - 0.8))
 
 
 static func _prop(parent: Node, mesh: PrimitiveMesh, size: Vector3, pos: Vector3, tex: String, scale := 0.5) -> MeshInstance3D:

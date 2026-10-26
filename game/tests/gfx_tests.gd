@@ -233,7 +233,7 @@ func test_bite_ragdoll_finite() -> void:
 
 
 ## Feixes de luz do galpão: um por lâmpada, do painel ao chão, só desenho (sem corpo, luz, sombra nem partículas)
-## e fora da troca de shader do Gfx.
+## e fora da troca de shader do Gfx; névoa rala no galpão.
 func test_haze() -> void:
 	var w: Node3D = await t._fresh_world()
 	for c in w.get_children():
@@ -258,4 +258,11 @@ func test_haze() -> void:
 		check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "feixe %d sem corpo (não para tiro nem visão)" % i)
 		check(root.find_children("*", "Light3D", true, false).is_empty(), "feixe %d sem luz própria" % i)
 		check(root.find_children("*", "CPUParticles3D", true, false).is_empty() and root.find_children("*", "GPUParticles3D", true, false).is_empty(), "feixe %d sem partículas" % i)
+	# névoa rala no galpão inteiro: cobre as três lâmpadas e fica dentro das paredes (não vaza para o pátio)
+	var air := w.find_child("HazeAir", true, false) as FogVolume
+	check(air != null and (air.material as FogMaterial).density > 0.0, "névoa rala dentro do galpão")
+	if air:
+		var box := AABB(air.global_position - air.size * 0.5, air.size)
+		check(Level.LAMPS.all(func(l: Array) -> bool: return box.has_point(l[0])), "névoa cobre as lâmpadas do galpão")
+		check(box.position.x > -Level.SIZE * 0.5 and box.end.x < Level.SIZE * 0.5, "névoa não passa da parede para o pátio", str(box))
 	Gfx.set_mode(before, w)
