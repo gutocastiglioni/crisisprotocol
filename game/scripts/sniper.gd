@@ -165,6 +165,14 @@ func in_combat() -> bool:
 	return state in COMBAT
 
 
+## Sensor de perigo: com o laser nela, sobe junto com a mira até o disparo (que não erra quem não esquiva); recarregando
+## o ferrolho ou sem vê-la, pouco.
+func _threat() -> float:
+	if state == "aim_lock" and _lost_t <= SEES_GRACE:
+		return 0.35 + 0.65 * clampf(aim_progress / AIM_LOCK_TIME, 0.0, 1.0)
+	return 0.25 if _lost_t <= SEES_GRACE else 0.05
+
+
 func _play(anim: String, _blend := 0.15, speed := 1.0, _restart := false) -> void:
 	if not model:
 		return

@@ -344,9 +344,43 @@ func _move_aiming(dir: Vector3, gait: String, _delta: float) -> void:
 		model.set_state("walk", (1.0 if local.z < 0.0 else -1.0) * speed / Moves.speed("walk"))
 
 
-## Um tiro nela: acerta com chance que cai com a distância, ao longo da rajada, se ela está agachada ou correndo;
-## rolando, nunca. Sem linha livre o tiro bate na parede. `at_her` = false: supressão, atira no último lugar onde a
-## viu (não acerta; bate na cobertura ou passa).
+## Chance de um tiro a `dist` m acertá-la sendo o `nth` da rajada (0 = o primeiro): cai com a distância, ao longo da
+## rajada, agachada ou correndo; rolando, nunca.
+func _hit_chance(dist: float, nth: int) -> float:
+	var chance := clampf(0.8 - dist * 0.03, 0.15, 0.7) * pow(BURST_DECAY, nth)
+	if target.crouching:
+		chance *= 0.8
+	if Vector2(target.velocity.x, target.velocity.z).length() > 3.0:
+		chance *= 0.7
+	if target.is_dodging():
+		chance = 0.0
+	return chance
+
+
+## Sensor de perigo: chance de pelo menos um tiro da rajada (a de agora ou a próxima) acertá-la. Sem vê-la a supressão
+## não acerta; fora do alcance, nada; ainda erguendo a arma, um pouco menos.
+func _threat() -> float:
+	if _lost_t >= 0.4:
+		return 0.05
+	var dist := muzzle_dist()
+	if dist >= FIRE_RANGE:
+		return 0.0
+	var first := _burst_i if _burst > 0 else 0
+	var left := _burst if _burst > 0 else (BURST_SHOTS[0] + BURST_SHOTS[1]) / 2
+	var miss := 1.0
+	for i in left:
+		miss *= 1.0 - _hit_chance(dist, first + i)
+	return (1.0 - miss) * (1.0 if state == "engage" and model.is_aimed() else 0.6)
+
+
+## Distância do cano ao peito dela (a mesma do sorteio do tiro).
+func muzzle_dist() -> float:
+	var chest := target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	return model.muzzle_position().distance_to(chest)
+
+
+## Um tiro nela: acerta com a chance de `_hit_chance`. Sem linha livre o tiro bate na parede. `at_her` = false:
+## supressão, atira no último lugar onde a viu (não acerta; bate na cobertura ou passa).
 func _fire(at_her := true) -> void:
 	shots_fired += 1
 	model.shoot()
@@ -360,15 +394,7 @@ func _fire(at_her := true) -> void:
 	var space := get_world_3d().direct_space_state
 	var block := space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
 	var dist := muzzle.distance_to(chest)
-	var chance := clampf(0.8 - dist * 0.03, 0.15, 0.7) * pow(BURST_DECAY, _burst_i)
-	if not at_her:
-		chance = 0.0
-	if target.crouching:
-		chance *= 0.8
-	if Vector2(target.velocity.x, target.velocity.z).length() > 3.0:
-		chance *= 0.7
-	if target.is_dodging():
-		chance = 0.0
+	var chance := _hit_chance(dist, _burst_i) if at_her else 0.0
 	var end := chest
 	var hit_her := false
 	if block:

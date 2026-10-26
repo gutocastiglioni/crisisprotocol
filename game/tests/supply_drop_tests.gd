@@ -230,7 +230,7 @@ func test_main_layout() -> void:
 	while main.inspect.busy:
 		await t.process_frame
 	main._process(0.016)
-	t.check(main._hud_weapon.text.begins_with("PISTOLA SIL."), "HUD: PISTOLA SIL.", main._hud_weapon.text)
+	t.check(main._weapon_icon.kind == "pistol_sd", "HUD: modelo da pistola com silenciador", main._weapon_icon.kind)
 	main.reset_all()
 	await t._frames(3)
 	t.check(not p.silencer and drop.has_item(), "R: caixa fechada com a pistola, ela com a pistola comum")

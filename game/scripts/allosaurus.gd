@@ -108,6 +108,13 @@ func in_combat() -> bool:
 	return state in COMBAT
 
 
+## Sensor de perigo: pisada/mordida/cabeçada/cauda ao alcance = certo; a investida vem de longe. O rugido não fere.
+func _threat() -> float:
+	if state in ["roar", "roar_at"]:
+		return 0.3
+	return _melee_threat(["stomp", "bite", "hold", "throw", "headbutt", "tail"], BITE_RANGE.y, ["charge"])
+
+
 func _play(anim: String, blend := 0.15, speed := 1.0, restart := false) -> void:
 	model.play(anim, blend, speed, restart)
 

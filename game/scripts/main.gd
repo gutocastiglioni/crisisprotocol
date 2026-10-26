@@ -28,6 +28,8 @@ extends Node3D
 ##   (tank = o tanque vazio do alossauro; plate/plate_allo/lab_key salvam quando a tela aparece; keypad = sem a chave,
 ##   keypad_on = com ela, digitando; keypad_ok = código certo; gate_open = depois, o portão abrindo: --at escolhe o quadro)
 ## Menu de pausa:  --shot=pause  (ESC / START no jogo; salva quando o menu aparece)
+## HUD:  --shot=danger|danger_roll  (no galpão, na mira dos guardas da porta do pátio: sensor de perigo subindo e o radar
+##   com eles; danger_roll rola em 2,6 s e a barra cai — --at escolhe o quadro)
 
 const POST_SHADER := preload("res://shaders/psx_post.gdshader")
 const MOVE_SHOTS := [
@@ -85,9 +87,12 @@ var ended := false
 var game_over := false
 var _hud: CanvasLayer
 var _post: ColorRect
-var _hud_health: Label
+var _hud_health: HudBar
 var _hud_help: Label
-var _hud_weapon: Label
+var _hud_weapon: Label  # munição ao lado do modelo da arma (só no perfil de sobrevivência)
+var _weapon_icon: WeaponIcon
+var danger: DangerMeter
+var radar: Radar
 var _hud_stealth: Label
 var _hud_headshot: Label
 var _hud_notice: Label
@@ -250,7 +255,7 @@ func _ready() -> void:
 	key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	drop.picked.connect(func(d: SupplyDrop) -> void: inspect.show_drop(d))
 	lab_key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
-	player.health_changed.connect(func(v: int) -> void: _hud_health.text = "VIDA %d" % v)
+	player.health_changed.connect(_set_health)
 	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
 	player.notice.connect(show_notice)
 	apply_gfx(Gfx.mode)
@@ -301,9 +306,24 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 1
 	_hud = layer
-	_hud_health = _label(layer, "VIDA 100", Vector2(6, 4))
-	_hud_weapon = _label(layer, "PISTOLA", Vector2.ZERO)
-	_hud_weapon.size.x = 64
+	# vida em barra no alto à esquerda e o sensor de perigo logo abaixo; radar no alto à direita; arma embaixo à direita
+	_hud_health = HudBar.new("VIDA", 60.0)
+	_hud_health.position = Vector2(6, 5)
+	_hud_health.colors = [[0.25, Color(1.0, 0.25, 0.2)], [0.5, Color(1.0, 0.82, 0.25)], [1.0, Color(0.4, 0.95, 0.45)]]
+	layer.add_child(_hud_health)
+	_set_health(player.health)
+	danger = DangerMeter.new()
+	danger.player = player
+	danger.position = Vector2(6, 15)
+	layer.add_child(danger)
+	radar = Radar.new()
+	radar.player = player
+	layer.add_child(radar)
+	_weapon_icon = WeaponIcon.new()
+	layer.add_child(_weapon_icon)
+	_hud_weapon = _label(layer, "", Vector2.ZERO)
+	_hud_weapon.add_theme_font_size_override("font_size", 12)
+	_hud_weapon.size.x = 40
 	_hud_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_hud_stealth = _label(layer, "", Vector2.ZERO)
 	# aviso de tiro na cabeça, logo abaixo da mira
@@ -326,8 +346,10 @@ func _build_hud() -> void:
 	_crosshair.grow_vertical = Control.GROW_DIRECTION_BOTH
 	_crosshair.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
 	_crosshair.visible = false
-	# no topo, logo abaixo da vida: embaixo ficava por cima das pernas dela em telas 4:3
-	_hud_help = _label(layer, HELP, Vector2(6, 16))
+	# no topo, logo abaixo da vida e do perigo: embaixo ficava por cima das pernas dela em telas 4:3
+	_hud_help = _label(layer, HELP, Vector2(6, 26))
+	_hud_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # quebra antes do radar (largura em _process)
+	_hud_help.add_theme_constant_override("line_spacing", -4)  # linhas juntas: quebrada, não desce até o rosto dela
 	# atordoada pelo rugido do alossauro: aviso piscando acima do centro
 	_hud_daze = _label(layer, "ATORDOADA", Vector2.ZERO)
 	_hud_daze.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
@@ -562,18 +584,27 @@ func _on_locked(c: Chest) -> void:
 		player.use_key(id)
 
 
-## Arma na mão no canto de cima à direita; no perfil de sobrevivência com a munição dela (vermelha quando está acabando).
-func _update_weapon_hud() -> void:
+func _set_health(v: int) -> void:
+	_hud_health.value = float(v) / Player.MAX_HEALTH
+	_hud_health.tail = str(maxi(v, 0))
+
+
+## Arma na mão no canto de baixo à direita: o modelo dela (WeaponIcon; a pistola com silenciador tem o seu) e, no perfil
+## de sobrevivência, a munição ao lado (vermelha quando está acabando).
+func _update_weapon_hud(area: Vector2) -> void:
 	var kind := player.weapon()
-	var text: String = player.weapon_stats(kind).name
+	_weapon_icon.show_weapon("pistol_sd" if kind == "pistol" and player.silencer else kind, player.model)
+	_weapon_icon.position = Vector2(area.x - WeaponIcon.VIEW.x - 4, area.y - WeaponIcon.VIEW.y - 4)
+	var text := ""
 	var color := Color(0.85, 0.9, 0.8)
 	if GameMode.limited_ammo():
 		var n := player.ammo_of(kind)
-		text += " %d" % n
+		text = str(n)
 		if n <= LOW_AMMO:
 			color = Color(1.0, 0.3, 0.25)
 	_hud_weapon.text = text
 	_hud_weapon.add_theme_color_override("font_color", color)
+	_hud_weapon.position = Vector2(_weapon_icon.position.x - _hud_weapon.size.x - 2, area.y - 4 - roundf((WeaponIcon.VIEW.y + _hud_weapon.size.y) * 0.5))
 
 
 ## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos inimigos.
@@ -629,6 +660,8 @@ func reset_all() -> void:
 	_end_t = -1.0
 	_game_over_t = -1.0
 	_end.visible = false
+	danger.reset()
+	radar.reset()
 	_notice_t = 0.0
 	smelled = false
 	_headshot_t = 0.0
@@ -680,6 +713,13 @@ func _parse_args() -> void:
 	_hud_help.visible = _shot == "idle"
 	if _shot == "idle_compare":
 		_setup_idle_compare()
+	elif _shot in ["danger", "danger_roll"]:
+		# no meio do galpão, de frente para os guardas da porta do pátio (eles a veem e atiram): sensor de perigo e radar
+		player.global_position = Vector3(1.0, 0, -6.0)
+		player.rotation.y = PI * 0.5
+		player.camera_rig.yaw = player.rotation.y
+		player.reset_physics_interpolation()
+		sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	elif _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_setup_soldier_shot()
 	else:
@@ -782,10 +822,13 @@ func _process(delta: float) -> void:
 	elif ladder:
 		var info: Dictionary = ladder.can_mount(player.global_position)
 		_set_prompt(_prompt, "DESCER ESCADA (E)" if info.get("at_top", false) else "SUBIR ESCADA (E)")
-	_update_weapon_hud()
-	# HUD ampliado (apply_gfx): arma no canto de cima à direita e aviso embaixo no centro, em qualquer proporção
+	# HUD ampliado (apply_gfx): arma embaixo à direita, radar em cima à direita e aviso embaixo no centro, em qualquer proporção
 	var area := get_viewport().get_visible_rect().size / _hud.scale
-	_hud_weapon.position = Vector2(area.x - _hud_weapon.size.x - 6, 4)
+	_update_weapon_hud(area)
+	radar.position = Vector2(area.x - Radar.SIZE - 6, 6)
+	_hud_help.size = Vector2(radar.position.x - 12, 0)
+	radar.update(delta)
+	danger.update(delta)
 	_update_stealth_hud(area)
 	_headshot_t = maxf(_headshot_t - delta, 0.0)
 	_hud_headshot.visible = _headshot_t > 0.0
@@ -850,6 +893,12 @@ func _process(delta: float) -> void:
 		"crouch":
 			if at.call(0.05):
 				Input.action_release("crouch")
+		"danger_roll":
+			# a barra no alto (os guardas já atirando): rola (cai depressa) e volta a subir no fim da esquiva
+			if at.call(2.6):
+				Input.action_press("roll")
+			if at.call(2.65):
+				Input.action_release("roll")
 		"roll":
 			if at.call(0.4):
 				Input.action_press("roll")

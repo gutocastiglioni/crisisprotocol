@@ -453,6 +453,28 @@ func alert_level() -> int:
 	if state in ["hunt", "search", "sweep", "investigate"]: return 2
 	return 1 if state == "suspicious" else 0
 
+## Sensor de perigo do HUD (DangerMeter): chance (0..1) de ela levar tiro ou golpe deste inimigo nos próximos instantes.
+## Só em luta, com ela viva, com controle e à mostra (no telhado ou escondida no alto da escada ninguém a acerta);
+## esquivando/rolando nada a acerta (0). Quem herda diz o resto (`_threat`).
+func threat() -> float:
+	if dead or lurking or not in_combat() or not _has_target() or target.dead or target.cutscene or target.is_dodging():
+		return 0.0
+	if _target_hidden():
+		return 0.0
+	return clampf(_threat(), 0.0, 1.0)
+
+func _threat() -> float: return 0.0
+
+## Ameaça de quem ataca de perto: dando um golpe de `strikes` ao alcance (`reach` m, com folga), certa; longe ou só
+## rondando, cresce conforme chega perto (até 0,6 em cima dela). `rush` = investidas que vêm de longe.
+func _melee_threat(strikes: Array, reach: float, rush: Array = []) -> float:
+	var d := _to_target().length()
+	if state in rush:
+		return 0.9
+	if state in strikes:
+		return 1.0 if d < reach * 1.6 else 0.5
+	return clampf(1.0 - (d - reach) / 12.0, 0.0, 1.0) * 0.6
+
 func _update_marker() -> void:
 	if _marker == null: return
 	var lv := alert_level()

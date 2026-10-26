@@ -91,6 +91,11 @@ func in_combat() -> bool:
 	return state in COMBAT
 
 
+## Sensor de perigo: golpe saindo ao alcance = certo; salto/investida vêm de longe.
+func _threat() -> float:
+	return _melee_threat(["bite", "hold", "tail", "counter"], TAIL_REACH, ["leap_prep", "leap", "charge"])
+
+
 func _play(anim: String, blend := 0.15, speed := 1.0, restart := false) -> void:
 	model.play(anim, blend, speed, restart)
 
