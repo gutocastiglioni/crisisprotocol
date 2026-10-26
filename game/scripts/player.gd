@@ -703,8 +703,7 @@ func fire() -> void:
 	var exclude: Array[RID] = [get_rid()]
 	exclude.append_array(model.ragdoll.body_rids())
 	var space := get_world_3d().direct_space_state
-	var moving := Vector2(velocity.x, velocity.z).length() > 0.5
-	var cone := float(stats.spread) + _bloom + (float(stats.move_spread) if moving else 0.0)
+	var cone := aim_spread(stats)
 	_bloom = minf(_bloom + float(stats.bloom), float(stats.max_spread))
 	# dano somado por alvo (os chumbos da escopeta acertam juntos: uma reação só)
 	var hits := {}
@@ -735,6 +734,14 @@ func fire() -> void:
 				headshot.emit(who)
 			else:
 				who.take_hit(h.damage, h.dir, h.at)
+
+
+## Abertura (graus) do cone em que o próximo tiro sai: a da arma + a dos tiros seguidos + andando. A mira (Crosshair) mostra.
+func aim_spread(stats: Dictionary = {}) -> float:
+	if stats.is_empty():
+		stats = weapon_stats(weapon())
+	var moving := Vector2(velocity.x, velocity.z).length() > 0.5
+	return float(stats.spread) + _bloom + (float(stats.move_spread) if moving else 0.0)
 
 
 ## Direção aleatória num cone de `degrees` em volta de `dir` (distribuição uniforme no disco).

@@ -101,7 +101,7 @@ var smelled := false  # o aviso do cheiro de sangue na beira do telhado já apar
 var _headshot_t := 0.0
 var _prompt: Control
 var _prompt_text: Label
-var _crosshair: Label
+var _crosshair: Crosshair
 var _capture := ""
 var _shot := "idle"
 var _t := 0.0
@@ -338,14 +338,9 @@ func _build_hud() -> void:
 	var cross_layer := CanvasLayer.new()
 	cross_layer.layer = 1
 	add_child(cross_layer)
-	_crosshair = _label(cross_layer, "+", Vector2.ZERO)
-	_crosshair.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_crosshair.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_crosshair.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_crosshair.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_crosshair.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_crosshair.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
-	_crosshair.visible = false
+	_crosshair = Crosshair.new()
+	_crosshair.player = player
+	cross_layer.add_child(_crosshair)
 	# no topo, logo abaixo da vida e do perigo: embaixo ficava por cima das pernas dela em telas 4:3
 	_hud_help = _label(layer, HELP, Vector2(6, 26))
 	_hud_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # quebra antes do radar (largura em _process)
@@ -553,7 +548,7 @@ func apply_gfx(m: String) -> void:
 	# o HUD foi feito para 320x240: na resolução maior é ampliado para manter o tamanho na tela
 	var k := float(Gfx.RES[m].y) / 240.0
 	_hud.scale = Vector2(k, k)
-	_crosshair.add_theme_font_size_override("font_size", int(8 * k))
+	_crosshair.ui_scale = k
 	if inspect:
 		inspect.set_ui_scale(k)
 	if pause_menu:
@@ -774,16 +769,7 @@ func _process(delta: float) -> void:
 	if _crosshair == null:
 		return
 	var in_sniper := player.is_sniper_zoomed()
-	_crosshair.visible = player.aiming and player.model.is_aimed() and not in_sniper
-	if _crosshair.visible:
-		var aim_info: Dictionary = player.aim_target_info()
-		if aim_info.has_target:
-			if aim_info.blocked:
-				_crosshair.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
-			else:
-				_crosshair.add_theme_color_override("font_color", Color(1.0, 0.25, 0.2))
-		else:
-			_crosshair.add_theme_color_override("font_color", Color(0.4, 1.0, 0.4))
+	_crosshair.update(delta, player.aiming and player.model.is_aimed() and not in_sniper)
 	if sniper_scope:
 		var aim_pt := player.camera_rig.aim_point([player.get_rid()])
 		var dist := player.camera_rig.camera.global_position.distance_to(aim_pt)

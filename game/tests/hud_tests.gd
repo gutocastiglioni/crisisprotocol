@@ -17,6 +17,7 @@ func run(runner: SceneTree) -> void:
 	await test_all_weapons()
 	await test_radar_all_enemies()
 	await test_threat_special_cases()
+	await test_crosshair()
 
 
 ## Soldado parado (sem processar: não atira) na frente dela, a `dist` m, já em combate.
@@ -455,3 +456,59 @@ func test_threat_special_cases() -> void:
 	r.global_position = Vector3(-2, 0, 0)
 	r.state = "bite"
 	t.check(r.threat() == 1.0, "perigo: raptor mordendo ao alcance = certo", str(r.threat()))
+
+
+## Mira (Crosshair): retângulo maior com o alvo perto, menor longe, abre com a dispersão (tiros seguidos do M16),
+## vermelha sobre o alvo, corre para o tamanho novo sem pular e some sem mirar.
+func test_crosshair() -> void:
+	var f := 300.0
+	t.check(Crosshair.half_size(2.0, 0.0, f) > Crosshair.half_size(10.0, 0.0, f), "mira: perto = maior que longe")
+	t.check(Crosshair.half_size(10.0, 3.0, f) > Crosshair.half_size(10.0, 0.0, f), "mira: dispersão abre a mira")
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 4))
+	var d := TargetDummy.new()
+	d.position = Vector3(0, 0, 1)  # 3 m à frente dela
+	w.add_child(d)
+	var cross := Crosshair.new()
+	cross.player = p
+	cross.ui_scale = 2.0
+	w.add_child(cross)
+	await t._frames(10)
+	Input.action_press("aim")
+	await t._frames(30)
+	var chest := func() -> Vector3: return d.global_position + Vector3.UP * 1.2
+	p.camera_rig.look_at_point(chest.call())
+	await t._frames(2)
+	cross.update(0.016, true)
+	var near := cross.goal
+	t.check(cross.visible and cross.color == Crosshair.ON_TARGET, "mira: sobre o alvo = vermelha", str(cross.color))
+	d.global_position = Vector3(0, 0, -11)  # 15 m
+	p.camera_rig.look_at_point(chest.call())
+	await t._frames(2)
+	cross.update(0.016, true)
+	var far := cross.goal
+	t.check(near > far * 2.0, "mira: alvo a 3 m bem maior que a 15 m", "%.1f %.1f" % [near, far])
+	t.check(cross.half > far and cross.half < near, "mira: corre para o tamanho novo sem pular", "%.1f" % cross.half)
+	cross.update(1.0, true)
+	t.check(is_equal_approx(cross.half, cross.goal), "mira: chega ao tamanho", "%.1f %.1f" % [cross.half, cross.goal])
+	# M16 atirando seguido: a dispersão sobe e a mira abre
+	p.model.set_weapon("m16")
+	var calm := cross.goal
+	for i in 3:
+		p.camera_rig.look_at_point(chest.call())
+		p.fire()
+		await t._frames(int(p.weapon_stats("m16").cooldown * 60) + 1)
+	cross.update(0.016, true)
+	t.check(p.aim_spread() > 0.0 and cross.goal > calm, "mira: rajada do M16 abre a mira", "%.2f° %.1f %.1f" % [p.aim_spread(), calm, cross.goal])
+	await t._frames(120)  # a dispersão volta
+	cross.update(0.016, true)
+	t.check(p.aim_spread() == 0.0 and absf(cross.goal - calm) < calm * 0.05, "mira: parou de atirar, fecha de novo", "%.1f %.1f" % [calm, cross.goal])
+	# mirando o nada (céu): verde, no mínimo
+	p.camera_rig.look_at_point(p.global_position + Vector3(0, 40, -5))
+	await t._frames(2)
+	cross.update(0.016, true)
+	t.check(cross.color == Crosshair.FREE and cross.goal < near * 0.5 and cross.goal >= Crosshair.MIN_HALF * cross.ui_scale, "mira: sem alvo e longe = verde e pequena", "%.1f %.1f" % [cross.goal, near])
+	Input.action_release("aim")
+	p.model.set_weapon("pistol")
+	cross.update(0.016, false)
+	t.check(not cross.visible, "mira: soltou o botão, some")

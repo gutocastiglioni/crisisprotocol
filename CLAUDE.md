@@ -206,6 +206,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   de perigo (`DangerMeter`, jeito Syphon Filter); no alto à direita o radar (`Radar`); embaixo à direita o modelo da arma na mão
   (`WeaponIcon`: SubViewport ortográfica, .glb soltos de perfil, pistola comum = malha "Pistol" do corpo dela, `pistol_sd` com o
   silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival; embaixo à esquerda a furtividade; a ajuda (F1) quebra antes do radar.
+  Mira (`Crosshair`, jeito Syphon Filter, camada sem escala no centro): cruz com um retângulo no meio, colchetes "[ ]" dos lados e tracinho no meio de cima/baixo; meia altura =
+  alvo de `TARGET_R` m na distância do ponto mirado (perto = maior) + cone do próximo tiro (`Player.aim_spread`: arma, tiros
+  seguidos, andando), pela lente da câmera, entre `MIN_HALF`/`MAX_HALF`; corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
   Perigo: cada inimigo diz `Enemy.threat()` (0..1, só em combate; esquivando = 0): soldado = chance de pelo menos um tiro da rajada
   acertar (`Soldier._hit_chance`, a mesma do `_fire`), sniper = sobe com a mira do laser, raptor/alossauro = golpe ao alcance
   (`_melee_threat`). O sensor junta tudo (1 - produto(1 - chance)), sobe rápido e desce devagar, rolando desce depressa e volta a subir
