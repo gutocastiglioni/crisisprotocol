@@ -102,6 +102,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   parcial no braço (`_shoulder_share`) para não abrir vão ao erguer o braço. `loft` aceita `wfn` (pesos por vértice).
 - Visual (`Gfx`, padrão "ps2"): materiais dos dois modos têm os mesmos parâmetros; trocar de modo só troca o shader. Material novo: `Gfx.shader()`.
   Luzes do cenário no grupo "lamps" (sombra no PS2).
+  Ar pesado do galpão (`Haze`, grupo "haze"): debaixo de cada luminária de `Level.LAMPS` um feixe de luz falso (cone aberto somado à
+  cena, `shaders/light_shaft.gdshader`, da cor da lâmpada) e um halo no painel; sem corpo, luz, sombra nem partículas (a poeira em
+  partículas foi tentada e recusada: virava quadradinhos de luz). Igual no PS1 e no PS2 (fora da troca do `Gfx`).
 - Camadas de física: 1 cenário, 2 personagens (cápsulas; o raptor também, com caixa no tronco para os tiros), 4 ragdoll (só colide com o cenário).
 - IA e furtividade (`enemy.gd` = base de `Raptor` e `Soldier`; `Player.visibility()/make_noise()`): o inimigo patrulha `route` e percebe pela visão (cone de 150°, alcance
   `SIGHT_RANGE * Player.visibility()`: parada 0,7, andando 0,75, correndo/rolando/atirando 1, agachada 0,3–0,45, capim alto ×0,5 agachada)

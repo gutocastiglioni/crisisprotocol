@@ -16,6 +16,13 @@ const TEX := {
 }
 const SIZE := 26.0
 const WALL_H := 5.2
+## Lâmpadas do galpão: [posição, cor, força]. Cada uma tem luminária (_details) e feixe de luz (Haze).
+const LAMPS := [
+	[Vector3(0, 3.8, 0), Color(1.0, 0.85, 0.6), 2.2],
+	[Vector3(-7, 3.5, -8), Color(0.6, 0.75, 1.0), 1.6],
+	[Vector3(8, 3.5, 7), Color(1.0, 0.55, 0.35), 1.6],
+]
+const PANEL_Y := 0.26  # painel aceso da luminária acima da lâmpada
 
 
 ## Sala de um ponto no eixo X: 0 galpão, 1 pátio da mata, 2 pedreira (as divisas são as paredes das portas).
@@ -227,7 +234,8 @@ static func _details(parent: Node) -> void:
 	for x in [-7.0, 0.0, 8.0]:
 		_prop(parent, BoxMesh.new(), Vector3(0.25, 0.3, SIZE - 0.4), Vector3(x, WALL_H - 0.15, 0), "wall", 1.5)
 	# luminárias sobre as lâmpadas (as luzes estão em _lights): carcaça e painel aceso
-	for p in [Vector3(0, 3.8, 0), Vector3(-7, 3.5, -8), Vector3(8, 3.5, 7)]:
+	for l in LAMPS:
+		var p: Vector3 = l[0]
 		_prop(parent, BoxMesh.new(), Vector3(0.9, 0.16, 0.5), p + Vector3.UP * 0.35, "wall", 2.0)
 		# hastes até a treliça do teto
 		for dx in [-0.35, 0.35]:
@@ -242,8 +250,10 @@ static func _details(parent: Node) -> void:
 		m.albedo_color = Color(1.0, 0.92, 0.75)
 		glow.material_override = m
 		glow.rotation_degrees.x = 90.0  # virado para baixo
-		glow.position = p + Vector3.UP * 0.26
+		glow.position = p + Vector3.UP * PANEL_Y
 		parent.add_child(glow)
+	# ar pesado: feixe de luz e halo debaixo de cada painel
+	Haze.build(parent, LAMPS.map(func(l: Array) -> Array: return [l[0] + Vector3.UP * PANEL_Y, l[1], l[2]]))
 
 
 static func _prop(parent: Node, mesh: PrimitiveMesh, size: Vector3, pos: Vector3, tex: String, scale := 0.5) -> MeshInstance3D:
@@ -277,12 +287,7 @@ static func _lights(parent: Node) -> void:
 	sun.rotation_degrees = Vector3(-55, 30, 0)
 	sun.add_to_group("lamps")
 	parent.add_child(sun)
-	var lamps := [
-		[Vector3(0, 3.8, 0), Color(1.0, 0.85, 0.6), 2.2],
-		[Vector3(-7, 3.5, -8), Color(0.6, 0.75, 1.0), 1.6],
-		[Vector3(8, 3.5, 7), Color(1.0, 0.55, 0.35), 1.6],
-	]
-	for l in lamps:
+	for l in LAMPS:
 		var o := OmniLight3D.new()
 		o.position = l[0]
 		o.light_color = l[1]

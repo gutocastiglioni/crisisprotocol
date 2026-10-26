@@ -9,6 +9,7 @@ func run(runner: SceneTree) -> void:
 	await test_atlas()
 	test_other_textures()
 	await test_toggle()
+	await test_haze()
 
 
 func check(cond: bool, name: String, detail := "") -> void:
@@ -229,3 +230,32 @@ func test_bite_ragdoll_finite() -> void:
 	p.struggle = 999
 	await t._frames(20)
 	check(not p.grabbed, "solta com struggle alto")
+
+
+## Feixes de luz do galpão: um por lâmpada, do painel ao chão, só desenho (sem corpo, luz, sombra nem partículas)
+## e fora da troca de shader do Gfx.
+func test_haze() -> void:
+	var w: Node3D = await t._fresh_world()
+	for c in w.get_children():
+		c.free()
+	Level.build(w)
+	await t._frames(2)
+	var roots := w.get_tree().get_nodes_in_group("haze")
+	check(roots.size() == Level.LAMPS.size(), "um feixe por lâmpada do galpão", str(roots.size()))
+	var before := Gfx.mode
+	Gfx.set_mode("ps1", w)
+	Gfx.set_mode("ps2", w)
+	for i in mini(roots.size(), Level.LAMPS.size()):
+		var root: Node3D = roots[i]
+		var lamp: Vector3 = Level.LAMPS[i][0]
+		check(root.global_position.is_equal_approx(lamp + Vector3.UP * Level.PANEL_Y), "feixe %d sai do painel da luminária" % i, str(root.global_position))
+		var shaft := root.get_node("Shaft") as MeshInstance3D
+		var cone := shaft.mesh as CylinderMesh
+		check(is_equal_approx(root.global_position.y - cone.height, 0.0), "feixe %d chega ao chão" % i, str(cone.height))
+		check(cone.bottom_radius > cone.top_radius, "feixe %d abre para baixo" % i)
+		check(shaft.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "feixe %d não faz sombra" % i)
+		check((shaft.material_override as ShaderMaterial).shader == Haze.SHAFT_SHADER, "feixe %d mantém o shader na troca PS1/PS2" % i)
+		check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "feixe %d sem corpo (não para tiro nem visão)" % i)
+		check(root.find_children("*", "Light3D", true, false).is_empty(), "feixe %d sem luz própria" % i)
+		check(root.find_children("*", "CPUParticles3D", true, false).is_empty() and root.find_children("*", "GPUParticles3D", true, false).is_empty(), "feixe %d sem partículas" % i)
+	Gfx.set_mode(before, w)
