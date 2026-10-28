@@ -68,17 +68,24 @@ def muzzle_position():
 # ------------------------------------------------------------------ poses com o fuzil
 RIFLE_CHEST = frame_matrix((-0.14, -0.40, 0.34), (1, 0, 0), (0, 0, 1))  # deitado no baú, cano para a esquerda
 KNEEL_DIST = 0.32  # da raiz dela até a frente do baú (o Godot põe o baú nessa distância)
-HOLD_Z = 1.02  # altura do cabo carregando (pronto baixo): 0,10 acima da junta do quadril
+# carregando (pronto baixo): cabo em relação à junta do ombro direito (lado, cima), feito para o braço HOLD_ARM
+# (ombro ao punho no esqueleto) e escalado pelo braço de cada corpo; na profundidade o punho fica HOLD_CLEAR à frente
+# do tronco (TORSO_FRONT, medido na malha por fit_body: colete do guerrilheiro incluído). Cano atravessado na frente
+# do corpo (HOLD_FWD), baixo e para a esquerda.
+HOLD_GRIP = (0.015, -0.245)
+HOLD_ARM = 0.445
+HOLD_CLEAR = 0.065
+HOLD_FWD = (0.8, -0.4, -0.35)
+TORSO_FRONT = -0.135  # y da frente do tronco da heroína na altura do cabo (fit_body troca pelo do corpo montado)
 AIM_TWIST = 0.0  # giro extra do peito mirando (braço mais curto: o ombro esquerdo vai à frente para a mão chegar)
-ARM_DESIGN, HIP_DESIGN = 0.485, 0.919  # braço (ombro ao punho) e quadril para que as medidas acima foram feitas
+ARM_DESIGN = 0.485  # braço (ombro ao punho) para que as medidas acima foram feitas
 
 
 def adapt(spec):
-    """Medidas do fuzil para outro corpo (heroine_spec.use_joints): cabo carregando na altura do quadril, giro na mira
-    e baú mais perto na medida do braço (as mãos alcançam o fuzil deitado)."""
-    global RIFLE_CHEST, KNEEL_DIST, HOLD_Z, AIM_TWIST
+    """Medidas do fuzil para outro corpo (heroine_spec.use_joints): giro na mira e baú mais perto na medida do braço
+    (as mãos alcançam o fuzil deitado)."""
+    global RIFLE_CHEST, KNEEL_DIST, AIM_TWIST
     da = spec.UPPER_ARM_LEN + spec.FOREARM_LEN - ARM_DESIGN
-    HOLD_Z = 1.02 + spec.HIP_L.z - HIP_DESIGN
     AIM_TWIST = max(0.0, -da) * 250.0  # graus: ~10 para 4 cm a menos
     KNEEL_DIST = 0.32 + da
     RIFLE_CHEST = frame_matrix((-0.14, -0.40 - da, 0.34), (1, 0, 0), (0, 0, 1))
@@ -134,14 +141,33 @@ def rifle_poses(A, sk):
     recoil, e_rec = solve_rifle(sk, A.merge(aim, {"Chest": (-2, 0, 0)}), kick)
     hold_body = A.merge(A.IDLE, {"Spine": (2, -8, 0), "Chest": (0, -12, 0), "Head": (0, 14, 0)})
     hold_body.update(M.arms(30, -15, 60, 20, -20, 70))
-    hold, e_hold = solve_rifle(sk, hold_body, hold_target())
+    hold, e_hold = solve_rifle(sk, hold_body, hold_target(sk, hold_body))
     print(f"[rifle] erro IK: mirando {e_aim * 1000:.1f} mm, recuo {e_rec * 1000:.1f} mm, carregando {e_hold * 1000:.1f} mm")
     return hold, aim, recoil
 
 
-def hold_target():
-    """Carregando (pronto baixo): cabo na frente do quadril direito, cano para a frente, baixo e para a esquerda."""
-    return frame_matrix((-0.12, -0.2, HOLD_Z), (0.55, -0.6, -0.25), (0.15, -0.2, 0.95))
+def fit_body(rig):
+    """TORSO_FRONT = frente do tronco montado (malhas presas ao esqueleto, em repouso) na faixa de altura do cabo."""
+    global TORSO_FRONT
+    import bpy
+
+    sh = rig.data.bones["UpperArm_R"].head_local
+    lo, hi = sh.z - 0.35, sh.z - 0.15
+    ys = [(o.matrix_world @ v.co).y for o in bpy.data.objects if o.type == "MESH" and o.parent == rig
+          for v in o.data.vertices
+          if abs((o.matrix_world @ v.co).x) < 0.15 and lo < (o.matrix_world @ v.co).z < hi]
+    TORSO_FRONT = min(ys)
+    print(f"[rifle] frente do tronco na altura do cabo: {TORSO_FRONT:.3f}")
+
+
+def hold_target(sk, pose):
+    """Carregando (pronto baixo): cabo preso ao ombro direito (HOLD_GRIP) e encostado na frente do tronco, cano
+    atravessado na frente do corpo, baixo e para a esquerda."""
+    m = sk.matrices(pose)
+    arm = (sk.length["UpperArm_R"] + sk.length["LowerArm_R"]) / HOLD_ARM
+    sh = sk.point(m, "UpperArm_R")
+    grip = Vector((sh.x + HOLD_GRIP[0] * arm, TORSO_FRONT - HOLD_CLEAR, sh.z + HOLD_GRIP[1] * arm))
+    return frame_matrix(grip, HOLD_FWD, (0.15, -0.2, 0.95))
 
 
 def _lerp_frame(a, b, t):
@@ -171,7 +197,8 @@ def pickup_keys(A, sk, hold):
         (PICKUP_FRAMES, hold),
     ]
     lift_t = frame_matrix((-0.1, -0.4, 0.64), (0.75, -0.55, 0.1), (0.0, 0.2, 1.0))
-    rifle_keys = [(22, RIFLE_CHEST), (GRAB_FRAME, RIFLE_CHEST), (34, lift_t), (44, hold_target()), (PICKUP_FRAMES, hold_target())]
+    held = rifle_now(sk, sk.matrices(hold))
+    rifle_keys = [(22, RIFLE_CHEST), (GRAB_FRAME, RIFLE_CHEST), (34, lift_t), (44, held), (PICKUP_FRAMES, held)]
 
     def rifle_at(f):
         for (f0, a), (f1, b) in zip(rifle_keys, rifle_keys[1:]):

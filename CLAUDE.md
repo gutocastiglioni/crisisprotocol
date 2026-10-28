@@ -61,6 +61,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Movimentos: `--shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|dodge_l|dodge_r|dodge_back|dodge_roll`.
   Armas: `--shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump` (tiros na pilha de caixas;
   a captura imprime `buracos=`).
+  Ela e o guerrilheiro lado a lado: `--shot=idle_compare|carry_compare|walk_compare [--yaw=graus]` (sem arma / M16 parados / M16 andando).
   Raptor: `--shot=raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead|raptor_idle [--playercam]`
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
@@ -267,6 +268,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Andar/agachar/mirar andando usam `Moves.speed(...)` = a velocidade em que o ciclo foi resolvido.
 - Armas: pistola, M16 e escopeta são malhas à parte presas a Hand_R; `HeroineModel.set_weapon`/`holster` mostram uma só.
   Com arma longa (`LONG_GUNS`), a parte de cima usa RifleHold/RifleAim e o tiro RifleShoot ou ShotgunShoot.
+  RifleHold (carregando, parada/andando, igual nos dois corpos): cabo preso ao ombro direito (`heroine_rifle.HOLD_GRIP`, na escala
+  do braço) e encostado na frente do tronco (`TORSO_FRONT` medido na malha por `fit_body`, colete incluído, + `HOLD_CLEAR`).
   Agachada com a pistola: guarda baixa com as duas mãos (`pistol_guard` em `heroine_anims.py`, IK sobre a pegada da mira).
   Mirando, ela vira para o ponto sob a retícula (`CameraRig.aim_point`) e `AimPitch` (SkeletonModifier3D) inclina coluna
   e peito até a altura dele: o cano aponta para onde o tiro vai. A pose modificada só aparece no desenho e nos

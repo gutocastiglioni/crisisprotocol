@@ -38,6 +38,9 @@ const MOVE_SHOTS := [
 	"dodge_l", "dodge_r", "dodge_back", "dodge_roll", "sniper_aim", "sniper_zoom",
 	"hit_crouch", "stagger", "getup", "getup_fwd",
 ]
+## ela e o guerrilheiro lado a lado, parados (idle_compare = sem arma; carry_compare = com a M16) ou andando no lugar
+## com a M16 (walk_compare); --yaw gira a câmera em volta (0 = de frente)
+const COMPARE_SHOTS := ["idle_compare", "carry_compare", "walk_compare"]
 ## revisão dos golpes na heroína (câmera de revisão de lado)
 const HURT_SHOTS := ["hit_crouch", "stagger", "getup", "getup_fwd"]
 ## revisão do container trancado da M79, da chave na mão do morto do pátio e da M79 (ver _setup_key_shot)
@@ -669,7 +672,7 @@ func _parse_args() -> void:
 	if _capture == "" and _shot == "idle":
 		return
 	_hud_help.visible = _shot == "idle"
-	if _shot == "idle_compare":
+	if _shot in COMPARE_SHOTS:
 		_setup_idle_compare()
 	elif _shot in ["danger", "danger_roll"]:
 		# no meio do galpão, de frente para os guardas da porta do pátio (eles a veem e atiram): sensor de perigo e radar
@@ -834,6 +837,11 @@ func _process(delta: float) -> void:
 		_allo_shot(at)
 	if _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_soldier_shot(at)
+	if _review_cam and _shot in COMPARE_SHOTS:
+		var yaw := (0.0 if is_nan(_yaw) else _yaw)
+		var c := (player.global_position + soldiers[0].global_position) * 0.5
+		_review_cam.global_position = c + Vector3(sin(yaw), 0.0, cos(yaw)) * 3.2 + Vector3.UP * 1.3
+		_review_cam.look_at(c + Vector3.UP * 1.0)
 	if _shot in MOVE_SHOTS:
 		_move_shot(at)
 	match _shot:
@@ -1311,12 +1319,7 @@ func _soldier_shot(at: Callable) -> void:
 			pass
 		else:
 			sd.spot()
-	if _review_cam and _shot == "idle_compare":
-		var yaw := (0.0 if is_nan(_yaw) else _yaw)
-		var dist := 2.5
-		_review_cam.global_position = Vector3(sin(yaw), 0.0, cos(yaw)) * dist + Vector3.UP * 1.38
-		_review_cam.look_at(Vector3(0.0, 1.28, 0.0))
-	elif _review_cam:
+	if _review_cam:
 		var body: Vector3 = sd.model.ragdoll.bodies["Hips"].global_position * Vector3(1, 0, 1) if sd.dead else sd.global_position
 		var a := sd.rotation.y + PI + (0.0 if is_nan(_yaw) else _yaw)
 		var is_idle := _shot == "soldier_idle"
@@ -1345,8 +1348,17 @@ func _setup_idle_compare() -> void:
 	sd.global_position = Vector3(0.65, 0.0, 0.0)
 	sd.rotation.y = PI
 	sd.reset_physics_interpolation()
-	player.model.holstered = true
-	sd.model.holstered = true
+	var armed := _shot != "idle_compare"
+	for m: HeroineModel in [player.model, sd.model]:
+		m.holster(not armed)
+		if armed:
+			m.set_weapon("m16")
+	if _shot == "walk_compare":
+		# os dois andando no lugar: sem física nem IA, só o corpo tocando o passo
+		for body: Node in [player, sd]:
+			body.process_mode = Node.PROCESS_MODE_DISABLED
+			body.model.process_mode = Node.PROCESS_MODE_ALWAYS
+			body.model.set_state("walk")
 	_review_cam = Camera3D.new()
 	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_review_cam.fov = 34.0

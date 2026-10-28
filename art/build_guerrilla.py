@@ -60,6 +60,7 @@ def main():
     heroine_rig.make_muzzle(rig, "M79Muzzle", heroine_m79.muzzle_position())
     heroine_rig.make_muzzle(rig, "SniperMuzzle", heroine_sniper.muzzle_position())
     heroine_rig.make_pump(rig)
+    heroine_rifle.fit_body(rig)  # fuzil carregado encostado na frente do tronco montado
     acts = heroine_anims.build_actions(rig)
     build_heroine.stats(body, rig, acts)
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
