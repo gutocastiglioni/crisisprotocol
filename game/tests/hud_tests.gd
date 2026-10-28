@@ -499,17 +499,24 @@ func test_stealth_status() -> void:
 	t.check(radar.status_text() == "VISÍVEL" and radar.level == 0, "furtividade: correndo no chão = VISIVEL", radar.status_text())
 
 
-## Mira (Crosshair): retângulo maior com o alvo perto, menor longe, abre com a dispersão (tiros seguidos do M16),
-## vermelha sobre o alvo, corre para o tamanho novo sem pular e some sem mirar.
+## Mira (Crosshair): tamanho dinâmico pela distância do que está sob ela (perto = maior) e pela dispersão (rajada do M16);
+## focada no inimigo vai fechando e abre ao sair dele; na cabeça marca HEADSHOT; corre para o tamanho sem pular e some
+## sem mirar.
 func test_crosshair() -> void:
 	var f := 300.0
-	t.check(Crosshair.half_size(2.0, 0.0, f) > Crosshair.half_size(10.0, 0.0, f), "mira: perto = maior que longe")
-	t.check(Crosshair.half_size(10.0, 3.0, f) > Crosshair.half_size(10.0, 0.0, f), "mira: dispersão abre a mira")
+	t.check(Crosshair.area_size(2.0, Crosshair.AREA_R, f) > Crosshair.area_size(10.0, Crosshair.AREA_R, f), "mira: perto = maior que longe")
+	t.check(Crosshair.spread_size(3.0, f) > 0.0 and Crosshair.spread_size(0.0, f) == 0.0, "mira: dispersão abre a mira")
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 4))
 	var d := TargetDummy.new()
 	d.position = Vector3(0, 0, 1)  # 3 m à frente dela
 	w.add_child(d)
+	var crate := StaticBody3D.new()  # caixa de 1 m perto, à direita
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	crate.add_child(shape)
+	crate.position = Vector3(2.0, 0.5, 1.5)
+	w.add_child(crate)
 	var cross := Crosshair.new()
 	cross.player = p
 	cross.ui_scale = 2.0
@@ -517,22 +524,40 @@ func test_crosshair() -> void:
 	await t._frames(10)
 	Input.action_press("aim")
 	await t._frames(30)
-	var chest := func() -> Vector3: return d.global_position + Vector3.UP * 1.2
-	p.camera_rig.look_at_point(chest.call())
-	await t._frames(2)
+	# mira quadro a quadro até a câmera parar de se acomodar (ela gira em volta dela)
+	var aim_at := func(pt: Callable) -> void:
+		for k in 20:
+			p.camera_rig.look_at_point(pt.call())
+			await t._frames(1)
+	await aim_at.call(func() -> Vector3: return crate.global_position)
 	cross.update(0.016, true)
-	var near := cross.goal
-	t.check(cross.visible and cross.color == Crosshair.ON_TARGET, "mira: sobre o alvo = vermelha", str(cross.color))
+	var on_crate := cross.goal
+	t.check(cross.color == Crosshair.FREE and on_crate <= Crosshair.LOOSE_MAX * cross.ui_scale, "mira: caixa perto, sem inimigo = verde, até o limite", "%.1f" % on_crate)
+	var chest := func() -> Vector3: return d.global_position + Vector3.UP * 1.2
+	await aim_at.call(chest)
+	cross.update(0.016, true)
+	var loose := cross.goal
+	t.check(cross.visible and cross.color == Crosshair.ON_TARGET and not cross.head, "mira: sobre o alvo = vermelha", str(cross.color))
+	t.check(loose > Crosshair.FOCUS_HALF * cross.ui_scale * 1.5, "mira: chegou no inimigo ainda aberta", "%.1f" % loose)
+	for k in 3:
+		cross.update(0.3, true)
+	t.check(is_equal_approx(cross.goal, Crosshair.FOCUS_HALF * cross.ui_scale), "mira: focada no inimigo, fecha", "%.1f" % cross.goal)
+	# a cabeça do boneco (o ragdoll acompanha a animação): mesmo inimigo, segue fechada e marca HEADSHOT
+	await aim_at.call(func() -> Vector3: return d.model.ragdoll.bodies["Head"].global_position)
+	cross.update(0.016, true)
+	t.check(cross.head and cross.color == Crosshair.ON_TARGET, "mira: na cabeça marca HEADSHOT", str(cross.head))
+	# saiu do inimigo: abre de novo, no tamanho do que está sob ela
+	await aim_at.call(func() -> Vector3: return crate.global_position)
+	cross.update(0.016, true)
+	t.check(cross.focus_t == 0.0 and not cross.head and is_equal_approx(cross.goal, on_crate), "mira: saiu do inimigo, abre de novo", "%.1f %.1f" % [cross.goal, on_crate])
 	d.global_position = Vector3(0, 0, -11)  # 15 m
-	p.camera_rig.look_at_point(chest.call())
-	await t._frames(2)
+	await aim_at.call(chest)
 	cross.update(0.016, true)
 	var far := cross.goal
-	t.check(near > far * 2.0, "mira: alvo a 3 m bem maior que a 15 m", "%.1f %.1f" % [near, far])
-	t.check(cross.half > far and cross.half < near, "mira: corre para o tamanho novo sem pular", "%.1f" % cross.half)
+	t.check(loose > far * 2.0, "mira: inimigo a 3 m bem maior que a 15 m (sem foco)", "%.1f %.1f" % [loose, far])
 	cross.update(1.0, true)
 	t.check(is_equal_approx(cross.half, cross.goal), "mira: chega ao tamanho", "%.1f %.1f" % [cross.half, cross.goal])
-	# M16 atirando seguido: a dispersão sobe e a mira abre
+	# M16 atirando seguido: a dispersão sobe e a mira abre (mesmo focada)
 	p.model.set_weapon("m16")
 	var calm := cross.goal
 	for i in 3:
@@ -541,14 +566,17 @@ func test_crosshair() -> void:
 		await t._frames(int(p.weapon_stats("m16").cooldown * 60) + 1)
 	cross.update(0.016, true)
 	t.check(p.aim_spread() > 0.0 and cross.goal > calm, "mira: rajada do M16 abre a mira", "%.2f° %.1f %.1f" % [p.aim_spread(), calm, cross.goal])
+	cross.update(0.016, true)
+	t.check(cross.half > calm and cross.half < cross.goal, "mira: corre para o tamanho novo sem pular", "%.1f %.1f %.1f" % [calm, cross.half, cross.goal])
 	await t._frames(120)  # a dispersão volta
-	cross.update(0.016, true)
+	await aim_at.call(chest)  # o coice tirou a mira de cima dele
+	for k in 3:
+		cross.update(0.3, true)
 	t.check(p.aim_spread() == 0.0 and absf(cross.goal - calm) < calm * 0.05, "mira: parou de atirar, fecha de novo", "%.1f %.1f" % [calm, cross.goal])
-	# mirando o nada (céu): verde, no mínimo
-	p.camera_rig.look_at_point(p.global_position + Vector3(0, 40, -5))
-	await t._frames(2)
+	# mirando o nada (céu, longe): verde e pequena
+	await aim_at.call(func() -> Vector3: return p.global_position + Vector3(0, 40, -5))
 	cross.update(0.016, true)
-	t.check(cross.color == Crosshair.FREE and cross.goal < near * 0.5 and cross.goal >= Crosshair.MIN_HALF * cross.ui_scale, "mira: sem alvo e longe = verde e pequena", "%.1f %.1f" % [cross.goal, near])
+	t.check(cross.color == Crosshair.FREE and cross.goal < on_crate, "mira: longe, sem alvo = verde e menor", "%.1f %.1f" % [cross.goal, on_crate])
 	Input.action_release("aim")
 	p.model.set_weapon("pistol")
 	cross.update(0.016, false)

@@ -245,9 +245,11 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   de perigo (`DangerMeter`, jeito Syphon Filter); no alto à direita o radar (`Radar`); embaixo à direita o modelo da arma na mão
   (`WeaponIcon`: SubViewport ortográfica, .glb soltos de perfil, pistola comum = malha "Pistol" do corpo dela, `pistol_sd` com o
   silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival; a ajuda (F1) quebra antes do radar.
-  Mira (`Crosshair`, jeito Syphon Filter, camada sem escala no centro): cruz com um retângulo no meio, colchetes "[ ]" dos lados e tracinho no meio de cima/baixo; meia altura =
-  alvo de `TARGET_R` m na distância do ponto mirado (perto = maior) + cone do próximo tiro (`Player.aim_spread`: arma, tiros
-  seguidos, andando), pela lente da câmera, entre `MIN_HALF`/`MAX_HALF`; corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
+  Mira (`Crosshair`, jeito Syphon Filter, camada sem escala no centro): cruz com um retângulo no meio, colchetes "[ ]" dos lados e tracinho no meio de cima/baixo. Tamanho
+  dinâmico: `AREA_R` m na distância do que está sob ela pela lente da câmera (perto = maior, até `LOOSE_MAX`) + cone do
+  próximo tiro (`Player.aim_spread`: arma, tiros seguidos, andando); focada no mesmo inimigo com tiro livre fecha em
+  `FOCUS_TIME` até `FOCUS_HALF` (`focus_t`), saiu dele abre; na cabeça de quem tem headshot (`Player.body_part`) uma linha
+  sai do canto de cima até "HEADSHOT". Corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
   Furtividade no radar: fundo e moldura pulsam na cor do maior `alert_level` (mais rápido quanto pior) e embaixo dele um olho +
   VISÍVEL/INVISÍVEL (`Radar.INVISIBLE_AT` da `visibility()`, telhado ou alto da escada; nunca com alguém a vendo, `Enemy.has_eyes_on`)
   e o estado (DESCONFIADOS / BUSCA ATIVA / ALERTA!); o olho fecha escondida, olha para os lados na busca e fica vermelho no alerta.
