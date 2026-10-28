@@ -270,8 +270,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Andar/agachar/mirar andando usam `Moves.speed(...)` = a velocidade em que o ciclo foi resolvido.
 - Armas: pistola, M16 e escopeta são malhas à parte presas a Hand_R; `HeroineModel.set_weapon`/`holster` mostram uma só.
   Com arma longa (`LONG_GUNS`), a parte de cima usa RifleHold/RifleAim e o tiro RifleShoot ou ShotgunShoot.
-  RifleHold (carregando, parada/andando, igual nos dois corpos): cabo preso ao ombro direito (`heroine_rifle.HOLD_GRIP`, na escala
-  do braço) e encostado na frente do tronco (`TORSO_FRONT` medido na malha por `fit_body`, colete incluído, + `HOLD_CLEAR`).
+  RifleHold (carregando, parada/andando, igual nos dois corpos): braços primeiro, fuzil depois (`heroine_rifle.hold_pose`):
+  `HOLD_ARMS` somado ao IDLE (direito junto ao corpo, antebraço cruzando a barriga; esquerdo solto), o pulso direito aponta o
+  fuzil para a palma esquerda (diagonal na frente do peito, coronha no alto à direita) e o braço esquerdo só ajusta a palma na telha.
   Agachada com a pistola: guarda baixa com as duas mãos (`pistol_guard` em `heroine_anims.py`, IK sobre a pegada da mira).
   Mirando, ela vira para o ponto sob a retícula (`CameraRig.aim_point`) e `AimPitch` (SkeletonModifier3D) inclina coluna
   e peito até a altura dele: o cano aponta para onde o tiro vai. A pose modificada só aparece no desenho e nos

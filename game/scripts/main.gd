@@ -1353,12 +1353,12 @@ func _setup_idle_compare() -> void:
 		m.holster(not armed)
 		if armed:
 			m.set_weapon("m16")
-	if _shot == "walk_compare":
-		# os dois andando no lugar: sem física nem IA, só o corpo tocando o passo
+	if armed:
+		# os dois parados ou andando no lugar: sem física, controle nem IA, só o corpo tocando a pose
 		for body: Node in [player, sd]:
 			body.process_mode = Node.PROCESS_MODE_DISABLED
 			body.model.process_mode = Node.PROCESS_MODE_ALWAYS
-			body.model.set_state("walk")
+			body.model.set_state("walk" if _shot == "walk_compare" else "idle")
 	_review_cam = Camera3D.new()
 	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_review_cam.fov = 34.0

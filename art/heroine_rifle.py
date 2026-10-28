@@ -68,15 +68,13 @@ def muzzle_position():
 # ------------------------------------------------------------------ poses com o fuzil
 RIFLE_CHEST = frame_matrix((-0.14, -0.40, 0.34), (1, 0, 0), (0, 0, 1))  # deitado no baú, cano para a esquerda
 KNEEL_DIST = 0.32  # da raiz dela até a frente do baú (o Godot põe o baú nessa distância)
-# carregando (pronto baixo): cabo em relação à junta do ombro direito (lado, cima), feito para o braço HOLD_ARM
-# (ombro ao punho no esqueleto) e escalado pelo braço de cada corpo; na profundidade o punho fica HOLD_CLEAR à frente
-# do tronco (TORSO_FRONT, medido na malha por fit_body: colete do guerrilheiro incluído). Cano atravessado na frente
-# do corpo (HOLD_FWD), baixo e para a esquerda.
-HOLD_GRIP = (0.015, -0.245)
-HOLD_ARM = 0.445
-HOLD_CLEAR = 0.065
-HOLD_FWD = (0.8, -0.4, -0.35)
-TORSO_FRONT = -0.135  # y da frente do tronco da heroína na altura do cabo (fit_body troca pelo do corpo montado)
+# carregando: os braços numa pose natural (somada ao IDLE) e o fuzil onde as mãos o levam, como quem segura de verdade:
+# braço direito junto ao corpo, antebraço cruzando na frente da barriga, mão no cabo; braço esquerdo solto, mão por baixo
+# da telha junto à coxa. O fuzil sai do cabo e aponta para a palma esquerda (diagonal na frente do peito, coronha no
+# alto à direita); só o pulso e o giro do antebraço direito mudam para isso, e o braço esquerdo o mínimo para a palma
+# ficar debaixo da telha (HOLD_REACH = trecho do fuzil, a partir do cabo, onde ela pode segurar).
+HOLD_ARMS = {"UpperArm_R": (-8, 45, 5), "LowerArm_R": (90, 0, 0), "UpperArm_L": (8, 0, -10), "LowerArm_L": (12, 0, 0)}
+HOLD_REACH = (0.18, 0.40)
 AIM_TWIST = 0.0  # giro extra do peito mirando (braço mais curto: o ombro esquerdo vai à frente para a mão chegar)
 ARM_DESIGN = 0.485  # braço (ombro ao punho) para que as medidas acima foram feitas
 
@@ -139,35 +137,33 @@ def rifle_poses(A, sk):
     kick = Matrix.Translation(-target.col[1].to_3d() * 0.025) @ target
     kick = frame_matrix(kick.col[3].to_3d(), Matrix.Rotation(math.radians(3), 3, target.col[0].to_3d()) @ IK.FWD, IK.UP)
     recoil, e_rec = solve_rifle(sk, A.merge(aim, {"Chest": (-2, 0, 0)}), kick)
-    hold_body = A.merge(A.IDLE, {"Spine": (2, -8, 0), "Chest": (0, -12, 0), "Head": (0, 14, 0)})
-    hold_body.update(M.arms(30, -15, 60, 20, -20, 70))
-    hold, e_hold = solve_rifle(sk, hold_body, hold_target(sk, hold_body))
+    hold, e_hold = hold_pose(A, sk)
     print(f"[rifle] erro IK: mirando {e_aim * 1000:.1f} mm, recuo {e_rec * 1000:.1f} mm, carregando {e_hold * 1000:.1f} mm")
     return hold, aim, recoil
 
 
-def fit_body(rig):
-    """TORSO_FRONT = frente do tronco montado (malhas presas ao esqueleto, em repouso) na faixa de altura do cabo."""
-    global TORSO_FRONT
-    import bpy
+def hold_pose(A, sk):
+    """Carregando: braços em HOLD_ARMS; o pulso direito aponta o fuzil para a palma esquerda e o braço esquerdo leva a
+    palma até debaixo da telha. Devolve (pose, erro)."""
+    pose = A.merge(A.IDLE, HOLD_ARMS)
+    u = HANDGUARD_GRIP[2]  # a palma fica por baixo da telha
 
-    sh = rig.data.bones["UpperArm_R"].head_local
-    lo, hi = sh.z - 0.35, sh.z - 0.15
-    ys = [(o.matrix_world @ v.co).y for o in bpy.data.objects if o.type == "MESH" and o.parent == rig
-          for v in o.data.vertices
-          if abs((o.matrix_world @ v.co).x) < 0.15 and lo < (o.matrix_world @ v.co).z < hi]
-    TORSO_FRONT = min(ys)
-    print(f"[rifle] frente do tronco na altura do cabo: {TORSO_FRONT:.3f}")
+    def to_palm(m):
+        fr = rifle_now(sk, m)
+        d = IK.palm(sk, m, "L") - fr.translation - fr.col[2].to_3d() * u
+        fwd = fr.col[1].to_3d()
+        return list(d - fwd * d.dot(fwd))
 
-
-def hold_target(sk, pose):
-    """Carregando (pronto baixo): cabo preso ao ombro direito (HOLD_GRIP) e encostado na frente do tronco, cano
-    atravessado na frente do corpo, baixo e para a esquerda."""
+    wrist = [("LowerArm_R", 1), ("Hand_R", 0), ("Hand_R", 2)]
+    pose, e1 = IK.solve(sk, pose, wrist, to_palm,
+                        {("LowerArm_R", 1): (-80, 80), ("Hand_R", 0): (-70, 70), ("Hand_R", 2): (-50, 50)})
     m = sk.matrices(pose)
-    arm = (sk.length["UpperArm_R"] + sk.length["LowerArm_R"]) / HOLD_ARM
-    sh = sk.point(m, "UpperArm_R")
-    grip = Vector((sh.x + HOLD_GRIP[0] * arm, TORSO_FRONT - HOLD_CLEAR, sh.z + HOLD_GRIP[1] * arm))
-    return frame_matrix(grip, HOLD_FWD, (0.15, -0.2, 0.95))
+    fr = rifle_now(sk, m)
+    along = (IK.palm(sk, m, "L") - fr.translation).dot(fr.col[1].to_3d())
+    grip = fr @ Vector((0, min(HOLD_REACH[1], max(HOLD_REACH[0], along)), u))
+    pose, e2 = IK.solve(sk, pose, IK.arm_unknowns("L", hand=False), lambda m: list(IK.palm(sk, m, "L") - grip),
+                        IK.arm_bounds("L"))
+    return pose, max(e1, e2)
 
 
 def _lerp_frame(a, b, t):
