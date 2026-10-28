@@ -17,6 +17,7 @@ func run(runner: SceneTree) -> void:
 	await test_all_weapons()
 	await test_radar_all_enemies()
 	await test_threat_special_cases()
+	await test_stealth_status()
 	await test_crosshair()
 
 
@@ -456,6 +457,46 @@ func test_threat_special_cases() -> void:
 	r.global_position = Vector3(-2, 0, 0)
 	r.state = "bite"
 	t.check(r.threat() == 1.0, "perigo: raptor mordendo ao alcance = certo", str(r.threat()))
+
+
+## Furtividade no radar: VISIVEL/INVISIVEL pela visibilidade dela e pelo lugar, ninguém a vendo; estado dos inimigos.
+func test_stealth_status() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p := Player.new()
+	w.add_child(p)
+	var radar := Radar.new()
+	radar.player = p
+	w.add_child(radar)
+	var s := Soldier.new()
+	s.position = Vector3(0, 0, -8)
+	s.rotation.y = PI
+	s.target = p
+	w.add_child(s)
+	s.process_mode = Node.PROCESS_MODE_DISABLED
+	await t._frames(2)
+	p.stealth.visibility = 0.7  # em pé, parada
+	radar.update(0.016)
+	t.check(radar.status_text() == "VISÍVEL" and radar.level == 0, "furtividade: em pé = VISIVEL, inimigos calmos", radar.status_text())
+	p.stealth.visibility = 0.35  # agachada
+	radar.update(0.016)
+	t.check(radar.status_text() == "INVISÍVEL", "furtividade: agachada = INVISIVEL", radar.status_text())
+	s.start_suspicious()
+	radar.update(0.016)
+	t.check(radar.level == 1 and Radar.STATES[radar.level] == "DESCONFIADOS", "furtividade: inimigo desconfiado = DESCONFIADOS", str(radar.level))
+	s.start_engage()
+	radar.update(0.016)
+	t.check(radar.level == 3 and radar.status_text() == "VISÍVEL", "furtividade: alguém a vendo em combate = VISIVEL mesmo agachada", radar.status_text())
+	s._lost_t = 2.0  # perdeu de vista
+	radar.update(0.016)
+	t.check(radar.status_text() == "INVISÍVEL", "furtividade: sumiu da vista dele, agachada = INVISIVEL de novo", radar.status_text())
+	s.die(Vector3.BACK, s.global_position + Vector3.UP)
+	p.stealth.visibility = 1.0
+	p.global_position = Roof.START  # sem passar quadro (a queda de volta mataria)
+	radar.update(0.016)
+	t.check(radar.status_text() == "INVISÍVEL", "furtividade: no telhado ninguém a percebe = INVISIVEL", radar.status_text())
+	p.global_position = Vector3.ZERO
+	radar.update(0.016)
+	t.check(radar.status_text() == "VISÍVEL" and radar.level == 0, "furtividade: correndo no chão = VISIVEL", radar.status_text())
 
 
 ## Mira (Crosshair): retângulo maior com o alvo perto, menor longe, abre com a dispersão (tiros seguidos do M16),

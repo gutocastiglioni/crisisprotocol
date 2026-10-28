@@ -3,7 +3,8 @@ extends CanvasLayer
 ## Overlay de mira telescópica da Sniper (Sniper Scope).
 ## Apresenta visor óptico circular (shader), retículo balístico com mil-dots e marcações BDC,
 ## indicador digital de zoom (2.0x / 4.0x / 8.0x / 16.0x), telemetria de distância em metros
-## e prompt de controle conforme padrão PlayStation: X aumenta e O diminui o zoom.
+## e os botões de zoom (UiStyle.Hint: X/✕ aumenta, O/bola diminui) embaixo do visor. Os textos seguem a escala do HUD
+## (`set_ui_scale`, chamado pelo main.apply_gfx): a camada é em pixels da tela, então tamanho e posição são multiplicados.
 
 const SHADER := preload("res://shaders/sniper_scope.gdshader")
 
@@ -13,7 +14,8 @@ var _mask_mat: ShaderMaterial
 var _reticle: Control
 var _label_zoom: Label
 var _label_range: Label
-var _label_prompt: Label
+var _hint: UiStyle.Hint
+var _k := 1.0  # escala do HUD
 var _active := false
 var _blocked := false
 
@@ -48,21 +50,33 @@ func _build_ui() -> void:
 	_root.add_child(_reticle)
 
 	# 3. Informações de telemetria da mira
-	_label_zoom = _create_label("ZOOM: 2.0x", Color(0.4, 1.0, 0.4))
-	_label_range = _create_label("DIST: --- m", Color(1.0, 0.85, 0.3))
-	_label_prompt = _create_label("[X] AUMENTA   [O] DIMINUI", Color(0.85, 0.9, 0.8))
+	_label_zoom = _create_label("ZOOM: 2.0x", UiStyle.ACTION)
+	_label_range = _create_label("DIST: --- m", UiStyle.ACCENT)
+	_hint = UiStyle.Hint.new()
+	_root.add_child(_hint)
+	_hint.set_items([{"action": "zoom_in", "text": "AUMENTA"}, {"action": "zoom_out", "text": "DIMINUI"}])
 
 
 func _create_label(text: String, color: Color) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 8)
+	l.add_theme_font_size_override("font_size", UiStyle.S)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	l.add_theme_constant_override("outline_size", 2)
+	l.add_theme_constant_override("outline_size", UiStyle.OUTLINE)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(l)
 	return l
+
+
+## Escala do HUD (main.apply_gfx): letras e botões do mesmo tamanho que no resto do HUD.
+func set_ui_scale(k: float) -> void:
+	_k = k
+	for l: Label in [_label_zoom, _label_range]:
+		l.add_theme_font_size_override("font_size", int(UiStyle.S * k))
+		l.add_theme_constant_override("outline_size", int(UiStyle.OUTLINE * k))
+		l.reset_size()
+	_hint.scale = Vector2(k, k)
 
 
 func update_scope(active: bool, zoom_label: String, target_dist: float, blocked := false) -> void:
@@ -96,7 +110,9 @@ func update_scope(active: bool, zoom_label: String, target_dist: float, blocked 
 	_label_range.position = Vector2(roundf(center.x + r * 0.85 - _label_range.size.x), roundf(center.y - r * 0.88))
 
 	# Prompt na base do visor
-	_label_prompt.position = Vector2(roundf(center.x - _label_prompt.size.x * 0.5), roundf(center.y + r * 0.82))
+	# botões embaixo do visor, no preto (dentro dele cobriam o alvo e encostavam no aviso do HUD)
+	var hint_h := _hint.size.y * _k
+	_hint.position = Vector2(roundf(center.x - _hint.size.x * _k * 0.5), roundf(center.y + r + (vp.y * 0.5 - r - hint_h) * 0.5))
 
 	_reticle.queue_redraw()
 
@@ -138,7 +154,7 @@ func _on_reticle_draw() -> void:
 			_reticle.draw_line(center + Vector2(-w, dy), center + Vector2(w, dy), col_dark, 1.0)
 
 	# Ponto iluminado de precisão no centro exato
-	var dot_col := Color(0.55, 0.55, 0.55) if _blocked else col_red
+	var dot_col := UiStyle.MUTED if _blocked else col_red
 	_reticle.draw_circle(center, 2.0, dot_col)
 	_reticle.draw_circle(center, 0.9, Color(0.8, 0.8, 0.8, 1.0) if _blocked else Color(1.0, 0.8, 0.7, 1.0))
 

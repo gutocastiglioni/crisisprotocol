@@ -150,6 +150,13 @@ func test_gate_keypad() -> void:
 	# o código certo pelas setas (direita passa de casa, cima/baixo mudam o número) e E: destranca, gasta a chave, abre
 	main._on_keypad(gate)
 	await t._frames(int(Inspect.ZOOM_IN * 60) + int(Inspect.MIN_SHOW * 60) + 5)
+	# o direcional do controle (ui_*) também escolhe, como mostra o botão no pé da caixa
+	await _press("ui_up")
+	await _press("ui_right")
+	var dpad_ok := ins._digits[0] == 1 and ins._cursor == 1
+	await _press("ui_left")
+	await _press("ui_down")
+	t.check(dpad_ok and ins._entered() == "0000" and ins._cursor == 0, "direcional: cima soma, direita passa de casa", "%s %d" % [ins._entered(), ins._cursor])
 	for a in ["move_right", "move_back", "move_right", "move_forward", "move_forward", "move_right", "move_back", "move_back", "move_back"]:
 		await _press(a)
 	t.check(ins._entered() == CloneLab.ALLO_SUBJECT, "setas: 0 -> 9, 2 e 7", ins._entered())

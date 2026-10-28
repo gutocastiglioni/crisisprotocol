@@ -67,21 +67,14 @@ func test_animations_and_moves_data() -> void:
 
 
 func test_hud_prompts_and_boundaries() -> void:
-	# Atrás do soldado calmo a 1,6 m: abate furtivo disponível e aviso emitido
+	# Atrás do soldado calmo a 1,6 m: abate furtivo disponível
 	var ps := await _spawn_pair(Vector3(0, 0, -1.6), "soldier")
 	var p: Player = ps[0]
 	var s: Soldier = ps[1]
 	var w: Node3D = ps[2]
-	var notices: Array[String] = []
-	p.notice.connect(func(txt: String) -> void: notices.append(txt))
-	p.stealth._last_prompt = ""
 	p.stealth.update(0.016)
 	check(s.can_assassinate(p) and p.stealth_target() == s, "atrás do soldado calmo: elegível para abate furtivo")
 	check(p.stealth_prompt() == PlayerStealth.ASSASSINATE_PROMPT, "HUD prompt de abate furtivo", p.stealth_prompt())
-	check(PlayerStealth.ASSASSINATE_PROMPT in notices, "sinal notice emite aviso de abate furtivo", str(notices))
-	var count_before := notices.size()
-	p.stealth.update(0.016)
-	check(notices.size() == count_before, "aviso de abate furtivo não repete a cada quadro sem mudar")
 
 	# Mirando: desativa abate furtivo
 	Input.action_press("aim")
@@ -160,7 +153,10 @@ func test_hud_prompts_and_boundaries() -> void:
 	main._notice_t = 0.0
 	await t._frames(2)
 	main._process(0.016)
-	check(main._hud_notice.visible and main._hud_notice.text == PlayerStealth.ASSASSINATE_PROMPT, "main.gd exibe ABATE FURTIVO DISPONIVEL no _hud_notice", main._hud_notice.text)
+	var shoot_glyph: Dictionary = UiStyle.glyph("shoot")
+	check(main._prompt.visible and main._prompt.text() == PlayerStealth.ASSASSINATE_PROMPT and main._prompt.items[0].action == "shoot",
+		"main.gd mostra o botão de atirar com ABATE FURTIVO", "%s %s" % [main._prompt.text(), shoot_glyph])
+	check(not main._hud_notice.visible, "o abate furtivo não repete na faixa de avisos", main._hud_notice.text)
 	var mr: Raptor = main.raptors[0]
 	mr.reset()  # fora da moita da emboscada
 	mr.route.clear()
@@ -169,10 +165,10 @@ func test_hud_prompts_and_boundaries() -> void:
 	msd.global_position = Vector3(10, 0, -10)
 	await t._frames(2)
 	main._process(0.016)
-	check(main._hud_notice.visible and main._hud_notice.text == PlayerStealth.CRIT_PROMPT, "main.gd exibe GOLPE CRITICO DISPONIVEL no _hud_notice", main._hud_notice.text)
+	check(main._prompt.visible and main._prompt.text() == PlayerStealth.CRIT_PROMPT, "main.gd mostra o botão de atirar com GOLPE CRÍTICO", main._prompt.text())
 	mr.global_position = Vector3(10, 0, -10)
 	main._process(0.016)
-	check(not main._hud_notice.visible, "main.gd oculta imediatamente o aviso furtivo/crítico quando sai do alcance")
+	check(not main._prompt.visible, "main.gd oculta imediatamente o botão furtivo/crítico quando sai do alcance")
 	main.queue_free()
 	await t.process_frame
 
@@ -247,8 +243,6 @@ func test_raptor_stealth_knockdown_and_crit_strike() -> void:
 
 	var killed := [false]
 	r.killed.connect(func() -> void: killed[0] = true)
-	var notices: Array[String] = []
-	p.notice.connect(func(txt: String) -> void: notices.append(txt))
 
 	# 1º golpe furtivo pelas costas: tira 70% da vida (119 de 170, sobrando 51) e derruba em "down"
 	p.fire()
@@ -261,7 +255,7 @@ func test_raptor_stealth_knockdown_and_crit_strike() -> void:
 	check(other.alert_level() == 0 and other.aware == 0.0, "derrubar o raptor no furtivo não alerta os outros")
 	check(not r.can_assassinate(p) and r.can_crit_strike(p), "raptor caído: can_crit_strike é true e can_assassinate é false")
 	p.stealth.update(0.016)
-	check(p.stealth_prompt() == PlayerStealth.CRIT_PROMPT and PlayerStealth.CRIT_PROMPT in notices, "HUD avisa GOLPE CRITICO DISPONIVEL perto do raptor caído", p.stealth_prompt())
+	check(p.stealth_prompt() == PlayerStealth.CRIT_PROMPT, "HUD avisa GOLPE CRÍTICO perto do raptor caído", p.stealth_prompt())
 
 	# Mesmo pela frente do raptor caído, o golpe crítico está disponível (qualquer direção até CRIT_RANGE)
 	p.global_position = r.global_position + Vector3(0, 0, 1.5)

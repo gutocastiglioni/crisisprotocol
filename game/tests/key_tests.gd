@@ -112,7 +112,7 @@ func test_lock_zoom_and_unlock() -> void:
 		state.text = ins._title.text
 	await ins.lock_zoom(c, false)
 	t.check(state.paused and state.cam, "zoom no cadeado com o jogo pausado", str(state))
-	t.check(state.text == "ESTA TRANCADO", "aviso de trancado", state.text)
+	t.check(state.text == "ESTÁ TRANCADO", "aviso de trancado", state.text)
 	t.check(not t.paused and not ins.busy and p.camera_rig.camera.current, "fecha: jogo volta e a câmera é a dela")
 	t.check(c.is_locked(), "sem chave continua trancado")
 	# com a chave: o cadeado abre e cai

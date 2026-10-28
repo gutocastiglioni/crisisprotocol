@@ -12,6 +12,8 @@ const WALL_Z := 13.0
 const FRONT_Z := WALL_Z - PLATFORM_D  # 10.8
 const RAIL_H := 1.0
 const LADDER_X := 2.2
+const BRACE_Y := 1.95  # pé da diagonal das mãos-francesas na parede (acima da cabeça de quem passa por baixo)
+const BRACE_REACH := 1.4  # quanto a diagonal avança da parede até encontrar a longarina
 
 var ladder: Ladder
 var floor_body: StaticBody3D
@@ -35,36 +37,43 @@ func _build_platform() -> void:
 
 
 func _build_supports() -> void:
-	# Vigas estruturais diagonais de sustentação debaixo da passarela ancoradas na parede
+	# Mãos-francesas debaixo da passarela: longarina embaixo do piso, da parede até a borda, e a diagonal que sai
+	# da parede e sobe até ela. A diagonal nasce em BRACE_Y (acima da cabeça): o corredor do labirinto de baixo
+	# do mezanino passa livre.
 	var mat: Material = Level.material("wall", 0.5)
 	var x_coords: Array[float] = [-4.0, 0.0, 4.0]
-	var beam_len: float = sqrt(pow(FLOOR_Y - 0.8, 2) + pow(PLATFORM_D * 0.9, 2))
+	var under_y: float = FLOOR_Y - 0.25  # embaixo da laje
+	var joist_h := 0.12
+	var wall_z: float = WALL_Z - 0.1
 	for x: float in x_coords:
-		var bracket := Node3D.new()
-		bracket.position = Vector3(x, 0.8, WALL_Z - 0.1)
-		
-		# Viga diagonal inclinada
-		var beam := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.18, 0.18, beam_len)
-		beam.mesh = box
-		beam.material_override = mat
-		beam.position = Vector3(0, (FLOOR_Y - 0.8) * 0.5, -PLATFORM_D * 0.45)
-		beam.rotation.x = -atan2(FLOOR_Y - 0.8, PLATFORM_D * 0.9)
-		bracket.add_child(beam)
-		# colisão da viga: o corredor do labirinto passa por baixo do mezanino (ela não atravessa a viga)
-		var body := StaticBody3D.new()
-		body.collision_layer = 1
-		body.collision_mask = 0
-		body.set_meta("surface", "wall")
-		body.transform = beam.transform
-		var col := CollisionShape3D.new()
-		var shape := BoxShape3D.new()
-		shape.size = box.size
-		col.shape = shape
-		body.add_child(col)
-		bracket.add_child(body)
-		add_child(bracket)
+		var joist_y: float = under_y - joist_h * 0.5
+		_beam(Vector3(x, joist_y, wall_z), Vector3(x, joist_y, FRONT_Z + 0.05), Vector2(0.14, joist_h), mat)
+		var foot := Vector3(x, BRACE_Y, wall_z)
+		var head := Vector3(x, under_y - joist_h, wall_z - BRACE_REACH)
+		_beam(foot, head, Vector2(0.12, 0.12), mat)
+		# chapa chumbada na parede no pé da diagonal
+		add_child(_box(Vector3(0.26, 0.34, 0.03), mat, Vector3(x, BRACE_Y + 0.04, WALL_Z - 0.085)))
+
+
+## Perfil de aço de `a` até `b` (seção `section` = largura x altura) com colisão: tiro e corpo não atravessam.
+func _beam(a: Vector3, b: Vector3, section: Vector2, mat: Material) -> void:
+	var size := Vector3(section.x, section.y, a.distance_to(b))
+	var basis := Basis.looking_at(b - a, Vector3.UP)
+	var xf := Transform3D(basis, (a + b) * 0.5)
+	var mi := _box(size, mat, Vector3.ZERO)
+	mi.transform = xf
+	add_child(mi)
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("surface", "wall")
+	body.transform = xf
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	col.shape = shape
+	body.add_child(col)
+	add_child(body)
 
 
 func _build_guardrails() -> void:

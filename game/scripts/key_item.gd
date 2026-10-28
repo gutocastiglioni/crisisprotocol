@@ -20,8 +20,7 @@ const SPARKLE := preload("res://shaders/sparkle.gdshader")
 @export var id := "container"
 @export var kind := "key"  # "key" ou "keycard"
 @export var display_name := "CHAVE DO CONTAINER"
-@export var description := "Chave de latao com etiqueta vermelha.
-Abre o cadeado de algum container."
+@export var description := "Chave de latão com etiqueta vermelha.\nAbre o cadeado de algum container."
 
 ## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, brilhando), "held" (na mão de um morto) ou "taken"
 var state := "hidden"

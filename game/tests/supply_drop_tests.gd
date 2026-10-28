@@ -221,7 +221,7 @@ func test_main_layout() -> void:
 	p.reset_physics_interpolation()
 	await t._frames(5)
 	main._process(0.016)
-	t.check(main._prompt.visible and main._prompt_text.text == "ABRIR CAIXA (E)", "aviso ABRIR CAIXA", main._prompt_text.text)
+	t.check(main._prompt.visible and main._prompt.text() == "ABRIR CAIXA" and main._prompt.items[0].action == "interact", "aviso <E> ABRIR CAIXA", main._prompt.text())
 	Input.action_press("interact")
 	await t._frames(2)
 	Input.action_release("interact")

@@ -4,18 +4,18 @@ extends Control
 ## em número, um aviso) à direita. `segments` > 0 = blocos separados (sensor de perigo); 0 = barra cheia (vida).
 ## A cor de cada pedaço vem de `colors` (limites crescentes: [até, cor], ...). `blink` pisca a barra e o título.
 
-const FONT_SIZE := 8
+const FONT_SIZE := UiStyle.S
 const TITLE_W := 34.0
 const BAR_H := 5.0
 const DIM := Color(0.08, 0.1, 0.08, 0.85)
-const TEXT := Color(0.85, 0.9, 0.8)
+const TEXT := UiStyle.INK
 
 var title := ""
 var value := 1.0  # 0..1
 var tail := ""  # escrito depois da barra, na cor dela
 var bar_w := 60.0
 var segments := 0
-var colors: Array = [[1.0, Color(0.4, 0.95, 0.45)]]
+var colors: Array = [[1.0, UiStyle.ACTION]]
 var title_color := TEXT
 var blink := false
 var _t := 0.0

@@ -57,7 +57,7 @@ func _ready() -> void:
 	for s in [-1, 1]:
 		for z in TUBE_Z:
 			_tube(Vector3(s * TUBE_X, FLOOR_Y, z), -s * PI * 0.5)
-			_plate(self, Vector3(s * (TUBE_X - PLATE_IN), FLOOR_Y, z), -s * PI * 0.5, SUBJECTS[plates.size()], "VELOCIRAPTOR - CLONE", "CONGELADO / ESTAVEL", false)
+			_plate(self, Vector3(s * (TUBE_X - PLATE_IN), FLOOR_Y, z), -s * PI * 0.5, SUBJECTS[plates.size()], "VELOCIRAPTOR - CLONE", "CONGELADO / ESTÁVEL", false)
 	_build_tank()
 	_build_console()
 	_build_lights()
@@ -99,7 +99,7 @@ func _build_room() -> void:
 
 ## Portão de enrolar: lâminas de aço que sobem para dentro da parede; a caixa do rolo fica do lado de dentro.
 func _build_gate() -> void:
-	gate = Door.create(self, Vector3(0, FLOOR_Y, Z_NEAR), Vector3(GATE_W, GATE_TOP - FLOOR_Y, 0.4), -1, "ABRIR PORTAO")
+	gate = Door.create(self, Vector3(0, FLOOR_Y, Z_NEAR), Vector3(GATE_W, GATE_TOP - FLOOR_Y, 0.4), -1, "ABRIR PORTÃO")
 	var h := GATE_TOP - FLOOR_Y
 	var shutter := Node3D.new()
 	var slats := int(h / 0.24)
@@ -407,7 +407,7 @@ func _build_tank() -> void:
 	lamp.albedo_color = Color(1.0, 0.25, 0.2)
 	_box(tank, Vector3(0.3, 0.12, 0.06), Vector3(0, TANK_BASE + TANK_H + TANK_CAP * 0.5, TANK_R + 0.23), lamp)
 	# plaqueta do lado da porta (à esquerda de quem chega), fora do caminho da folha aberta
-	_plate(tank, Vector3(-1.0, 0, TANK_R + 0.55), 0.0, ALLO_SUBJECT, "ALLOSAURUS - PROTOTIPO", "VAZIO / TRANSFERIDO", true)
+	_plate(tank, Vector3(-1.0, 0, TANK_R + 0.55), 0.0, ALLO_SUBJECT, "ALLOSAURUS - PROTÓTIPO", "VAZIO / TRANSFERIDO", true)
 
 
 ## Onde a chave do painel fica, em cima do console (mundo).

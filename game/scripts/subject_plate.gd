@@ -9,7 +9,7 @@ const POST_H := 1.0
 const PLATE := Vector3(0.44, 0.27, 0.025)
 const TILT := 50.0  # graus para trás: virada para cima e para quem lê, como um painel de leitura
 const VIEW_DIST := 0.95
-const INK := Color(0.95, 0.82, 0.35)
+const INK := UiStyle.ACCENT
 
 var number := "0000"
 var species := ""
@@ -51,8 +51,8 @@ func _ready() -> void:
 	_face.add_child(plate)
 	var z := PLATE.z * 0.5 + 0.002
 	_text("SUBJECT " + number, 40, Vector3(0, 0.06, z), INK)
-	_text(species, 22, Vector3(0, -0.02, z), Color(0.8, 0.85, 0.85))
-	_text(status, 22, Vector3(0, -0.08, z), Color(1.0, 0.3, 0.25) if empty else Color(0.4, 1.0, 0.5))
+	_text(species, 22, Vector3(0, -0.02, z), UiStyle.INK)
+	_text(status, 22, Vector3(0, -0.08, z), UiStyle.DANGER if empty else UiStyle.ACTION)
 	# LED de estado no canto
 	var led := MeshInstance3D.new()
 	var lb := BoxMesh.new()

@@ -26,7 +26,7 @@ extends CharacterBody3D
 signal health_changed(value: int)
 signal died
 signal headshot(who: Node)
-## aviso para o HUD ("SEM MUNICAO", "PARE PARA ATIRAR", "M16 +15")
+## aviso para o HUD ("SEM MUNIÇÃO", "PARE PARA ATIRAR", "M16 +15")
 signal notice(text: String)
 ## interagiu com um baú trancado (o main mostra o cadeado e, se ela tem a chave, destranca)
 signal locked(chest: Node)
@@ -293,7 +293,7 @@ func _physics_process(delta: float) -> void:
 						_say("ACESSO PERMITIDO")
 					else:
 						door.deny(self)
-						_say("ACESSO NEGADO - REQUER CARTAO")
+						_say("ACESSO NEGADO - REQUER CARTÃO")
 				else:
 					door.open()
 	if Input.is_action_just_pressed("switch_weapon"):
@@ -667,7 +667,7 @@ func fire() -> void:
 	if not has_ammo(kind):
 		_shot_cd = DRY_FIRE_TIME
 		Sfx.play(self, "dry_fire", model.muzzle_position())
-		_say("SEM MUNICAO")
+		_say("SEM MUNIÇÃO")
 		return
 	_shot_cd = stats.cooldown
 	_lock_t = stats.lock

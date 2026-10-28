@@ -127,7 +127,7 @@ func test_aim_to_shoot_and_ammo() -> void:
 	var clicks := int(Sfx.played.get("dry_fire", 0))
 	p.fire()
 	t.check(p.shots_fired == 2 and p.ammo_of("pistol") == 0, "sem munição não atira")
-	t.check(int(Sfx.played.get("dry_fire", 0)) == clicks + 1 and "SEM MUNICAO" in notices, "sem munição: clique e aviso", str(notices))
+	t.check(int(Sfx.played.get("dry_fire", 0)) == clicks + 1 and "SEM MUNIÇÃO" in notices, "sem munição: clique e aviso", str(notices))
 	var n := notices.size()
 	for i in 5:
 		await t._frames(2)

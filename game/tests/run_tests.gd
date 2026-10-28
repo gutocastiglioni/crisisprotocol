@@ -30,6 +30,7 @@ const HURT_TESTS := preload("res://tests/hurt_tests.gd")
 const SUPPLY_DROP_TESTS := preload("res://tests/supply_drop_tests.gd")
 const PAUSE_TESTS := preload("res://tests/pause_tests.gd")
 const HUD_TESTS := preload("res://tests/hud_tests.gd")
+const UI_STYLE_TESTS := preload("res://tests/ui_style_tests.gd")
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -128,6 +129,8 @@ func _run() -> void:
 	await PAUSE_TESTS.new().run(self)
 	print("== HUD: sensor de perigo, radar e modelo da arma")
 	await HUD_TESTS.new().run(self)
+	print("== design system dos textos: glifos dos botões e caixa de texto")
+	await UI_STYLE_TESTS.new().run(self)
 	print("== caixa de paraquedas, pistola com silenciador e neblina do telhado")
 	await SUPPLY_DROP_TESTS.new().run(self)
 	print("== guerrilheiro morto, chave e emboscada no pátio")

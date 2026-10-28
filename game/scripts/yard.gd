@@ -81,7 +81,7 @@ static func west_wall(parent: Node) -> void:
 		_prop(parent, _bm(Vector3(0.5, DOOR_H, 0.24)), Vector3(-h, DOOR_H * 0.5, z), "wall", 1.5)
 	_prop(parent, _bm(Vector3(1.0, 0.02, DOOR_W)), Vector3(-h, 0.01, DOOR_Z), "wall", 1.0)
 	# portão de segurança trancado com leitor por aproximação (abre com o keycard do sniper)
-	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTAO")
+	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTÃO")
 	door.lock = "keycard_gate"
 	door.is_locked_door = true
 	door.add_card_reader(Vector3(0.24, 1.35, DOOR_W * 0.5 + 0.35), 0.0)
@@ -446,7 +446,7 @@ static func _gate(parent: Node) -> void:
 	# faixa de perigo no pé da viga, dos dois lados
 	for sx in [-1, 1]:
 		_prop(parent, _bm(Vector3(0.04, 0.3, GATE_GAP)), Vector3(gx + sx * 0.52, top + 0.2, gz), "wall", 1.0).material_override = Level.material("hazard", 1.0)
-	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, top, GATE_GAP + 0.4), 1, "ABRIR PORTAO")
+	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, top, GATE_GAP + 0.4), 1, "ABRIR PORTÃO")
 	# trancado: a chave do console da sala dos clones liga o teclado no pilar e o código é o número do tanque vazio
 	door.lock = GATE_KEY
 	door.code = CloneLab.ALLO_SUBJECT
@@ -621,8 +621,8 @@ static func bake_nav(parent: Node, radius := 0.75, height := 2.0, map := RID(), 
 
 
 ## Malha de gente (soldados), num mapa à parte e só no galpão (onde eles ficam): mais fina que a dos raptors, passa
-## nos corredores de 1,6 m do labirinto, no nicho da escada do mezanino e ao lado da viga do mezanino que corta a coluna 1
-## do labirinto (sobra ~0,7 m de cada lado dela: célula de 5 cm para a malha enxergar a fresta). O mapa some com a cena.
+## nos corredores de 1,6 m do labirinto, no nicho da escada do mezanino e debaixo das mãos-francesas do mezanino (acima
+## da cabeça; célula de 5 cm para a malha enxergar as frestas). O mapa some com a cena.
 const PEOPLE_CELL := 0.05
 static func bake_people_nav(parent: Node) -> RID:
 	var map := NavigationServer3D.map_create()

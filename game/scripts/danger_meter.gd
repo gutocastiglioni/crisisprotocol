@@ -19,7 +19,7 @@ var raw := 0.0  # chance de agora, sem suavizar
 
 func _init() -> void:
 	super(TITLE, 60.0, SEGMENTS)
-	colors = [[0.4, Color(0.45, 0.9, 0.4)], [0.7, Color(1.0, 0.82, 0.25)], [1.0, Color(1.0, 0.25, 0.2)]]
+	colors = [[0.4, UiStyle.ACTION], [0.7, UiStyle.ACCENT], [1.0, UiStyle.DANGER]]
 	value = 0.0
 
 
@@ -37,7 +37,7 @@ func update(delta: float) -> void:
 	value = move_toward(value, raw, rate * delta)
 	blink = value >= WARN
 	tail = "!!" if blink else ""
-	title_color = Color(1.0, 0.3, 0.25) if blink else TEXT
+	title_color = UiStyle.DANGER if blink else TEXT
 
 
 func reset() -> void:

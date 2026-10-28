@@ -13,14 +13,16 @@ uniform float rim : hint_range(0.0, 1.0) = 0.0;
 void vertex() {
 	if (world_uv) {
 		vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-		vec3 wn = abs(normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz));
+		vec3 n = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		vec3 wn = abs(n);
 		vec2 uv;
+		// nas paredes o U segue a direita de quem olha a face (sem o sinal, faces -Z e +X saíam espelhadas)
 		if (wn.y >= wn.x && wn.y >= wn.z) {
 			uv = wp.xz;
 		} else if (wn.x >= wn.z) {
-			uv = vec2(wp.z, -wp.y);
+			uv = vec2(-sign(n.x) * wp.z, -wp.y);
 		} else {
-			uv = vec2(wp.x, -wp.y);
+			uv = vec2(sign(n.z) * wp.x, -wp.y);
 		}
 		UV = uv * world_uv_scale;
 	}

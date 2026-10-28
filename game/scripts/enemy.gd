@@ -465,6 +465,10 @@ func threat() -> float:
 
 func _threat() -> float: return 0.0
 
+## Em luta e com ela à vista agora (o radar não a mostra INVISIVEL enquanto alguém a está vendo).
+func has_eyes_on() -> bool:
+	return not dead and not lurking and in_combat() and _has_target() and _lost_t < 0.4
+
 ## Ameaça de quem ataca de perto: dando um golpe de `strikes` ao alcance (`reach` m, com folga), certa; longe ou só
 ## rondando, cresce conforme chega perto (até 0,6 em cima dela). `rush` = investidas que vêm de longe.
 func _melee_threat(strikes: Array, reach: float, rush: Array = []) -> float:
@@ -479,9 +483,9 @@ func _update_marker() -> void:
 	if _marker == null: return
 	var lv := alert_level()
 	_marker.visible = lv > 0
-	if lv == 3: _marker.text = "!"; _marker.modulate = Color(1.0, 0.2, 0.15)
-	elif lv == 2: _marker.text = "!"; _marker.modulate = Color(1.0, 0.55, 0.1)
-	elif lv == 1: _marker.text = "?"; _marker.modulate = Color(1.0, 0.85, 0.2)
+	if lv == 3: _marker.text = "!"; _marker.modulate = UiStyle.DANGER
+	elif lv == 2: _marker.text = "!"; _marker.modulate = UiStyle.WARN
+	elif lv == 1: _marker.text = "?"; _marker.modulate = UiStyle.ACCENT
 
 ## Som vindo de `pos` chega aqui: mesma sala, ou salas ligadas por portas abertas (a porta fechada segura tiro e grito).
 ## Do telhado não chega nada (a laje abafa).

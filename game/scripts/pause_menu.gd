@@ -13,8 +13,10 @@ const UP := ["move_forward", "ui_up"]
 const DOWN := ["move_back", "ui_down"]
 const CONFIRM := ["interact", "roll", "ui_accept"]
 const BACK := ["crouch"]  # bola; ESC / START chegam como "pause" (_unhandled_input)
-const TEXT := Color(0.9, 0.92, 0.85)
-const PICK := Color(1.0, 0.85, 0.3)
+const TEXT := UiStyle.INK
+const PICK := UiStyle.ACCENT
+const HINT_ITEMS := [{"keys": ["SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"action": "interact", "text": "CONFIRMAR"},
+	{"action": "pause", "text": "VOLTAR"}]
 const ROW := 14.0  # altura de cada opção (unidades do HUD de 320x240)
 
 var is_open := false
@@ -24,7 +26,7 @@ var layer: CanvasLayer
 var _shade: ColorRect
 var _band: ColorRect
 var _title: Label
-var _hint: Label
+var _hint: UiStyle.Hint
 var _rows: Array[Label] = []
 var _opened_frame := -1
 
@@ -34,17 +36,13 @@ func _ready() -> void:
 	layer = CanvasLayer.new()
 	layer.layer = 4
 	add_child(layer)
-	_shade = ColorRect.new()
-	_shade.color = Color(0, 0, 0, 0.55)
-	_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_shade)
-	_band = ColorRect.new()
-	_band.color = Color(0, 0, 0, 0.72)
-	_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_band)
+	_shade = UiStyle.rect(layer, UiStyle.SHADE)
+	_band = UiStyle.rect(layer, UiStyle.BAND)
 	_title = _label("PAUSA", PICK)
-	_title.add_theme_font_size_override("font_size", 24)
-	_hint = _label("CIMA/BAIXO escolher   E/X confirmar   ESC/START voltar", Color(0.4, 1.0, 0.5))
+	_title.add_theme_font_size_override("font_size", UiStyle.L)
+	_hint = UiStyle.Hint.new()
+	layer.add_child(_hint)
+	_hint.set_items(HINT_ITEMS)
 	for i in ITEMS.size():
 		var l := _label(ITEMS[i], TEXT)
 		l.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -55,16 +53,7 @@ func _ready() -> void:
 
 
 func _label(text: String, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", 8)
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	l.add_theme_constant_override("outline_size", 2)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(l)
-	return l
+	return UiStyle.label(layer, text, color, UiStyle.S, HORIZONTAL_ALIGNMENT_CENTER)
 
 
 func _set_visible(v: bool) -> void:
@@ -175,9 +164,10 @@ func _layout() -> void:
 	_shade.size = area
 	_band.position = Vector2(0, top)
 	_band.size = Vector2(area.x, h)
-	for l: Label in [_title, _hint] + _rows:
+	for l: Label in [_title] + _rows:
 		l.position.x = 0
 		l.size.x = area.x
+	_hint.position.x = roundf((area.x - _hint.size.x) * 0.5)
 	_title.position.y = top + 4
 	for i in _rows.size():
 		_rows[i].position.y = top + 40 + ROW * i

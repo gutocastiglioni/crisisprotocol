@@ -16,15 +16,27 @@ const ZOOM_IN := 0.55
 const ZOOM_OUT := 0.35
 const LOCK_FOV := 38.0
 const CONFIRM := ["interact", "shoot", "roll", "jump", "ui_accept"]
-const TEXT := Color(0.9, 0.92, 0.85)
-const TITLE := Color(1.0, 0.85, 0.3)
-const VIEW := Vector2(150, 96)  # tamanho do item na tela (unidades do HUD de 320x240)
+const TEXT := UiStyle.INK
+const TITLE := UiStyle.ACCENT
+const VIEW := Vector2(256, 120)  # quadro do item (unidades do HUD de 240 de altura): folga para girar sem cortar as pontas
+const ITEM_FOV := 37.0  # abre junto com a altura do quadro (era 30 em 96): o item fica do mesmo tamanho na tela
+const ITEM_EYE_Y := 0.03  # altura da câmera do item; o meio do item fica nela (`_center`)
 const PLATE_FOV := 40.0
 const KEYPAD_FOV := 34.0
 const CODE_LEN := 4
 const KEYPAD_OK := ["interact", "ui_accept"]
 const KEYPAD_EXIT := ["crouch", "ui_cancel"]
-const WRONG_TIME := 0.9  # s com o "CODIGO INCORRETO" antes de zerar
+const WRONG_TIME := 0.9  # s com o "CÓDIGO INCORRETO" antes de zerar
+# botões no pé da caixa (UiStyle.Hint): confirmar; no teclado, escolher/confirmar/sair
+const OK_ITEMS := [{"action": "interact", "text": "OK"}]
+const KEYPAD_ITEMS := [{"keys": ["0-9", "SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"action": "interact", "text": "CONFIRMAR"},
+	{"action": "crouch", "text": "SAIR"}]
+const VISOR_OK := Color(0.6, 1.0, 1.0)  # visor do teclado com o código aceito (cor do aparelho, não do texto)
+# caixa de texto embaixo: título no alto, botões no pé e o texto centralizado no meio, crescendo para cima se precisar
+const BOX_MARGIN := 8.0  # da caixa até a borda da tela
+const BOX_PAD := 7.0  # respiro dentro da caixa: o título não cola no topo, os botões não colam no fundo
+const BOX_GAP := 6.0  # entre título, texto e botões
+const BOX_MIN_BODY := 24.0  # altura mínima do texto (duas linhas): a caixa não muda de tamanho a cada mensagem curta
 
 var player: Player
 var hud: CanvasLayer  # HUD do jogo, escondido enquanto a tela está aberta
@@ -38,7 +50,7 @@ var _cam: Camera3D
 var _band: ColorRect
 var _title: Label
 var _body: Label
-var _ok: Label
+var _ok: UiStyle.Hint
 var _shade: ColorRect
 var _view: SubViewportContainer
 var _pivot: Node3D
@@ -60,38 +72,29 @@ func _ready() -> void:
 	layer = CanvasLayer.new()
 	layer.layer = 3
 	add_child(layer)
-	_shade = ColorRect.new()
-	_shade.color = Color(0, 0, 0, 0.78)
-	_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_shade)
+	_shade = UiStyle.rect(layer, UiStyle.SHADE)
 	_view = _build_view()
 	layer.add_child(_view)
-	_band = ColorRect.new()
-	_band.color = Color(0, 0, 0, 0.72)
-	_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_band)
+	_band = UiStyle.rect(layer, UiStyle.BAND)
 	_title = _label(TITLE)
+	_title.add_theme_font_size_override("font_size", UiStyle.M)
 	_body = _label(TEXT)
-	_ok = _label(Color(0.4, 1.0, 0.5))
-	_ok.text = "OK (E)"
+	_body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ok = UiStyle.Hint.new()
+	layer.add_child(_ok)
+	_ok.set_items(OK_ITEMS)
 	_code_pad = ColorRect.new()
 	_code_pad.color = Color(0.02, 0.06, 0.03, 0.9)
 	_code_pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_code_pad)
-	_code = _label(Color(0.4, 1.0, 0.5))
+	_code = _label(UiStyle.ACTION)
 	_code.add_theme_font_size_override("font_size", 16)
 	_hide_all()
 
 
 func _label(color: Color) -> Label:
-	var l := Label.new()
-	l.add_theme_font_size_override("font_size", 8)
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	l.add_theme_constant_override("outline_size", 2)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	layer.add_child(l)
-	return l
+	return UiStyle.label(layer, "", color, UiStyle.S, HORIZONTAL_ALIGNMENT_CENTER)
 
 
 ## Item girando num mundo à parte (fundo transparente, luz própria): pixelado como o resto do HUD.
@@ -122,8 +125,8 @@ func _build_view() -> SubViewportContainer:
 	fill.light_color = Color(0.7, 0.8, 1.0)
 	vp.add_child(fill)
 	var cam := Camera3D.new()
-	cam.fov = 30.0
-	cam.position = Vector3(0, 0.03, 0.3)
+	cam.fov = ITEM_FOV
+	cam.position = Vector3(0, ITEM_EYE_Y, 0.3)
 	cam.current = true
 	vp.add_child(cam)
 	_pivot = Node3D.new()
@@ -151,19 +154,38 @@ func _process(delta: float) -> void:
 		_pivot.rotation.y += delta * 1.4
 	var area := _area()
 	_shade.size = area
-	_band.position = Vector2(8, area.y - 70)
-	_band.size = Vector2(area.x - 16, 62)
-	_view.position = Vector2(roundf((area.x - VIEW.x) * 0.5), roundf(area.y * 0.5 - VIEW.y * 0.5 - 30))
-	for l: Label in [_title, _body, _ok]:
-		l.size.x = area.x - 24
-		l.position.x = 12
-	_title.position.y = area.y - 66
-	_body.position.y = area.y - 54
-	_ok.position.y = area.y - 19
+	var top := _layout_box(area)
+	# o item fica acima da caixa, nunca por baixo dela
+	var view_y := minf(roundf(area.y * 0.5 - VIEW.y * 0.5 - 30), top - VIEW.y - BOX_GAP)
+	_view.position = Vector2(roundf((area.x - VIEW.x) * 0.5), maxf(view_y, 0.0))
 	_code.size.x = area.x - 24
 	_code.position = Vector2(12, roundf(area.y * 0.5) - 40)
 	_code_pad.size = Vector2(120, 30)
 	_code_pad.position = Vector2(roundf((area.x - 120.0) * 0.5), roundf(area.y * 0.5) - 44)
+
+
+## Caixa de baixo: título no alto (com respiro), botões no pé e o texto centralizado no espaço do meio; a altura
+## acompanha o texto (nada se sobrepõe). Devolve o topo da caixa.
+func _layout_box(area: Vector2) -> float:
+	var inner := area.x - BOX_MARGIN * 2.0 - BOX_PAD * 2.0
+	for l: Label in [_title, _body]:
+		l.size.x = inner
+		l.position.x = BOX_MARGIN + BOX_PAD
+	_ok.position.x = roundf((area.x - _ok.size.x) * 0.5)
+	_body.size.y = 0.0
+	var title_h := _title.get_combined_minimum_size().y if _title.text != "" else 0.0
+	# sem texto (teclado): só título e botões
+	var body_h := maxf(_body.get_combined_minimum_size().y, BOX_MIN_BODY) if _body.text != "" else 0.0
+	var ok_h := _ok.size.y  # o lugar dos botões fica guardado mesmo antes de eles aparecerem
+	var h := BOX_PAD + title_h + (BOX_GAP if title_h > 0.0 else 0.0) + body_h + (BOX_GAP if body_h > 0.0 else 0.0) + ok_h + BOX_PAD
+	var top := roundf(area.y - BOX_MARGIN - h)
+	_band.position = Vector2(BOX_MARGIN, top)
+	_band.size = Vector2(area.x - BOX_MARGIN * 2.0, h)
+	_title.position.y = top + BOX_PAD
+	_body.position.y = top + BOX_PAD + title_h + (BOX_GAP if title_h > 0.0 else 0.0)
+	_body.size.y = body_h
+	_ok.position.y = top + h - BOX_PAD - ok_h
+	return top
 
 
 func _open() -> void:
@@ -188,7 +210,15 @@ func _text(title: String, body: String) -> void:
 	_body.text = body
 	for c in [_band, _title, _body]:
 		c.visible = true
+	_ok.set_items(OK_ITEMS)
 	_ok.visible = false
+
+
+## Os botões do teclado ficam no pé da caixa, no lugar do OK, enquanto ela digita.
+func _keypad_text(title: String) -> void:
+	_text(title, "")
+	_ok.set_items(KEYPAD_ITEMS)
+	_ok.visible = true
 
 
 ## Espera o botão de confirmar (ou `auto_close`), depois de MIN_SHOW s com a tela pronta.
@@ -236,7 +266,7 @@ func lock_zoom(chest: Chest, has_key: bool) -> void:
 	else:
 		Sfx.ui(self, "lock_rattle")
 		chest.rattle()
-		_text("ESTA TRANCADO", "Um cadeado grosso prende a tampa.\nPrecisa de uma chave.")
+		_text("ESTÁ TRANCADO", "Um cadeado grosso prende a tampa.\nPrecisa de uma chave.")
 	await _wait_confirm()
 	await _zoom_back()
 
@@ -289,7 +319,7 @@ func keypad(door: Door, has_key: bool) -> bool:
 		door.keypad_power(true)
 		ok = await _enter_code(door.code)
 		if ok:
-			_text("CODIGO ACEITO", "O portao destrancou.")
+			_text("CÓDIGO ACEITO", "O portão destrancou.")
 			await _wait_confirm()
 		else:
 			door.keypad_power(false)
@@ -303,10 +333,10 @@ func _enter_code(code: String) -> bool:
 	_digits.resize(CODE_LEN)
 	_digits.fill(0)
 	_cursor = 0
-	_text("DIGITE O CODIGO", "0-9 ou setas: escolher   E: confirmar   C: sair")
+	_keypad_text("DIGITE O CÓDIGO")
 	_code_pad.visible = true
 	_code.visible = true
-	_show_code(Color(0.4, 1.0, 0.5))
+	_show_code(UiStyle.ACTION)
 	_elapsed = 0.0
 	_typing = true
 	var wrong_t := -1.0
@@ -319,8 +349,8 @@ func _enter_code(code: String) -> bool:
 			wrong_t = -1.0
 			_digits.fill(0)
 			_cursor = 0
-			_text("DIGITE O CODIGO", "0-9 ou setas: escolher   E: confirmar   C: sair")
-			_show_code(Color(0.4, 1.0, 0.5))
+			_keypad_text("DIGITE O CÓDIGO")
+			_show_code(UiStyle.ACTION)
 		if _elapsed < MIN_SHOW:
 			continue
 		if not shown:
@@ -335,8 +365,9 @@ func _enter_code(code: String) -> bool:
 		if _just(KEYPAD_EXIT):
 			_typing = false
 			return false
-		var step := int(_just(["move_right"])) - int(_just(["move_left"]))
-		var turn := int(_just(["move_forward"])) - int(_just(["move_back"]))
+		# analógico/WASD/setas ou o direcional do controle (ui_*), como diz o botão no pé da caixa
+		var step := int(_just(["move_right", "ui_right"])) - int(_just(["move_left", "ui_left"]))
+		var turn := int(_just(["move_forward", "ui_up"])) - int(_just(["move_back", "ui_down"]))
 		if step != 0:
 			_cursor = clampi(_cursor + step, 0, CODE_LEN - 1)
 			Sfx.ui(self, "keypad_beep")
@@ -344,7 +375,7 @@ func _enter_code(code: String) -> bool:
 			_digits[_cursor] = posmod(_digits[_cursor] + turn, 10)
 			Sfx.ui(self, "keypad_beep")
 		if step != 0 or turn != 0:
-			_show_code(Color(0.4, 1.0, 0.5))
+			_show_code(UiStyle.ACTION)
 		if _just(KEYPAD_OK):
 			submit = true
 		if not submit:
@@ -354,11 +385,11 @@ func _enter_code(code: String) -> bool:
 			_typing = false
 			Sfx.ui(self, "keypad_ok")
 			_cursor = -1  # sem a casa marcada: acabou de digitar
-			_show_code(Color(0.6, 1.0, 1.0))
+			_show_code(VISOR_OK)
 			return true
 		Sfx.ui(self, "keypad_error")
-		_text("CODIGO INCORRETO", "")
-		_show_code(Color(1.0, 0.3, 0.25))
+		_keypad_text("CÓDIGO INCORRETO")
+		_show_code(UiStyle.DANGER)
 		wrong_t = _elapsed + WRONG_TIME
 		if auto_code != "":
 			auto_code = ""  # o automático só tenta uma vez; depois sai sozinho (testes)
@@ -383,7 +414,7 @@ func _input(event: InputEvent) -> void:
 	_digits[_cursor] = d
 	_cursor = mini(_cursor + 1, CODE_LEN - 1)
 	Sfx.ui(self, "keypad_beep")
-	_show_code(Color(0.4, 1.0, 0.5))
+	_show_code(UiStyle.ACTION)
 	get_viewport().set_input_as_handled()
 
 
@@ -420,13 +451,26 @@ func show_item(item: KeyItem) -> void:
 	var model := KeyItem.build_model(_pivot, item.kind)
 	if item.kind == "keycard":
 		model.rotation = Vector3(PI * 0.5, 0.0, 0.0)  # em pé como a chave; deitado, girando, só aparecia a quina
-		model.scale = Vector3.ONE * 1.7
-		model.position = Vector3(0.0, 0.03, 0.0)  # na altura da câmera: em pé, no 2,0 de antes cortava embaixo
+		model.scale = Vector3.ONE * 1.7  # em pé, no 2,0 de antes cortava embaixo
 	else:
 		model.rotation = Vector3(PI * 0.5, 0.0, 0.0)  # em pé, de frente para a câmera
 		model.scale = Vector3.ONE * 2.2
-		model.position.x = 0.02
+	_center(model)
 	await _present(item.display_name, item.description)
+
+
+## Põe o meio das malhas do item no eixo do giro, na altura da câmera: senão ele gira em volta da ponta (a argola
+## da chave fica fora do meio) e balança de um lado para o outro.
+func _center(model: Node3D) -> void:
+	var to_pivot := _pivot.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		var b: AABB = (to_pivot * mi.global_transform) * mi.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	if not first:
+		model.position += Vector3(0.0, ITEM_EYE_Y, 0.0) - box.get_center()
 
 
 ## Abriu a caixa de paraquedas: a pistola com silenciador aparece girando, de lado, com o nome e a descrição.
@@ -438,6 +482,7 @@ func show_drop(drop: SupplyDrop) -> void:
 		c.queue_free()
 	var model := SupplyDrop.build_item(_pivot)
 	model.scale = Vector3.ONE * 0.62
+	_center(model)
 	await _present(drop.NAME, drop.DESCRIPTION)
 
 

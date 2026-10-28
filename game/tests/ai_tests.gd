@@ -482,7 +482,7 @@ func test_doors_seal_rooms() -> void:
 
 
 ## Busca no galpão (malha de gente, `Yard.bake_people_nav`, célula de 5 cm): os corredores de 1,6 m do labirinto (até o
-## miolo, passando ao lado da viga do mezanino) e o nicho da escada do mezanino são chão para os soldados; raptor não cabe.
+## miolo, passando debaixo das mãos-francesas do mezanino) e o nicho da escada do mezanino são chão para os soldados; raptor não cabe.
 ## Alarme (topo da escada do mezanino, miolo do labirinto, em cima das caixas): além de quem viu, só os 2 soldados mais
 ## perto saem, andando; os outros param, olham e ficam. Cada um vai a um lugar (o primeiro ao mais perto que dá, o outro a
 ## um ponto com vista), vasculham uns pontos em volta, desistem e voltam à rotina; sentinelas voltam ao posto.

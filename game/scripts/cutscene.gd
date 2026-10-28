@@ -30,7 +30,7 @@ const END_AT := 8.4
 const SKIP_AFTER := 1.0
 const SKIP := ["interact", "ui_accept"]
 const BAR := 0.13  # altura de cada faixa preta (fração da tela)
-const AMB_SUBTITLE := "ELE ESTA SEGURANDO ALGUMA COISA..."
+const AMB_SUBTITLE := "ELE ESTÁ SEGURANDO ALGUMA COISA..."
 const AMB_APPROACH := 2.2  # ela começa a cena a esta distância de onde para (o corte esconde o salto)
 const AMB_WALK := 1.9
 const AMB_SUB_AT := 2.5
@@ -80,8 +80,8 @@ func _ready() -> void:
 	_sub.text = SUBTITLE
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_sub.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_sub.add_theme_color_override("font_color", Color(1.0, 0.92, 0.75))
-	_sub.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_sub.add_theme_color_override("font_color", UiStyle.INK)
+	_sub.add_theme_color_override("font_outline_color", Color.BLACK)
 	layer.add_child(_sub)
 	set_ui_scale(1.0)
 	layer.visible = false
@@ -98,8 +98,8 @@ func _bar() -> ColorRect:
 ## Escala do HUD (main.apply_gfx): a legenda acompanha o tamanho do resto do texto.
 func set_ui_scale(k: float) -> void:
 	_ui_scale = k
-	_sub.add_theme_font_size_override("font_size", int(12 * k))
-	_sub.add_theme_constant_override("outline_size", int(2 * k))
+	_sub.add_theme_font_size_override("font_size", int(UiStyle.M * k))
+	_sub.add_theme_constant_override("outline_size", int(UiStyle.OUTLINE * k))
 
 
 func play_clones(p: Player, room: CloneLab) -> void:

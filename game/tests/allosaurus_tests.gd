@@ -317,7 +317,7 @@ func test_end_screen() -> void:
 	check(p.dead and not main.game_over and not main._end.visible, "morte: espera o corpo cair antes do Game Over")
 	await t._frames(int((main.GAME_OVER_DELAY + 0.2) * 60.0))
 	check(main.game_over and main._end.visible and title.text == "GAME OVER" and shade.visible, "após GAME_OVER_DELAY: tela de Game Over visível com fundo avermelhado", title.text)
-	check("VOCE MORREU" in main._end_stats.text and "TIROS 7" in main._end_stats.text, "tela de Game Over mostra VOCE MORREU e estatísticas", main._end_stats.text)
+	check("VOCÊ MORREU" in main._end_stats.text and "TIROS 7" in main._end_stats.text, "tela de Game Over mostra VOCE MORREU e estatísticas", main._end_stats.text)
 	Input.action_press("interact")
 	await t._frames(2)
 	Input.action_release("interact")

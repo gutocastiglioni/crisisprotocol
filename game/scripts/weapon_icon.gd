@@ -5,7 +5,7 @@ extends TextureRect
 ## com ele; a imagem é renderizada a RES vezes isso e filtrada sem suavizar, pixelada como o resto). Armas longas e a
 ## pistola com silenciador vêm dos .glb soltos (já de perfil); a pistola comum é a malha "Pistol" do corpo dela.
 
-const VIEW := Vector2(76, 30)
+const VIEW := Vector2(56, 22)
 const RES := 2
 const FIT := 0.94  # comprimento da arma em relação à largura da imagem
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")

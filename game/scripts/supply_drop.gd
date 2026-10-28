@@ -24,7 +24,7 @@ const ITEM := preload("res://assets/characters/pistol_sd.glb")  # sozinha, para 
 const CRATE_ITEM := preload("res://assets/characters/pistol_crate.glb")  # deitada onde a mão a pega
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 const NAME := "PISTOLA COM SILENCIADOR"
-const DESCRIPTION := "Pistola .45 com silenciador rosqueado.\nTiro abafado: so quem esta perto ouve."
+const DESCRIPTION := "Pistola .45 com silenciador rosqueado.\nTiro abafado: só quem está perto ouve."
 ## lona: retângulo atrás da caixa (x0, x1, z0, z1 em relação à caixa) e grade de pontos
 const CHUTE := [-1.4, 1.5, -0.45, -2.75]
 const CHUTE_GRID := Vector2i(9, 7)

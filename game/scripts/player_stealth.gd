@@ -8,14 +8,13 @@ const RUN_NOISE_SPEED := 2.5  # acima disto os passos são de corrida
 const LOUD_TIME := 1.5  # depois de atirar, o clarão e o estampido a deixam bem visível por este tempo
 const STEP_TIME := 0.3
 const COVER_GROUP := "cover"  # capim alto (Yard): nó com meta "radius"; dentro dele ela é vista de menos longe
-const ASSASSINATE_PROMPT := "ABATE FURTIVO DISPONIVEL (ATIRAR)"
-const CRIT_PROMPT := "GOLPE CRITICO DISPONIVEL (ATIRAR)"
+const ASSASSINATE_PROMPT := "ABATE FURTIVO"  # verbo do botão de atirar no HUD (UiStyle.Hint)
+const CRIT_PROMPT := "GOLPE CRÍTICO"
 
 var visibility := 0.7
 var loud_t := 0.0
 var step_t := 0.0
 var p: Player
-var _last_prompt := ""
 
 
 func _init(player: Player) -> void:
@@ -54,10 +53,6 @@ func update(delta: float) -> void:
 	if in_cover():
 		v *= 0.5 if p.crouching else 0.8
 	visibility = maxf(v, 0.1)
-	var cur := prompt()
-	if cur != "" and cur != _last_prompt:
-		p.notice.emit(cur)
-	_last_prompt = cur
 
 
 ## Inimigo (soldado, velociraptor ou sniper; nunca o alossauro) ao alcance para abate furtivo ou golpe crítico sem mirar, ou null.

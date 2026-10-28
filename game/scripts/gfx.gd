@@ -1,11 +1,11 @@
 class_name Gfx
 ## Modo de visual (padrão: "ps2"; F2 ou --gfx=ps1 volta ao PS1 para comparar):
-##   "ps1": 320x240, vértice tremido, textura torta e sem filtro, luz por vértice, cor de 15 bits com dithering.
-##   "ps2": PS2 do começo (2000–2002): 640x480, luz por pixel com contorno, textura filtrada, sombras das lâmpadas.
+##   "ps1": 427x240 (16:9; o HUD segue em unidades de 240 de altura), vértice tremido, textura torta e sem filtro, luz por vértice, cor de 15 bits com dithering.
+##   "ps2": PS2 do começo (2000–2002): 854x480 (16:9), luz por pixel com contorno, textura filtrada, sombras das lâmpadas.
 ## Os materiais dos dois modos têm os mesmos parâmetros; trocar de modo só troca o shader.
 
 const MODES := ["ps1", "ps2"]
-const RES := {"ps1": Vector2i(320, 240), "ps2": Vector2i(640, 480)}
+const RES := {"ps1": Vector2i(427, 240), "ps2": Vector2i(854, 480)}
 const SHADERS := {
 	"ps1": [preload("res://shaders/psx_lit.gdshader"), preload("res://shaders/psx_lit_2s.gdshader")],
 	"ps2": [preload("res://shaders/ps2_lit.gdshader"), preload("res://shaders/ps2_lit_2s.gdshader")],

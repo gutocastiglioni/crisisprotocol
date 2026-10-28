@@ -53,7 +53,7 @@ const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparec
 const RESTART_ACTIONS := ["reset", "interact", "roll", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPACO esquiva  C agachar  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triangulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVENCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPAÇO esquiva  C agachar  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -93,14 +93,13 @@ var _hud_weapon: Label  # munição ao lado do modelo da arma (só no perfil de 
 var _weapon_icon: WeaponIcon
 var danger: DangerMeter
 var radar: Radar
-var _hud_stealth: Label
 var _hud_headshot: Label
 var _hud_notice: Label
 var _notice_t := 0.0
 var smelled := false  # o aviso do cheiro de sangue na beira do telhado já apareceu (Roof.near_yard)
 var _headshot_t := 0.0
-var _prompt: Control
-var _prompt_text: Label
+var _prompt: UiStyle.Hint
+var _end_hint: UiStyle.Hint
 var _crosshair: Crosshair
 var _capture := ""
 var _shot := "idle"
@@ -155,7 +154,7 @@ func _ready() -> void:
 	lab_key = KeyItem.new()
 	lab_key.id = Yard.GATE_KEY
 	lab_key.display_name = "CHAVE DO PAINEL"
-	lab_key.description = "Chave do painel do portao da pedreira.\nNa etiqueta: \"CODIGO = SUBJECT DO PROTOTIPO\"."
+	lab_key.description = "Chave do painel do portão da pedreira.\nNa etiqueta: \"CÓDIGO = SUBJECT DO PROTÓTIPO\"."
 	add_child(lab_key)
 	lab_key.hold(lab.key_spot())
 	key = KeyItem.new()
@@ -200,8 +199,8 @@ func _ready() -> void:
 	keycard = KeyItem.new()
 	keycard.id = "keycard_gate"
 	keycard.kind = "keycard"
-	keycard.display_name = "CARTAO DE ACESSO"
-	keycard.description = "Cartao de acesso magnetico nivel 1.\nAbre o portao de seguranca do patio."
+	keycard.display_name = "CARTÃO DE ACESSO"
+	keycard.description = "Cartão de acesso magnético nível 1.\nAbre o portão de segurança do pátio."
 	add_child(keycard)
 	sniper.loot = keycard
 	keycard.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
@@ -233,6 +232,7 @@ func _ready() -> void:
 	sound.target = player
 	add_child(sound)
 	_build_post()
+	add_child(UiStyle.Watcher.new())  # glifos dos botões pelo último aparelho usado
 	_build_hud()
 	inspect = Inspect.new()
 	inspect.player = player
@@ -306,10 +306,11 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 1
 	_hud = layer
-	# vida em barra no alto à esquerda e o sensor de perigo logo abaixo; radar no alto à direita; arma embaixo à direita
+	# vida em barra no alto à esquerda e o sensor de perigo logo abaixo; radar no alto à direita (com a furtividade
+	# embaixo dele: olho + VISIVEL/INVISIVEL e o estado dos inimigos); arma embaixo à direita
 	_hud_health = HudBar.new("VIDA", 60.0)
 	_hud_health.position = Vector2(6, 5)
-	_hud_health.colors = [[0.25, Color(1.0, 0.25, 0.2)], [0.5, Color(1.0, 0.82, 0.25)], [1.0, Color(0.4, 0.95, 0.45)]]
+	_hud_health.colors = [[0.25, UiStyle.DANGER], [0.5, UiStyle.ACCENT], [1.0, UiStyle.ACTION]]
 	layer.add_child(_hud_health)
 	_set_health(player.health)
 	danger = DangerMeter.new()
@@ -322,17 +323,19 @@ func _build_hud() -> void:
 	_weapon_icon = WeaponIcon.new()
 	layer.add_child(_weapon_icon)
 	_hud_weapon = _label(layer, "", Vector2.ZERO)
-	_hud_weapon.add_theme_font_size_override("font_size", 12)
+	_hud_weapon.add_theme_font_size_override("font_size", UiStyle.M)
 	_hud_weapon.size.x = 40
 	_hud_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hud_stealth = _label(layer, "", Vector2.ZERO)
 	# aviso de tiro na cabeça, logo abaixo da mira
 	_hud_headshot = _label(layer, "HEADSHOT", Vector2.ZERO)
-	_hud_headshot.add_theme_color_override("font_color", Color(1.0, 0.25, 0.2))
+	_hud_headshot.add_theme_color_override("font_color", UiStyle.DANGER)
 	_hud_headshot.visible = false
-	_prompt = _build_prompt(layer)
+	# botões das ações possíveis embaixo, no centro: "<glifo> ABRIR PORTA", "<glifo> ABATE FURTIVO"
+	_prompt = UiStyle.Hint.new()
+	_prompt.visible = false
+	layer.add_child(_prompt)
 	_hud_notice = _label(layer, "", Vector2.ZERO)
-	_hud_notice.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_hud_notice.add_theme_color_override("font_color", UiStyle.ACCENT)
 	_hud_notice.visible = false
 	# mira numa camada sem escala: ancorada no centro, a escala do HUD (apply_gfx) a jogaria para o canto
 	var cross_layer := CanvasLayer.new()
@@ -347,7 +350,7 @@ func _build_hud() -> void:
 	_hud_help.add_theme_constant_override("line_spacing", -4)  # linhas juntas: quebrada, não desce até o rosto dela
 	# atordoada pelo rugido do alossauro: aviso piscando acima do centro
 	_hud_daze = _label(layer, "ATORDOADA", Vector2.ZERO)
-	_hud_daze.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_hud_daze.add_theme_color_override("font_color", UiStyle.ACCENT)
 	_hud_daze.visible = false
 	_end = _build_end(layer)
 	add_child(layer)
@@ -357,24 +360,16 @@ func _build_hud() -> void:
 func _build_end(layer: CanvasLayer) -> Control:
 	var box := Control.new()
 	box.visible = false
-	var shade := ColorRect.new()
+	var shade := UiStyle.rect(box, UiStyle.DEATH_SHADE)
 	shade.name = "Shade"
-	shade.color = Color(0.22, 0.0, 0.0, 0.45)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shade.visible = false
-	box.add_child(shade)
-	var band := ColorRect.new()
+	var band := UiStyle.rect(box, UiStyle.BAND)
 	band.name = "Band"
-	band.color = Color(0, 0, 0, 0.72)
-	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(band)
-	var title := _label(box, "FIM", Vector2.ZERO)
-	title.add_theme_font_size_override("font_size", 24)
-	title.add_theme_color_override("font_color", Color(1.0, 0.3, 0.25))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := UiStyle.label(box, "FIM", UiStyle.ACCENT, UiStyle.L, HORIZONTAL_ALIGNMENT_CENTER)
 	title.name = "Title"
-	_end_stats = _label(box, "", Vector2.ZERO)
-	_end_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_end_stats = UiStyle.label(box, "", UiStyle.INK, UiStyle.S, HORIZONTAL_ALIGNMENT_CENTER)
+	_end_hint = UiStyle.Hint.new()
+	box.add_child(_end_hint)
 	layer.add_child(box)
 	return box
 
@@ -395,8 +390,10 @@ func show_end() -> void:
 	(_end.get_node("Shade") as ColorRect).visible = false
 	var title: Label = _end.get_node("Title")
 	title.text = "FIM"
+	title.add_theme_color_override("font_color", UiStyle.ACCENT)
 	title.reset_size()
-	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d\n\nR PARA JOGAR DE NOVO" % [t / 60, t % 60, player.shots_fired, player.health]
+	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d" % [t / 60, t % 60, player.shots_fired, player.health]
+	_end_hint.set_items([{"action": "reset", "text": "JOGAR DE NOVO"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
@@ -411,8 +408,11 @@ func show_game_over() -> void:
 	(_end.get_node("Shade") as ColorRect).visible = true
 	var title: Label = _end.get_node("Title")
 	title.text = "GAME OVER"
+	title.add_theme_color_override("font_color", UiStyle.DANGER)
 	title.reset_size()
-	_end_stats.text = ("VOCE MORREU NA QUEDA" if player.death_cause == "fall" else "VOCE MORREU") + "\nTEMPO %02d:%02d   TIROS %d\n\nR / E / ESPACO PARA RECOMECAR" % [t / 60, t % 60, player.shots_fired]
+	_end_stats.text = ("VOCÊ MORREU NA QUEDA" if player.death_cause == "fall" else "VOCÊ MORREU") + "\nTEMPO %02d:%02d   TIROS %d" % [t / 60, t % 60, player.shots_fired]
+	# R no teclado; no controle o triângulo (RESTART_ACTIONS também aceita E, espaço, pular e atirar)
+	_end_hint.set_items([{"action": "reset", "pad_action": "interact", "text": "RECOMEÇAR"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
@@ -429,40 +429,12 @@ func _layout_overlays(area: Vector2) -> void:
 	var title: Label = _end.get_node("Title")
 	title.position = Vector2(roundf((area.x - title.size.x) * 0.5), area.y * 0.5 - 42)
 	_end_stats.position = Vector2(roundf((area.x - _end_stats.size.x) * 0.5), area.y * 0.5 - 8)
-
-
-## Aviso de interação embaixo, no centro: triângulo verde (o botão do controle) + "PEGAR <arma> (E)".
-func _build_prompt(layer: CanvasLayer) -> Control:
-	var box := Control.new()
-	var tri := Line2D.new()
-	tri.points = PackedVector2Array([Vector2(6, 1), Vector2(11, 10), Vector2(1, 10), Vector2(6, 1)])
-	tri.width = 1.5
-	tri.default_color = Color(0.4, 1.0, 0.5)
-	box.add_child(tri)
-	_prompt_text = _label(box, "", Vector2(15, 0))
-	box.visible = false
-	layer.add_child(box)
-	_set_prompt(box, "PEGAR M16 (E)")
-	return box
-
-
-func _set_prompt(box: Control, text: String) -> void:
-	if _prompt_text.text == text:
-		return
-	_prompt_text.text = text
-	var font := _prompt_text.get_theme_font("font")
-	box.size = Vector2(15.0 + font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x, 12.0)
+	_end_hint.position = Vector2(roundf((area.x - _end_hint.size.x) * 0.5), area.y * 0.5 + 32)
 
 
 func _label(parent: Node, text: String, pos: Vector2) -> Label:
-	var l := Label.new()
-	l.text = text
+	var l := UiStyle.label(parent, text)
 	l.position = pos
-	l.add_theme_font_size_override("font_size", 8)
-	l.add_theme_color_override("font_color", Color(0.85, 0.9, 0.8))
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	l.add_theme_constant_override("outline_size", 2)
-	parent.add_child(l)
 	return l
 
 
@@ -531,7 +503,7 @@ func _restart_from_overlay() -> void:
 func apply_mode(m: String) -> void:
 	GameMode.set_mode(m)
 	reset_all()
-	show_notice("MODO " + ("SOBREVIVENCIA" if GameMode.is_survival() else "ARCADE"))
+	show_notice("MODO " + ("SOBREVIVÊNCIA" if GameMode.is_survival() else "ARCADE"))
 
 
 ## Aviso rápido no centro, embaixo (munição pega, arma vazia, mudança de modo).
@@ -555,6 +527,8 @@ func apply_gfx(m: String) -> void:
 		pause_menu.set_ui_scale(k)
 	if cutscene:
 		cutscene.set_ui_scale(k)
+	if sniper_scope:
+		sniper_scope.set_ui_scale(k)
 
 
 ## Ela tentou abrir um baú trancado: o cadeado de perto; com a chave ele abre e a chave é gasta.
@@ -591,28 +565,15 @@ func _update_weapon_hud(area: Vector2) -> void:
 	_weapon_icon.show_weapon("pistol_sd" if kind == "pistol" and player.silencer else kind, player.model)
 	_weapon_icon.position = Vector2(area.x - WeaponIcon.VIEW.x - 4, area.y - WeaponIcon.VIEW.y - 4)
 	var text := ""
-	var color := Color(0.85, 0.9, 0.8)
+	var color := UiStyle.INK
 	if GameMode.limited_ammo():
 		var n := player.ammo_of(kind)
 		text = str(n)
 		if n <= LOW_AMMO:
-			color = Color(1.0, 0.3, 0.25)
+			color = UiStyle.DANGER
 	_hud_weapon.text = text
 	_hud_weapon.add_theme_color_override("font_color", color)
 	_hud_weapon.position = Vector2(_weapon_icon.position.x - _hud_weapon.size.x - 2, area.y - 4 - roundf((WeaponIcon.VIEW.y + _hud_weapon.size.y) * 0.5))
-
-
-## Furtividade embaixo à esquerda: o quanto ela aparece (barras) e o estado dos inimigos.
-func _update_stealth_hud(area: Vector2) -> void:
-	var level := 0
-	for e in get_tree().get_nodes_in_group("enemies"):
-		level = maxi(level, e.alert_level())
-	var bars := clampi(roundi(player.visibility() * 5.0), 1, 5)
-	var idx := clampi(level, 0, 3)
-	var status: String = ["", "  DESCONFIADOS", "  BUSCA ATIVA", "  ALERTA!"][idx]
-	_hud_stealth.text = "VISIVEL %s%s%s" % ["#".repeat(bars), ".".repeat(5 - bars), status]
-	_hud_stealth.add_theme_color_override("font_color", [Color(0.85, 0.9, 0.8), Color(1.0, 0.85, 0.3), Color(1.0, 0.55, 0.15), Color(1.0, 0.3, 0.25)][idx])
-	_hud_stealth.position = Vector2(6, area.y - 14)
 
 
 func reset_all() -> void:
@@ -690,6 +651,8 @@ func _parse_args() -> void:
 				apply_gfx(g)
 		elif a == "--playercam":
 			_player_cam = true
+		elif a == "--pad":
+			UiStyle.pad = true  # captura com os glifos do controle
 		elif a.begins_with("--yaw="):
 			_yaw = deg_to_rad(float(a.get_slice("=", 1)))
 		elif a.begins_with("--pitch="):
@@ -784,30 +747,39 @@ func _process(delta: float) -> void:
 	var door := player.pick_door() if target == null and key_node == null and drop_node == null and plate == null else null
 	var hatch_node := player.pick_hatch() if target == null and key_node == null and drop_node == null and plate == null and door == null else null
 	var ladder := player.pick_ladder() if target == null and key_node == null and drop_node == null and plate == null and door == null and hatch_node == null else null
-	_prompt.visible = target != null or key_node != null or drop_node != null or plate != null or door != null or hatch_node != null or ladder != null
+	var verb := ""
 	if target and target.is_locked():
 		# trancado: não diz o que tem dentro
-		_set_prompt(_prompt, "USAR CHAVE (E)" if player.has_key(target.lock) else "ABRIR (E)")
+		verb = "USAR CHAVE" if player.has_key(target.lock) else "ABRIR"
 	elif target:
-		_set_prompt(_prompt, "PEGAR %s (E)" % Player.WEAPON_STATS[target.item].name)
+		verb = "PEGAR %s" % Player.WEAPON_STATS[target.item].name
 	elif key_node:
-		_set_prompt(_prompt, "PEGAR %s (E)" % key_node.display_name)
+		verb = "PEGAR %s" % key_node.display_name
 	elif drop_node:
-		_set_prompt(_prompt, "ABRIR CAIXA (E)")  # o que tem dentro é surpresa
+		verb = "ABRIR CAIXA"  # o que tem dentro é surpresa
 	elif plate:
-		_set_prompt(_prompt, "VER PLACA (E)")
+		verb = "VER PLACA"
 	elif door:
 		if door.is_locked() and door.code != "":
-			_set_prompt(_prompt, "USAR CHAVE NO PAINEL (E)" if player.has_key(door.lock) else "PAINEL DO PORTAO (E)")
+			verb = "USAR CHAVE NO PAINEL" if player.has_key(door.lock) else "PAINEL DO PORTÃO"
 		elif door.is_locked():
-			_set_prompt(_prompt, "USAR CARTAO DE ACESSO (E)" if player.has_key(door.lock) else "LEITOR DE CARTAO (E)")
+			verb = "USAR CARTÃO DE ACESSO" if player.has_key(door.lock) else "LEITOR DE CARTÃO"
 		else:
-			_set_prompt(_prompt, "%s (E)" % door.verb)
+			verb = door.verb
 	elif hatch_node:
-		_set_prompt(_prompt, "ABRIR ALCAPAO (E)")
+		verb = "ABRIR ALÇAPÃO"
 	elif ladder:
 		var info: Dictionary = ladder.can_mount(player.global_position)
-		_set_prompt(_prompt, "DESCER ESCADA (E)" if info.get("at_top", false) else "SUBIR ESCADA (E)")
+		verb = "DESCER ESCADA" if info.get("at_top", false) else "SUBIR ESCADA"
+	# os botões possíveis lado a lado: pegar/abrir (E) e o abate furtivo / golpe crítico (atirar sem mirar)
+	var actions := []
+	if verb != "":
+		actions.append({"action": "interact", "text": verb})
+	var sp := player.stealth_prompt()
+	if sp != "":
+		actions.append({"action": "shoot", "text": sp})
+	_prompt.set_items(actions)
+	_prompt.visible = not actions.is_empty()
 	# HUD ampliado (apply_gfx): arma embaixo à direita, radar em cima à direita e aviso embaixo no centro, em qualquer proporção
 	var area := get_viewport().get_visible_rect().size / _hud.scale
 	_update_weapon_hud(area)
@@ -815,7 +787,6 @@ func _process(delta: float) -> void:
 	_hud_help.size = Vector2(radar.position.x - 12, 0)
 	radar.update(delta)
 	danger.update(delta)
-	_update_stealth_hud(area)
 	_headshot_t = maxf(_headshot_t - delta, 0.0)
 	_hud_headshot.visible = _headshot_t > 0.0
 	_hud_headshot.position = Vector2(roundf((area.x - _hud_headshot.size.x) * 0.5), roundf(area.y * 0.5) + 10)
@@ -824,12 +795,7 @@ func _process(delta: float) -> void:
 		smelled = true
 		inspect.show_message(Roof.SMELL_TEXT)
 	_notice_t = maxf(_notice_t - delta, 0.0)
-	var sp := player.stealth_prompt()
-	if sp == "" and _hud_notice.text in [PlayerStealth.ASSASSINATE_PROMPT, PlayerStealth.CRIT_PROMPT]:
-		_notice_t = 0.0
-	if _notice_t <= 0.0 and sp != "":
-		_hud_notice.text = sp
-	_hud_notice.visible = _notice_t > 0.0 or sp != ""
+	_hud_notice.visible = _notice_t > 0.0
 	_hud_notice.position = Vector2(roundf((area.x - _hud_notice.size.x) * 0.5), area.y - 50)
 	# atordoada: o aviso pisca enquanto dura
 	_hud_daze.visible = player.is_dazed() and fmod(_play_t, 0.5) < 0.32
