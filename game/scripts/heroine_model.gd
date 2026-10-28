@@ -39,6 +39,7 @@ const SCALED := [
 	"getup_front", "getup_back",
 ]
 ## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
+const GAIT_WALK_MAX := 1.05  # set_gait: até esta fração acima da velocidade do passo ainda é andar
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
 	"jump", "fall", "dodge_l", "dodge_r", "dodge_back",
@@ -383,6 +384,17 @@ static func pump_offset(f: float) -> float:
 			var t: float = (f - k0[0]) / (k1[0] - k0[0])
 			return lerpf(k0[1], k1[1], t * t * (3.0 - 2.0 * t))
 	return float(keys[-1][1])
+
+
+## Andar/correr a `v` m/s com o critério da jogadora (Player._physics_process): o passo de andar só vai até a velocidade
+## em que foi resolvido (`Moves.speed("walk")`); mais rápido é a corrida no ritmo da velocidade (`Player.RUN_SPEED`).
+## Usado pelos inimigos com o corpo dela (guerrilheiro, sniper): o pé não escorrega e a cadência é a dela.
+func set_gait(v: float) -> void:
+	var walk := Moves.speed("walk")
+	if v > walk * GAIT_WALK_MAX:
+		set_state("run", v / Player.RUN_SPEED)
+	else:
+		set_state("walk", v / walk)
 
 
 ## Troca o estado do corpo; `speed_scale` = velocidade da animação nos estados de andar (negativa = de costas).

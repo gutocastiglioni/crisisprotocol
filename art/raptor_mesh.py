@@ -278,11 +278,11 @@ def build_hand_claws(mb, s):
 
 
 # ------------------------------------------------------------------ montagem
-def _self_union(bm, bone_names, keep_bones=()):
+def _self_union(bm, bone_names, keep_bones=(), skip=None):
     """Funde as peças que se cruzam (coxa no tronco, braço no peito, dedos no pé) numa superfície só: booleana
     exata do Blender em modo "self" (sem operando). UV, materiais e pesos dos ossos são carregados para a malha nova.
     `keep_bones`: vértices presos só a esses ossos não são suavizados nas juntas (detalhe pequeno, como as cristas
-    da cabeça do alossauro, sumiria)."""
+    da cabeça do alossauro, sumiria). `skip(v)` verdadeiro: o vértice também não é suavizado (equipamento rígido)."""
     me = bpy.data.meshes.new("RaptorFuse")
     bm.to_mesh(me)
     bm.free()
@@ -308,7 +308,7 @@ def _self_union(bm, bone_names, keep_bones=()):
     seam = _fill_weights(out)
     keep = [bone_names.index(b) for b in keep_bones]
     dl = out.verts.layers.deform.active
-    _round_seams(out, seam, skip=lambda v: any(v[dl].get(g, 0.0) >= 0.99 for g in keep))
+    _round_seams(out, seam, skip=lambda v: any(v[dl].get(g, 0.0) >= 0.99 for g in keep) or bool(skip and skip(v)))
     return out
 
 

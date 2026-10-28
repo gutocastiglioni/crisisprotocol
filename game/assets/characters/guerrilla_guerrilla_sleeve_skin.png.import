@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cq2q3qfnfjsw3"
-path="res://.godot/imported/guerrilla_tex_costume_guerrilla.png-8b6c5545f3213b69fc8418ab7c6bb6bf.ctex"
+uid="uid://caq7o1v8d8n8g"
+path="res://.godot/imported/guerrilla_guerrilla_sleeve_skin.png-b6cce30ce54c521b1f258204f61b3cd5.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "f8c4ec5d3584b0b8b27336da5a2deee9"
+"md5": "71af09899360f8567573f3a13e850120"
 }
 
 [deps]
 
-source_file="res://assets/characters/guerrilla_tex_costume_guerrilla.png"
-dest_files=["res://.godot/imported/guerrilla_tex_costume_guerrilla.png-8b6c5545f3213b69fc8418ab7c6bb6bf.ctex"]
+source_file="res://assets/characters/guerrilla_guerrilla_sleeve_skin.png"
+dest_files=["res://.godot/imported/guerrilla_guerrilla_sleeve_skin.png-b6cce30ce54c521b1f258204f61b3cd5.ctex"]
 
 [params]
 

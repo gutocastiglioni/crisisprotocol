@@ -7,6 +7,7 @@ func run(runner: SceneTree) -> void:
 	t = runner
 	await test_guerrilla_asset()
 	await test_soldier_patrol_and_spot()
+	await test_soldier_gait_like_player()
 	await test_soldier_shoots_and_misses()
 	await test_soldier_presses_fire()
 	await test_soldier_dies()
@@ -85,12 +86,54 @@ func test_guerrilla_asset() -> void:
 			dark += img.get_pixel(x, y).get_luminance()
 			n += 1
 	check(dark / n < 0.25, "guerrilheiro: cabeça coberta por capuz escuro", str(dark / n))
+	# o coturno fica em volta do tornozelo (antes ficava ~4 cm para dentro e o pé girava fora dele)
+	var foot_x := sk.get_bone_global_rest(sk.find_bone("Foot_L")).origin.x
+	var sum_x := 0.0
+	var cnt := 0
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		if not mi.name.begins_with("Guerrilla") or mi.name in ["GuerrillaHood", "GuerrillaGear"]:
+			continue
+		for si in mi.mesh.get_surface_count():
+			for v: Vector3 in mi.mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]:
+				if v.y < 0.12 and v.x > 0.0:
+					sum_x += v.x
+					cnt += 1
+	check(cnt > 20 and absf(sum_x / maxi(cnt, 1) - foot_x) < 0.02, "guerrilheiro: coturno na linha do tornozelo",
+		"%.3f vs osso %.3f (%d vértices)" % [sum_x / maxi(cnt, 1), foot_x, cnt])
 	var pr := await _spawn_soldier(Vector3(0, 0, -6))
 	var s: Soldier = pr[1]
 	check(s.model.scene == Soldier.BODY and s.model.atlas == Soldier.ATLAS, "soldado usa o modelo do guerrilheiro, não o da heroína")
 	check(s.model.is_weapon_visible("m16") and not s.model.is_weapon_visible("pistol"), "guerrilheiro empunha o M16")
 	inst.free()
 	base.free()
+
+
+## Mesmo critério de passo da jogadora: o andar nunca toca acima da velocidade em que foi resolvido; mais rápido
+## (investigando a 1,8 m/s, caçando) é a corrida no ritmo da velocidade, nunca o andar acelerado.
+func test_soldier_gait_like_player() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 30), Vector3(-6, 0, 0), -PI * 0.5)
+	var s: Soldier = pr[1]
+	s.sight_range = 0.0
+	s.set_physics_process(false)  # só o _go manda no corpo (parado, a rotina dele trocaria para "idle")
+	var seen := {}
+	for speed in [s.patrol_speed, s.investigate_speed, s.hunt_speed]:
+		s.global_position = Vector3(-6, 0, 0)
+		s.rotation.y = -PI * 0.5
+		s._best_left = INF
+		var worst_walk := 0.0
+		for i in 30:
+			s._go(Vector3(6, 0, 0), speed, 1.0 / 60.0)
+			if s.model.state == "walk":
+				worst_walk = maxf(worst_walk, float(s.model.tree.get("parameters/walk_speed/scale")))
+			await t._frames(1)
+		seen[speed] = [s.model.state, worst_walk, float(s.model.tree.get("parameters/run_speed/scale"))]
+	var walk := Moves.speed("walk")
+	check(seen[s.patrol_speed][0] == "walk" and seen[s.patrol_speed][1] <= HeroineModel.GAIT_WALK_MAX + 0.01,
+		"ronda: passo de andar na velocidade dele", str(seen[s.patrol_speed]))
+	check(s.investigate_speed > walk and seen[s.investigate_speed][0] == "run" and seen[s.investigate_speed][1] <= HeroineModel.GAIT_WALK_MAX + 0.01,
+		"investigando mais rápido que o passo: corre (sem andar acelerado)", str(seen[s.investigate_speed]))
+	check(seen[s.hunt_speed][0] == "run" and absf(seen[s.hunt_speed][2] - s.hunt_speed / Player.RUN_SPEED) < 0.05,
+		"caçando: corrida no ritmo da velocidade", str(seen[s.hunt_speed]))
 
 
 func test_soldier_patrol_and_spot() -> void:
@@ -489,7 +532,7 @@ func test_stealth_alert_states_and_corpse_detection() -> void:
 	
 	# Sentinela ouve a queda do corpo / percebe o companheiro abatido: entra em desconfiado (Amarelo, nível 1, "?")
 	check(sentry.state == "suspicious" and sentry.alert_level() == 1, "sentinela desconfia ao ouvir baque/ver o corpo (nível 1 Amarelo)", "%s %d" % [sentry.state, sentry.alert_level()])
-	check(sentry._marker.text == "?" and sentry._marker.modulate.r > 0.9 and sentry._marker.modulate.b < 0.3, "marcador amarelo ? sobre a cabeça")
+	check(sentry._marker.text == "?" and sentry._marker.modulate == UiStyle.ACCENT, "marcador amarelo ? sobre a cabeça")
 	
 	# Após olhar brevemente, a sentinela inicia busca ativa indo investigar o ponto (Laranja, nível 2, "!")
 	for i in 120:
@@ -513,7 +556,7 @@ func test_stealth_alert_states_and_corpse_detection() -> void:
 		if sentry.in_combat():
 			break
 	check(sentry.in_combat() and sentry.alert_level() == 3, "ao avistar a heroína entra em combate (nível 3 Vermelho)", "%s %d" % [sentry.state, sentry.alert_level()])
-	check(sentry._marker.text == "!" and sentry._marker.modulate.g < 0.3, "marcador vermelho ! em combate (encontrou)")
+	check(sentry._marker.text == "!" and sentry._marker.modulate == UiStyle.DANGER, "marcador vermelho ! em combate (encontrou)")
 
 
 func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
@@ -530,7 +573,7 @@ func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
 	p.make_noise(26.0, 2.2)
 	await t._frames(2)
 	check(s.in_combat() and s.alert_level() == 3, "vasculhando + tiro: vai direto para Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
-	check(s._marker.text == "!" and s._marker.modulate.g < 0.3, "marcador vermelho !")
+	check(s._marker.text == "!" and s._marker.modulate == UiStyle.DANGER, "marcador vermelho !")
 	
 	# 2. Inimigo vasculhando: barulho de passos/corrida revela a posição e encontra
 	pr = await _spawn_soldier(Vector3(0, 0, -6), Vector3(0, 0, 0), PI)

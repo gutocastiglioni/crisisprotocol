@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dharfnqo5qcpc"
-path="res://.godot/imported/guerrilla_eye.png-98513269b92a5c633b94471084c80e0c.ctex"
+uid="uid://l21a8b1tieal"
+path="res://.godot/imported/guerrilla_guerrilla_eyes.png-ba04fd9aaac33eaee8e9602ce532f583.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "47de350b89ad5e4e935c303b80995606"
+"md5": "505a56a63332ff2ae69791871237f2fc"
 }
 
 [deps]
 
-source_file="res://assets/characters/guerrilla_eye.png"
-dest_files=["res://.godot/imported/guerrilla_eye.png-98513269b92a5c633b94471084c80e0c.ctex"]
+source_file="res://assets/characters/guerrilla_guerrilla_eyes.png"
+dest_files=["res://.godot/imported/guerrilla_guerrilla_eyes.png-ba04fd9aaac33eaee8e9602ce532f583.ctex"]
 
 [params]
 

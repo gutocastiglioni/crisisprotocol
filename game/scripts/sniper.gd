@@ -178,10 +178,9 @@ func _play(anim: String, _blend := 0.15, speed := 1.0, _restart := false) -> voi
 		return
 	model.set_aim(in_combat())
 	match anim:
-		"Walk":
-			model.set_state("walk", speed)
-		"Run":
-			model.set_state("run", speed)
+		"Walk", "Run":
+			# `speed` vem em relação a _anim_speed: volta a m/s e escolhe andar/correr como a jogadora
+			model.set_gait(speed * _anim_speed(anim == "Run"))
 		_:
 			model.set_state("idle")
 

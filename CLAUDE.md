@@ -23,9 +23,15 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   com o fuzil e a animação de pegar no baú), `heroine_shotgun.py` (malha da escopeta, telha à parte e a animação de
   tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot), `heroine_drop.py` (PickupPistol = ajoelhada, a direita pega a pistola com silenciador na caixa de paraquedas; posição dela na caixa = `crate_frame`, exportada em `pistol_crate.glb`), `heroine_hurt.py` (golpes: HitFront/HitBack/HitL/HitR aditivas, StaggerBack/StaggerFwd, GetUpFront/GetUpBack com mãos/joelho/pés presos por IK), `heroine_cutscene.py` (HatchOpen = abrir o
   alçapão do telhado, Shocked = o susto na sala dos clones; quadros HATCH_GRAB/HATCH_UP usados pelo `hatch.gd`).
-  Guerrilheiro encapuzado (inimigo humano): `guerrilla_mesh.py` (malha própria de homem no esqueleto dela: moletom com capuz levantado de dois lados, balaclava, colete,
-  calça cargo, coturno), `guerrilla_atlas.py` (layout dela + `cargo`/`cord`),
-  `build_guerrilla.py` (mesmo esqueleto/animações; gera `guerrilla.glb`; `art/guerrilla.blend` fica fora do git) e `tools/make_guerrilla_texture.py` (atlas 512 com o layout da heroína).
+  Guerrilheiro (inimigo humano, de balaclava e colete; medidas da referência em `guerrilla_spec.py`, imagem em `art/ref/`):
+  `guerrilla_body.py` (monta a pele única: tronco de moletom `BARE`, toco do ombro, união `_self_union`, braços e cabeça
+  costurados; `PARTS` = o aprovado), `guerrilla_arms.py` (braços do modelo padrão `art/base_body`, manga medida),
+  `guerrilla_head.py` (cabeça do modelo padrão em escala de homem, sem orelhas, pescoço encaixado no anel do tronco, vão
+  do olho aberto), `guerrilla_paint.py` (balaclava, janela dos olhos com textura própria "Body_window" e a amêndoa do olho
+  pintada no globo), `guerrilla_vest.py` (colete `CARRIER_*`: placas, alças com almofada, faixa, bolsas; peças unidas na
+  pele), `guerrilla_lower.py` (calça e coturnos), `guerrilla_atlas.py` (layout dela + `cargo`/`cord`/`vest`),
+  `build_guerrilla.py` (mesmo esqueleto/animações; gera `guerrilla.glb`; `-- <pasta> [partes]` = prévia; `art/guerrilla.blend` fica fora do git) e
+  `tools/make_guerrilla_texture.py` (atlas 512 com o layout da heroína).
   Raptor: `raptor_spec.py`, `raptor_mesh.py` (usa o MeshBuilder da heroína; pele única: cadeias com anel de emenda
   soldado + união booleana `_self_union` das peças que se cruzam), `raptor_rig.py` (aceita `spec`/`mesh`/`name`),
   `raptor_anims.py` (IK nas pernas; convenção de ângulos no cabeçalho), `raptor_atlas.py`, `build_raptor.py`.
@@ -77,6 +83,29 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Isso vale por cima da matriz de tamanhos da regra global e do agente `ui-verifier`. Conferir só nas telas deitadas
   (celular deitado ~1000x500, 720p, 1366x768, 1080p, 2K) e nas capturas `--shot` do jogo.
 
+## Modelos de personagem (regras)
+- **A referência é o contrato.** Quando o usuário manda uma imagem (num painel com vários bonecos, a referência é o
+  primeiro, "REFERÊNCIA"), o modelo tem que ficar igual a ela, não "inspirado" nela. Antes de modelar, levantar da imagem
+  a lista de parâmetros e escrever no código como constantes: proporções em fração da altura (largura de ombro, tronco,
+  cintura, quadril, grossura de braço/coxa, comprimento de braço, abertura das pernas, tamanho da cabeça/capuz) e cada
+  peça de roupa com forma, volume e cor (ex.: colete com espessura, borda e bolsas; moletom; capuz; calça; coturno).
+  Cada item da lista tem que existir no modelo.
+- **Comparar antes de entregar.** Renderizar o modelo na mesma pose, câmera e escala da referência (frente, lado e
+  sobreposição do contorno) e comparar item por item, com números (silhueta faixa por faixa) e no olho (forma de cada peça,
+  cor, contraste). Diferença visível = não está pronto; se não der para resolver, dizer qual é e por quê. Não basta bater o
+  contorno: peça que na referência tem volume próprio (colete por cima do moletom, capuz) tem que ter volume no modelo, não
+  só uma cor pintada.
+- **Pele única.** Corpo e roupa são uma malha contínua e soldada (como o raptor: anel de emenda soldado + `_self_union`).
+  Nada de boneco montado com pedaços encaixados: tronco de um modelo com calça de outro, capuz/colete como objeto solto
+  encostado, bolsas de caixinhas. Só o que é rígido e preso a um osso só (arma, carregador) pode ser objeto à parte.
+- **Nada de `possible_models/` no jogo**: dali só se mede e se olha; geometria e textura do jogo saem do nosso gerador.
+  Exceção decidida pelo usuário: a calça, o cinto e os coturnos do guerrilheiro vêm de `possible_models/tr_guerilla.glb`
+  (`art/guerrilla_lower.py`, alinhados aos ossos dele); o que importa ali é modelo e proporção, não o desenho dessas peças.
+- **Não polir por cima de modelo errado.** Se o personagem existente quebra estas regras, dizer isso primeiro e propor
+  refazer, em vez de ajustar proporção/cor por cima.
+- **Prévia antes de gravar.** Mudança estrutural no modelo: mostrar a prévia lado a lado com a referência e só gravar os
+  .glb/.png do jogo depois do "ok" do usuário. Depois, conferir também no jogo (`--shot`), com a luz do jogo.
+
 ## Convenções
 - Perfil de jogo (`GameMode`, padrão `survival`; F3 ou `--mode=arcade|survival`): **os dois perfis ficam vivos e testados**, nada do
   jogo de ação de antes foi apagado, para servir de base a outro jogo. `arcade` = o jogo de antes (câmera livre que volta atrás dela,
@@ -117,6 +146,12 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS`, os 5 de sempre (2 de ronda, 2 sentinelas na porta do pátio, 1 no baú da M16) + 4 de posto (`"hold"`) na porta do pátio, dentro do canto cercado pelas paredes de caixas `Level.DIVIDERS` (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`) os de posto têm `Enemy.hold_post`: barulho/vulto só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`alert_t` > 0); depois da busca voltam ao posto; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
   tiros instantâneos com descanso de 0,3–0,7 s, chance de acerto cai com distância/agachada/correndo e a cada tiro da rajada (`BURST_DECAY`),
   rolar esquiva; ela some atrás de algo = `SUPPRESS_TIME` de fogo de supressão onde ela estava, que não acerta; avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
+  Corpo do guerrilheiro = mesmas animações e mecânica de passo da heroína: `adapt_anims` não mexe em pose nenhuma (a corrida
+  dela é resolvida para o pé não escorregar), e soldado/sniper andam por `HeroineModel.set_gait(v)` (critério do Player: andar até
+  `Moves.speed("walk")`, acima disso corrida no ritmo da velocidade; nunca o andar acelerado). Malha: tronco de moletom
+  (`guerrilla_spec.BARE`, junta do ombro `SHOULDER` em 1,47 para o ombro bater com a referência), braços e cabeça do modelo
+  padrão, pernas da calça levadas à linha dos ossos (`_align_legs`), colete preto (`CARRIER_*`) bem mais escuro que o moletom.
+  Os materiais `Body_*` do .glb (manga, rosto, olhos, janela dos olhos, calça) usam a textura própria; o resto usa o atlas.
   Caminhos: `NavigationServer3D` com a malha de `Yard.bake_nav` (sem malha, anda reto desviando com raios); soldados com `nav_map` = a malha
   de gente. Destino fora da malha (alto, atrás de porta): chega ao ponto alcançável mais perto; sem encurtar o caminho por
   `NO_PROGRESS_TIME`, desiste. Busca (`_search_goal`/`_sweep_goal`): cada um a um lugar diferente (`CLAIM_DIST`; o primeiro ao ponto
@@ -134,7 +169,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   braço/perna), sangue por `Blood.splat` (refeito no R), chave do container presa na mão direita (`KeyItem.hold`, estado "held").
   Emboscada: os 3 raptors do pátio começam escondidos nas moitas sem colisão de `Yard.LURK` (`Raptor.lurk`: `Enemy.lurking` = sem
   corpo, sem IA, não ouvem nem recebem alarme). Ela a `Corpse.NOTICE_RANGE` do morto, com linha livre → `Cutscene.play_ambush`
-  (anda até a mão, close do punho com a chave + "ELE ESTA SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
+  (anda até a mão, close do punho com a chave + "ELE ESTÁ SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
   (`start_ambush`, estado "ambush"), o da frente ruge; E pula). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
   A chave fica sem brilho (`KeyItem.shine` falso) até os 3 morrerem; dá para pegá-la antes. R: moitas, chave e cena de volta.
   Texturas `grass/dirt/bark/leaves/rock/grass_card/fern_card` vêm de `tools/make_level_textures.py`. Revisão: `--shot=yard --pos=x,z[,graus]`.
@@ -161,7 +196,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   células de 1,6 m, pilhas de 2,7 m = acima do alcance de pendurar; frente fechada; saída única à esquerda por baixo do mezanino; a
   escada do mezanino num beco que só abre para o corredor de cima; vigas do mezanino com colisão). Raptors não navegam no labirinto
   (raio da malha 0,75 m); soldados usam a malha de gente (`Yard.bake_people_nav`: raio 0,25 m, célula de 5 cm, só no galpão) e entram
-  em todo corredor do labirinto e no nicho da escada do mezanino (passam ao lado da viga em x = -4, que corta a coluna 1); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
+  em todo corredor do labirinto e no nicho da escada do mezanino (passam debaixo das mãos-francesas do mezanino, `Catwalk.BRACE_Y` acima da cabeça); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
   Na escada, entrando/saindo pelo topo e nos `Hatch.HIDDEN_RUNGS` degraus abaixo do alto do ciclo (`Ladder.hidden_top`, `PlayerMoves.hidden_on_ladder`) fica escondida de todos, mesmo alertados; abaixo, o sniper a vê se estiver olhando para o canto: o tiro
   derruba da escada (`PlayerMoves.knock_off_ladder`) e a queda sem controle mata (`Player.KNOCKED_*`).
 - Teto da sala dos clones (`Roof.LAB_Y`, 1,5 m acima da laje: sobe escalando a parede do fundo do galpão; mureta nos três lados
@@ -176,7 +211,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o galpão (o alçapão aparece do começo) e
   `LAB_FOG_DENSITY` a mais sobre o anexo (a caixa só aparece a poucos metros).
 - Queda (`Player.fall_damage`): sem dano até `FALL_SAFE` (3,6 m: pular do mezanino não machuca), morte a partir de `FALL_LETHAL`
-  (5 m); derrubada da escada usa `KNOCKED_SAFE/KNOCKED_LETHAL`. `death_cause` "fall" → Game Over "VOCE MORREU NA QUEDA".
+  (5 m); derrubada da escada usa `KNOCKED_SAFE/KNOCKED_LETHAL`. `death_cause` "fall" → Game Over "VOCÊ MORREU NA QUEDA".
   Fora do galpão/pátio/pedreira não há chão: caindo abaixo de `Player.VOID_Y` (-10 m) ela morre na queda (não cai para sempre).
 - Sala dos clones (`CloneLab`): anexo atrás da plataforma de carga (piso na altura da doca, `FLOOR_Y` 1,3), portão de enrolar (`Door`
   com `room` -1, fora da corrente de salas) aberto com E. Seis tubos com raptors (`RaptorModel` com a animação travada, azulados, sem
@@ -187,7 +222,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   esquerda (`CloneLab.TANK`; a sala foi até `Z_FAR` -32 para caber) o tanque do alossauro: vidro de `TANK_SIDES` lados inteiro,
   drenado, porta de vidro aberta, mangueiras soltas, luz vermelha; a plaqueta dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO") é o
   código do portão da pedreira. Em cima do console fica a chave do painel (`main.lab_key`, `KeyItem` em `CloneLab.key_spot()`,
-  id `Yard.GATE_KEY`; a etiqueta diz "CODIGO = SUBJECT DO PROTOTIPO"); R a devolve à mesa.
+  id `Yard.GATE_KEY`; a etiqueta diz "CÓDIGO = SUBJECT DO PROTÓTIPO"); R a devolve à mesa.
 - Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
   Porta trancada: `Door.lock` = id da chave/cartão. Com leitor (`add_card_reader`, porta do galpão) abre com o cartão no bolso. Com
   teclado (`add_keypad` + `Door.code`, portão da pedreira: chave `Yard.GATE_KEY` + código `CloneLab.ALLO_SUBJECT`): E emite
@@ -202,13 +237,19 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   esquerda dele com `release`) ou investida (longe). Rolar esquiva de pisada e mordida. Só reage a tiro depois de `FLINCH_DAMAGE`.
   Morte em ragdoll → sinal `killed` → tela de fim do `main` (FIM, tempo, tiros; R reinicia). Atordoada: estado "dazed" da
   heroína (animação Dazed), aviso "ATORDOADA" no HUD; golpe, mordida ou reinício acabam com ela.
-- HUD (320x240 ampliado, `main._build_hud`): no alto à esquerda a vida em barra (`HudBar`, número ao lado) e logo abaixo o sensor
+- Tela 16:9: resolução interna `Gfx.RES` 854x480 (PS2) / 427x240 (PS1), janela padrão 1280x720 (as capturas saem em 16:9);
+  `stretch/aspect="expand"` e câmeras com `KEEP_HEIGHT`: outra proporção só muda a largura vista, a altura fica igual.
+  HUD/telas de inspeção/pausa usam a área visível em unidades de 240 de altura (cantos e centro acompanham a largura).
+- HUD (unidades de 240 de altura ampliadas, `main._build_hud`): no alto à esquerda a vida em barra (`HudBar`, número ao lado) e logo abaixo o sensor
   de perigo (`DangerMeter`, jeito Syphon Filter); no alto à direita o radar (`Radar`); embaixo à direita o modelo da arma na mão
   (`WeaponIcon`: SubViewport ortográfica, .glb soltos de perfil, pistola comum = malha "Pistol" do corpo dela, `pistol_sd` com o
-  silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival; embaixo à esquerda a furtividade; a ajuda (F1) quebra antes do radar.
+  silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival; a ajuda (F1) quebra antes do radar.
   Mira (`Crosshair`, jeito Syphon Filter, camada sem escala no centro): cruz com um retângulo no meio, colchetes "[ ]" dos lados e tracinho no meio de cima/baixo; meia altura =
   alvo de `TARGET_R` m na distância do ponto mirado (perto = maior) + cone do próximo tiro (`Player.aim_spread`: arma, tiros
   seguidos, andando), pela lente da câmera, entre `MIN_HALF`/`MAX_HALF`; corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
+  Furtividade no radar: fundo e moldura pulsam na cor do maior `alert_level` (mais rápido quanto pior) e embaixo dele um olho +
+  VISÍVEL/INVISÍVEL (`Radar.INVISIBLE_AT` da `visibility()`, telhado ou alto da escada; nunca com alguém a vendo, `Enemy.has_eyes_on`)
+  e o estado (DESCONFIADOS / BUSCA ATIVA / ALERTA!); o olho fecha escondida, olha para os lados na busca e fica vermelho no alerta.
   Perigo: cada inimigo diz `Enemy.threat()` (0..1, só em combate; esquivando = 0): soldado = chance de pelo menos um tiro da rajada
   acertar (`Soldier._hit_chance`, a mesma do `_fire`), sniper = sobe com a mira do laser, raptor/alossauro = golpe ao alcance
   (`_melee_threat`). O sensor junta tudo (1 - produto(1 - chance)), sobe rápido e desce devagar, rolando desce depressa e volta a subir
@@ -248,6 +289,14 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   chave ele cai e a chave é gasta). Pegar a chave → `Inspect.show_item` (item girando numa SubViewport). As telas de inspeção
   pausam a árvore e rodam com `PROCESS_MODE_ALWAYS` (sons delas por `Sfx.ui`); `auto_close`/`on_shown` para testes e capturas.
   Reiniciar tranca de novo e devolve a chave ao morto. Testes: `key_tests.gd`, `ambush_tests.gd`.
+  Caixa de texto das telas (`Inspect._layout_box`): título amarelo no alto com respiro (`BOX_PAD`), botões no pé (`UiStyle.Hint`: `OK_ITEMS` ou
+  os do teclado, `KEYPAD_ITEMS`) e o texto centralizado no meio; a caixa cresce com o texto e o item fica acima dela, nada se sobrepõe.
+- Textos do jogo em português com acento (a fonte padrão do Godot tem os glifos).
+- Design system dos textos (`UiStyle`, `ui_style.gd`): cores INK/ACCENT/ACTION/WARN/DANGER/MUTED, tamanhos S 8 / M 12 / L 24 (unidades
+  do HUD de 240 de altura; a munição ao lado da arma é M), fundos SHADE/DEATH_SHADE/BAND, `UiStyle.label`/`rect`. Botão nunca vai escrito no texto ("(E)", "E:"): usa
+  `UiStyle.Hint` (fileira "<glifo> VERBO"; glifo do mapa do `InputSetup` pelo último aparelho, `UiStyle.pad` via `UiStyle.Watcher`:
+  tecla numa moldura ou triângulo/bola/X/quadrado/direcional desenhados). Prompt de ação (`main._prompt`) junta pegar/abrir e o
+  abate furtivo (atirar). Captura com os glifos do controle: `--pad`. O teste `ui_style_tests.gd` barra cor/tamanho solto nos scripts.
 - Tiros: `Player.WEAPON_STATS` (cadência, dano por projétil, chumbos, dispersão/abertura em rajada, alcance com queda
   de dano, tremida, cápsula); chumbos no mesmo alvo somam num `take_hit` só. Efeitos em `Fx` por arma e por superfície
   (meta "surface" do corpo = textura do `Level.block`); buraco de bala (`Fx.decal`) só em cenário, preso ao corpo,
