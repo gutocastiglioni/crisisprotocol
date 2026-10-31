@@ -22,6 +22,10 @@ const NO_PROGRESS_TIME := 3.0  # andando sem encurtar o caminho por este tempo (
 const ASSASSINATE_RANGE := 2.2  # alcance do abate furtivo pelas costas
 const STEER_RADIUS := 0.3  # raio do corpo (cápsula de gente) ao conferir se dá para ir reto ao próximo ponto do caminho
 const CRIT_RANGE := 2.5  # alcance do golpe crítico no inimigo caído
+# passo: o corpo só tem andar e correr; velocidade no meio dos dois tocaria a corrida em câmera lenta
+const RUN_MIN_SCALE := 0.75  # corrida nunca mais lenta que isto da animação (e `_go` só corre a partir desta velocidade)
+const JOG_SCALE := 0.8  # trote (investigar): a corrida a esta fração, como ela correndo no survival
+const RUN_TURN_DOT := 0.7  # correndo, virando mais que isto (corpo x caminho): freia para o passo de andar e vira
 
 @export var target: Player
 ## Pontos (no mundo) da patrulha, percorridos em ciclo. Vazio = fica parado de guarda.
@@ -78,7 +82,7 @@ var _stuck_n := 0
 var nav_map := RID()
 var search_sweeps := SEARCH_SWEEPS  # 0 = só olha em volta onde chegou (sniper preso à passarela)
 var alarm_responders := 99  # quantos do mesmo tipo (os mais perto) saem do posto quando um dá o alarme (raptors: a matilha toda)
-var alarm_walks := false  # vai ao alarme andando, com calma (gente), em vez de correr
+var alarm_walks := false  # vai ao alarme como quem investiga (gente: trote, "?"), em vez de caçar na corrida
 ## Guarda de posto (guardas da porta do pátio): barulho e vulto só o fazem parar e olhar para lá, sem sair do lugar,
 ## até alguém vê-la (alerta: `alert_t` > 0); aí caça e procura como os outros e, quando desiste, volta ao posto.
 var hold_post := false
@@ -732,11 +736,17 @@ func _go(goal: Vector3, speed: float, delta: float) -> bool:
 		dir = (dir + sep * 1.2).normalized()
 	_face(dir, delta, 5.0)
 	var fwd := -global_basis.z
-	var v := speed * maxf(fwd.dot(dir), 0.0)
+	var along := fwd.dot(dir)
+	# corre só na velocidade de correr e com o corpo apontado para o caminho; na curva freia para o passo de andar
+	var wants_run := speed >= _anim_speed(true) * RUN_MIN_SCALE
+	var run := wants_run and along > RUN_TURN_DOT
+	var v := (minf(speed, _anim_speed(false)) if wants_run and not run else speed) * maxf(along, 0.0)
 	velocity.x = fwd.x * v
 	velocity.z = fwd.z * v
-	var run := speed > 3.0
-	_play("Run" if run else "Walk", 0.25, maxf(v, 0.3) / _anim_speed(run))
+	if run:
+		_play("Run", 0.25, maxf(v / _anim_speed(true), RUN_MIN_SCALE))
+	else:
+		_play("Walk", 0.25, maxf(v, 0.3) / _anim_speed(false))
 	# mandou andar e não sai do lugar (árvore, quina): refaz o caminho; preso de novo, desiste
 	var real := Vector2(get_real_velocity().x, get_real_velocity().z).length()
 	if v > 0.5 and real < v * 0.25:

@@ -7,8 +7,8 @@ extends Node3D
 ## fundo. Ela entra pela primeira vez: sinal `entered` (o main toca a cena do choque, Cutscene.play_clones).
 ## Cada tubo tem uma plaqueta (SubjectPlate, "SUBJECT XXXX", lida com E). No canto do fundo à esquerda fica o tanque
 ## enorme do alossauro, inteiro, drenado e com a porta de vidro aberta (vazio: ele está na pedreira); o número da
-## plaqueta dele (ALLO_SUBJECT) é o código do teclado do portão da pedreira (Yard._gate). A chave que liga esse teclado
-## fica em cima do console (`key_spot`, o main põe a KeyItem lá).
+## plaqueta dele (ALLO_SUBJECT) é o código do teclado do portão da pedreira (Yard._gate); o cartão que liga esse teclado
+## cai do último sniper das torres de guarda do pátio.
 
 signal entered
 
@@ -42,7 +42,6 @@ const TANK_BASE := 0.5
 const TANK_CAP := 0.5
 const TANK_SIDES := 16
 const TANK_DOOR_OPEN := 100.0  # graus: a porta de vidro (3 lados) aberta para fora
-const KEY_SPOT := Vector3(0.55, FLOOR_Y + 0.905, Z_FAR + 1.15)  # chave do painel em cima do console
 
 var gate: Door
 var clones: Array[RaptorModel] = []
@@ -407,12 +406,7 @@ func _build_tank() -> void:
 	lamp.albedo_color = Color(1.0, 0.25, 0.2)
 	_box(tank, Vector3(0.3, 0.12, 0.06), Vector3(0, TANK_BASE + TANK_H + TANK_CAP * 0.5, TANK_R + 0.23), lamp)
 	# plaqueta do lado da porta (à esquerda de quem chega), fora do caminho da folha aberta
-	_plate(tank, Vector3(-1.0, 0, TANK_R + 0.55), 0.0, ALLO_SUBJECT, "ALLOSAURUS - PROTÓTIPO", "VAZIO / TRANSFERIDO", true)
-
-
-## Onde a chave do painel fica, em cima do console (mundo).
-func key_spot() -> Transform3D:
-	return global_transform * Transform3D(Basis(Vector3.UP, 0.5), KEY_SPOT)
+	_plate(tank, Vector3(-1.0, 0, TANK_R + 0.55), 0.0, ALLO_SUBJECT, "CONFIDENCIAL - PROTÓTIPO", "VAZIO / TRANSFERIDO", true)  # espécie escondida até a pedreira
 
 
 func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:

@@ -5,8 +5,8 @@ class_name Yard
 ## ali dentro, ela é vista de bem menos longe). No meio, numa clareira (CLEARING), o guerrilheiro morto com a chave
 ## do container (CORPSE, Corpse); os 3 velociraptors (POSTS) esperam escondidos nas moitas da beira dela (LURK) até a
 ## emboscada e depois usam as rotas de patrulha. Tudo o que bloqueia fica na camada 1 (como o galpão); a malha de navegação dos raptors sai de lá
-## (bake_nav). Texturas em tools/make_level_textures.py. O portão do fundo fica aberto: dá na pedreira (Arena), a
-## última sala.
+## (bake_nav). Texturas em tools/make_level_textures.py. O portão do fundo dá na pedreira (Arena), a última sala; uma
+## torre de guarda de cada lado dele (TOWERS, GuardTower: o main as monta e põe um sniper em cada depois da emboscada).
 
 const TEX := {
 	"grass": preload("res://assets/textures/grass.png"),
@@ -30,7 +30,7 @@ const ROAD_W := 4.0
 const GATE_GAP := 4.4  # vão na parede do fundo, no portão (largura)
 const GATE_X := X_FAR - 1.1  # o portão fecha o vão da parede do fundo (parede em X_FAR - 1,1)
 const GATE_H := 4.7  # altura das folhas de chapa (acima, a viga de concreto até o topo dos paredões)
-const GATE_KEY := "allo_gate"  # id da chave que liga o teclado do portão (fica no console da sala dos clones)
+const GATE_KEY := "allo_gate"  # id do cartão que liga o teclado do portão (cai do último sniper das torres)
 const MIST_H := 4.0  # altura do volume da neblina rasteira (do chão para cima; mais grossa embaixo)
 const MIST_DENSITY := 0.05
 ## Onde cada raptor começa e a rota de patrulha dele (pontos em chão livre, longe das árvores).
@@ -48,6 +48,11 @@ const CORPSE_YAW := 0.0
 const CLEARING := 10.5
 ## Onde cada raptor do pátio fica escondido até a emboscada (dentro de uma moita sem colisão, na beira da clareira).
 const LURK := [Vector3(-35.0, 0, 6.5), Vector3(-44.5, 0, -6.0), Vector3(-27.0, 0, 3.0)]
+## Torres de guarda (GuardTower) dos dois lados do portão do fundo, encostadas na parede, a frente para o pátio. Em volta
+## delas não fica árvore (TOWER_TREES m: a copa entraria no telhado) nem outra coisa sólida (TOWER_CLEAR m).
+const TOWERS := [Vector3(-54.1, 0, 1.6), Vector3(-54.1, 0, -7.6)]
+const TOWER_TREES := 4.5
+const TOWER_CLEAR := 3.0
 
 static var _mats := {}
 
@@ -192,9 +197,9 @@ static func _boundary(parent: Node) -> void:
 			z += rng.randf_range(2.4, 3.0)
 			continue
 		# (atrás desta fileira já é a pedreira: sem a segunda fileira de enfeite)
-		_tree(parent, Vector3(far_x + 1.0 + rng.randf_range(-0.4, 0.4), 0, z), rng.randf_range(8.0, 10.5), rng.randf_range(2.2, 3.0), rng, true)
+		_off_towers(_tree(parent, Vector3(far_x + 1.0 + rng.randf_range(-0.4, 0.4), 0, z), rng.randf_range(8.0, 10.5), rng.randf_range(2.2, 3.0), rng, true), TOWER_TREES)
 		if absf(z - gz) > 3.2:
-			_bush(parent, Vector3(far_x + 2.2, 0, z + 1.2), rng.randf_range(0.8, 1.2), rng)
+			_off_towers(_bush(parent, Vector3(far_x + 2.2, 0, z + 1.2), rng.randf_range(0.8, 1.2), rng), TOWER_CLEAR)
 		z += rng.randf_range(2.4, 3.0)
 
 
@@ -223,13 +228,13 @@ static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
 		var roll := rng.randf()
 		var pos := Vector3(p.x, 0, p.y)
 		if roll < 0.5:
-			_tree(parent, pos, rng.randf_range(5.5, 8.0), rng.randf_range(1.8, 2.6), rng, true)
+			_off_towers(_tree(parent, pos, rng.randf_range(5.5, 8.0), rng.randf_range(1.8, 2.6), rng, true), TOWER_TREES)
 		elif roll < 0.72:
-			_bush(parent, pos, rng.randf_range(0.9, 1.4), rng)
+			_off_towers(_bush(parent, pos, rng.randf_range(0.9, 1.4), rng), TOWER_CLEAR)
 		elif roll < 0.88:
-			_rock(parent, pos, rng.randf_range(0.5, 1.1), rng)
+			_off_towers(_rock(parent, pos, rng.randf_range(0.5, 1.1), rng), TOWER_CLEAR)
 		else:
-			_log(parent, pos, rng.randf_range(2.4, 3.6), rng.randf() * PI)
+			_off_towers(_log(parent, pos, rng.randf_range(2.4, 3.6), rng.randf() * PI), TOWER_CLEAR)
 	# samambaias e capim ralo: de enfeite, sem colisão, também fora da estrada
 	for i in 120:
 		var p := Vector2(rng.randf_range(X_FAR + 1.5, X_NEAR - 1.0), rng.randf_range(-Z_HALF + 1.0, Z_HALF - 1.0))
@@ -251,6 +256,14 @@ static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
 			_card_pair(parent, Vector3(q.x, 0, q.y), "grass_card", rng.randf_range(0.4, 0.7), rng.randf() * PI)
 
 
+## Tira `node` se ficou a menos de `gap` m de uma torre de guarda (depois de montado: o sorteio do resto da mata fica igual).
+static func _off_towers(node: Node3D, gap: float) -> void:
+	for t: Vector3 in TOWERS:
+		if Vector2(node.position.x - t.x, node.position.z - t.z).length() < gap:
+			node.free()
+			return
+
+
 static func _clear(p: Vector2, placed: Array[Vector2], keep: Array[Vector2], gap: float) -> bool:
 	if road_distance(p) < ROAD_W * 0.5 + 1.2:
 		return false
@@ -264,7 +277,7 @@ static func _clear(p: Vector2, placed: Array[Vector2], keep: Array[Vector2], gap
 
 
 # ------------------------------------------------------------------ peças
-static func _tree(parent: Node, pos: Vector3, h: float, crown: float, rng: RandomNumberGenerator, solid: bool) -> void:
+static func _tree(parent: Node, pos: Vector3, h: float, crown: float, rng: RandomNumberGenerator, solid: bool) -> Node3D:
 	var root: Node3D
 	if solid:
 		var body := StaticBody3D.new()
@@ -309,9 +322,10 @@ static func _tree(parent: Node, pos: Vector3, h: float, crown: float, rng: Rando
 		root.add_child(mi)
 	parent.add_child(root)
 	root.position = pos
+	return root
 
 
-static func _bush(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerator) -> void:
+static func _bush(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerator) -> Node3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
@@ -336,9 +350,10 @@ static func _bush(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerat
 	parent.add_child(body)
 	body.position = pos
 	body.rotation.y = rng.randf() * TAU
+	return body
 
 
-static func _rock(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerator, solid := true) -> void:
+static func _rock(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerator, solid := true) -> Node3D:
 	var s := SphereMesh.new()
 	s.radius = r
 	s.height = r * rng.randf_range(0.9, 1.3)
@@ -367,10 +382,11 @@ static func _rock(parent: Node, pos: Vector3, r: float, rng: RandomNumberGenerat
 		mi.position = pos + Vector3.UP * s.height * 0.3
 		parent.add_child(mi)
 	mi.rotation.y = rng.randf() * TAU
+	return mi.get_parent() if solid else mi
 
 
 ## Tronco caído (deitado), baixo o bastante para ela escalar.
-static func _log(parent: Node, pos: Vector3, length: float, yaw: float) -> void:
+static func _log(parent: Node, pos: Vector3, length: float, yaw: float) -> Node3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
@@ -399,6 +415,7 @@ static func _log(parent: Node, pos: Vector3, length: float, yaw: float) -> void:
 	parent.add_child(body)
 	body.position = pos
 	body.rotation.y = yaw
+	return body
 
 
 ## Dois cartões cruzados com alfa (capim, samambaia).
@@ -434,7 +451,7 @@ static func _grass_patch(parent: Node, center: Vector3, radius: float, rng: Rand
 ## Portão de aço fechado no vão da parede do fundo: duas folhas de chapa cheia (não dá para ver a pedreira por
 ## ele) presas em pilares de concreto, com uma viga de concreto por cima até a altura dos paredões (nada aparece
 ## por cima, nem do telhado). Trancado: E no teclado do pilar (Door.add_keypad) abre a tela do painel (Inspect.keypad);
-## com a chave do console da sala dos clones (GATE_KEY) ele liga e o código (o SUBJECT do tanque vazio do alossauro)
+## com o cartão do último sniper das torres (GATE_KEY) ele liga e o código (o SUBJECT do tanque vazio do alossauro)
 ## destranca. Aberto, as folhas giram para dentro da pedreira e dão na última sala.
 static func _gate(parent: Node) -> void:
 	var gz: float = ROAD[ROAD.size() - 1].y
@@ -447,7 +464,7 @@ static func _gate(parent: Node) -> void:
 	for sx in [-1, 1]:
 		_prop(parent, _bm(Vector3(0.04, 0.3, GATE_GAP)), Vector3(gx + sx * 0.52, top + 0.2, gz), "wall", 1.0).material_override = Level.material("hazard", 1.0)
 	var door := Door.create(parent, Vector3(gx, 0, gz), Vector3(0.6, top, GATE_GAP + 0.4), 1, "ABRIR PORTÃO")
-	# trancado: a chave do console da sala dos clones liga o teclado no pilar e o código é o número do tanque vazio
+	# trancado: o cartão do último sniper das torres liga o teclado no pilar e o código é o número do tanque vazio
 	door.lock = GATE_KEY
 	door.code = CloneLab.ALLO_SUBJECT
 	door.is_locked_door = true

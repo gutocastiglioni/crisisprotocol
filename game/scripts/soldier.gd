@@ -81,7 +81,7 @@ func _ready() -> void:
 	marker_height = 2.2
 	turn_rate = 8.0
 	patrol_speed = Moves.speed("walk")
-	investigate_speed = 1.8
+	investigate_speed = Player.RUN_SPEED * JOG_SCALE
 	hunt_speed = Player.RUN_SPEED
 	if drop_kind == "":
 		drop_kind = "m16"

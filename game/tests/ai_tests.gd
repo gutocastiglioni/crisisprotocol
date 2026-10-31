@@ -15,6 +15,7 @@ func run(runner: SceneTree) -> void:
 	await test_cover_hides()
 	await test_footsteps_make_noise()
 	await test_gunshot_investigates()
+	await test_raptor_gait()
 	await test_patrol_route()
 	await test_alarm_calls_others()
 	await test_damage_while_unaware_alarms()
@@ -174,6 +175,33 @@ func test_gunshot_investigates() -> void:
 	p.make_noise(26.0, 2.2)
 	await t._frames(2)
 	check(r.state == "investigate", "tiro a 10 m: vai investigar", r.state)
+
+
+## Passo do raptor no `_go`: andar até a ronda, trote/corrida acima disso; nunca a corrida em câmera lenta (nem na curva,
+## em que freia para o andar) nem o andar acelerado ao investigar.
+func test_raptor_gait() -> void:
+	var pr := await _spawn(Vector3(0, 0, 30), Vector3(-6, 0, 0), -PI * 0.5)
+	var r: Raptor = pr[1]
+	r.sight_range = 0.0
+	r.set_physics_process(false)
+	var max_walk := r.patrol_speed / Raptor.WALK_ANIM_SPEED + 0.01
+	for c in [[r.patrol_speed, -PI * 0.5, "Walk"], [r.investigate_speed, -PI * 0.5, "Run"], [r.hunt_speed, -PI * 0.5, "Run"],
+			[r.hunt_speed, PI * 0.5, "Run"]]:
+		r.global_position = Vector3(-6, 0, 0)
+		r.rotation.y = c[1]
+		r._best_left = INF
+		var worst_walk := 0.0
+		var slowest_run := INF
+		for i in 40:
+			r._go(Vector3(6, 0, 0), c[0], 1.0 / 60.0)
+			if r.model.current == "Walk":
+				worst_walk = maxf(worst_walk, r.model.anim_player.speed_scale)
+			elif r.model.current == "Run":
+				slowest_run = minf(slowest_run, r.model.anim_player.speed_scale)
+			await t._frames(1)
+		check(r.model.current == c[2] and worst_walk <= max_walk and slowest_run >= Enemy.RUN_MIN_SCALE - 0.01,
+			"raptor a %.1f m/s: %s, sem andar acelerado nem corrida em câmera lenta" % [c[0], c[2]],
+			"%s andar %.2f corrida %.2f" % [r.model.current, worst_walk, slowest_run])
 
 
 func test_patrol_route() -> void:

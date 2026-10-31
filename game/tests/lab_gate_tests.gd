@@ -1,6 +1,6 @@
 extends RefCounted
-## Testes da sala dos clones com as plaquetas (SubjectPlate), o tanque vazio do alossauro, a chave do painel no console e o
-## portão da pedreira trancado por chave + código (Door.add_keypad, Inspect.keypad). Chamado por run_tests.gd (usa
+## Testes da sala dos clones com as plaquetas (SubjectPlate), o tanque vazio do alossauro e o portão da pedreira trancado
+## por cartão + código (Door.add_keypad, Inspect.keypad; o cartão cai do último sniper das torres, ver tower_tests). Chamado por run_tests.gd (usa
 ## check/_frames de lá; perfil "arcade").
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -91,21 +91,10 @@ func test_lab_contents() -> void:
 	t.check(not t.paused and p.camera_rig.camera.current, "fecha e volta para a câmera dela")
 	await _stand(p, pl0.global_transform * Vector3(0, 0, -0.8), pl0.global_rotation.y)
 	t.check(p.pick_plate() == null, "por trás da plaqueta não lê")
-	# a chave do painel em cima do console: E na frente da mesa pega
-	var key: KeyItem = main.lab_key
-	t.check(key.state == "held" and key.id == Yard.GATE_KEY and key.global_position.distance_to(lab.key_spot().origin) < 0.01, "chave do painel em cima do console")
-	t.check(absf(key.global_position.y - (CloneLab.FLOOR_Y + 0.9)) < 0.02, "deitada no tampo da mesa", str(key.global_position))
-	await _stand(p, Vector3(key.global_position.x, CloneLab.FLOOR_Y, key.global_position.z + 0.8), 0.0)
-	t.check(p.pick_key() == key, "na frente do console: pode pegar a chave")
+	# o console não tem mais a chave do painel (é o cartão do último sniper das torres)
+	await _stand(p, Vector3(0.55, CloneLab.FLOOR_Y, CloneLab.Z_FAR + 1.95), 0.0)
+	t.check(p.pick_key() == null, "na frente do console não há chave para pegar")
 	main.inspect.on_shown = Callable()
-	await _press("interact")
-	while main.inspect.busy:
-		await t.process_frame
-	t.check(p.has_key(Yard.GATE_KEY) and key.state == "taken", "E pega a chave do painel")
-	main.reset_all()
-	await t._frames(3)
-	t.check(key.state == "held" and key.global_position.distance_to(lab.key_spot().origin) < 0.01 and not p.has_key(Yard.GATE_KEY),
-		"R: a chave volta para o console")
 	main.inspect.auto_close = -1.0
 	main.queue_free()
 	await t._frames(2)
@@ -130,7 +119,8 @@ func test_gate_keypad() -> void:
 	await _press("interact")
 	while ins.busy:
 		await t.process_frame
-	t.check(seen.title == "PAINEL DESLIGADO" and gate.is_locked() and not gate.opened, "sem a chave o painel não liga", seen.title)
+	t.check(seen.title == "PAINEL DESLIGADO" and gate.is_locked() and not gate.opened, "sem o cartão o painel não liga", seen.title)
+	t.check("cartão" in ins._body.text, "o aviso pede um cartão", ins._body.text)
 	t.check(not t.paused and p.camera_rig.camera.current, "fecha e volta para a câmera dela")
 	# com a chave e o código errado: continua trancado e ela fica com a chave
 	p.add_key(Yard.GATE_KEY)

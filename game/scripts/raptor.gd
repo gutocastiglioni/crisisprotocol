@@ -11,10 +11,11 @@ signal killed
 signal attacked(kind: String)
 
 const STUDY_DIST := 4.5
-const WALK_SPEED := 1.1
 const RUN_SPEED := 7.0
 const RUN_ANIM_SPEED := 4.2  # m/s que a animação Run representa em velocidade 1 (passada 1 m em 0,24 s de apoio)
-const WALK_ANIM_SPEED := 1.075  # idem Walk (passada 0,8 m em 0,744 s de apoio): sem patinar
+const WALK_ANIM_SPEED := 1.071  # idem Walk (passada 0,93 m em 0,868 s de apoio): sem patinar
+const STALK_SPEED := 0.75  # rodeando a presa, baixo e devagar
+const STALK_ANIM_SPEED := 0.635  # idem Stalk (passada 0,8 m em 1,26 s de apoio)
 const CLAW_REACH := 0.5  # garra a esta distância do corpo dela = acertou
 const LEAP_UP := 5.0
 const LEAP_MAX_SPEED := 10.0
@@ -66,7 +67,7 @@ func _ready() -> void:
 	model = RaptorModel.new()
 	add_child(model)
 	patrol_speed = 1.4
-	investigate_speed = 2.4
+	investigate_speed = RUN_ANIM_SPEED * JOG_SCALE  # trote (2,4 m/s era o andar acelerado a 2,2x)
 	hunt_speed = 4.2
 	head_mult = 1.0  # cabeçudo: tiro na cabeça vale como no corpo (sem headshot)
 	can_stealth = true
@@ -273,7 +274,7 @@ func _ambush(delta: float) -> void:
 	velocity.x = fwd.x * v
 	velocity.z = fwd.z * v
 	var run := v > 3.0
-	model.play("Run" if run else "Walk", 0.25, maxf(v, 0.4) / (RUN_ANIM_SPEED if run else WALK_ANIM_SPEED))
+	model.play("Run" if run else "Walk", 0.25, maxf(v / RUN_ANIM_SPEED, RUN_MIN_SCALE) if run else maxf(v, 0.4) / WALK_ANIM_SPEED)
 
 
 ## Fim da cena da emboscada: já sabe onde ela está e avisou os outros; estuda um tempo (`delay` a mais) e ataca.
@@ -351,13 +352,13 @@ func _study(delta: float) -> void:
 	elif absf(dist - _study_dist) > 1.5:
 		move = dir * signf(dist - _study_dist)
 	if move.length() > 0.1:
-		# anda para onde o corpo aponta (nunca de lado) e a passada acompanha a velocidade: pés não patinam
+		# espreita: baixo, cabeça rente, para onde o corpo aponta (nunca de lado) e a passada acompanha a velocidade
 		_face(move, delta, 3.0)
 		var fwd := -global_basis.z
-		var speed := WALK_SPEED * maxf(fwd.dot(move), 0.0)
+		var speed := STALK_SPEED * maxf(fwd.dot(move), 0.0)
 		velocity.x = fwd.x * speed
 		velocity.z = fwd.z * speed
-		model.play("Walk", 0.3, maxf(speed, 0.35) / WALK_ANIM_SPEED)
+		model.play("Stalk", 0.35, maxf(speed, 0.25) / STALK_ANIM_SPEED)
 	else:
 		_stop(delta)
 		_face(dir, delta, 4.0)

@@ -8,7 +8,7 @@ const EXPECTED_BONES := [
 	"Thigh_R", "Shin_R", "Meta_R", "Toe_R", "Arm_R", "Forearm_R", "Hand_R",
 ]
 const EXPECTED_ANIMS := [
-	"Idle", "Walk", "Run", "Roar", "Study", "LeapPrep", "LeapAir", "Bite", "Shake",
+	"Idle", "Walk", "Run", "Stalk", "Roar", "Study", "LeapPrep", "LeapAir", "Bite", "Shake",
 	"TailWhip", "TailWhipR", "Hit", "Death",
 ]
 
@@ -40,6 +40,9 @@ func run(runner: SceneTree) -> void:
 	await test_no_attack_while_down()
 	await test_nan_after_knockback()
 	await test_nan_after_leap_hit()
+	await test_feet_planted_turning()
+	await test_turn_sway()
+	await test_feet_planted_walking_curve()
 
 
 func check(cond: bool, name: String, detail := "") -> void:
@@ -147,12 +150,15 @@ func test_study_circles() -> void:
 	var start := r.global_position
 	var side_slip := 0.0
 	var pace_err := 0.0
+	var stalked := false
 	for i in 60:
 		await t._frames(1)
 		var v := Vector3(r.velocity.x, 0.0, r.velocity.z)
-		if v.length() > 0.35 and r.model.current == "Walk":
+		if v.length() > 0.3 and r.model.current == "Stalk":
+			stalked = true
 			side_slip = maxf(side_slip, absf(v.normalized().dot(r.global_basis.x)))
-			pace_err = maxf(pace_err, absf(r.model.anim_player.speed_scale * Raptor.WALK_ANIM_SPEED - v.length()))
+			pace_err = maxf(pace_err, absf(r.model.anim_player.speed_scale * Raptor.STALK_ANIM_SPEED - v.length()))
+	check(stalked, "rodeia na espreita (baixo, devagar)", r.model.current)
 	check(side_slip < 0.2, "raptor anda para a frente do corpo (não de lado)", "%.2f" % side_slip)
 	check(pace_err < 0.1, "passada casada com a velocidade (pés não patinam)", "%.2f m/s" % pace_err)
 	var d := r.global_position.distance_to(p.global_position)
@@ -581,3 +587,108 @@ func test_nan_after_leap_hit() -> void:
 	check("leap" in kinds, "salto acerta")
 	await t._frames(60)
 	check(t._body_ok(p.model).finite, "sem NaN após knockback de salto")
+
+
+## Girando no lugar, o pé preso não arrasta junto com o corpo: fica onde tocou e, quando o corpo se afasta demais,
+## dá um passo (um pé de cada vez) até onde a animação o quer. Lê a pose final (depois do FootPlant).
+func test_feet_planted_turning() -> void:
+	var w: Node3D = await t._fresh_world()
+	var r := Raptor.new()
+	w.add_child(r)
+	await t._frames(40)
+	var sk := r.model.skeleton
+	var toes := [sk.find_bone("Toe_L"), sk.find_bone("Toe_R")]
+	var seen: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	var m := {"drag": 0.0, "steps": 0, "both_up": false}  # a lambda copia variável local: o estado vai num dicionário
+	r.model.feet.stepped.connect(func(_at: Vector3) -> void: m.steps += 1)
+	var grab := func() -> void:
+		var xf := sk.get_global_transform_interpolated()
+		for i in 2:
+			var now: Vector3 = xf * sk.get_bone_global_pose(toes[i]).origin
+			if r.model.feet._mode[i] == FootPlant.PLANTED and seen[i] != Vector3.ZERO:
+				m.drag = maxf(m.drag, Vector2(now.x - seen[i].x, now.z - seen[i].z).length())
+			seen[i] = now if r.model.feet._mode[i] == FootPlant.PLANTED else Vector3.ZERO
+		m.both_up = m.both_up or (r.model.feet._mode[0] == FootPlant.STEPPING and r.model.feet._mode[1] == FootPlant.STEPPING)
+	sk.skeleton_updated.connect(grab)
+	r.set_physics_process(false)  # sem IA (ela vira de volta para a vigia); segue "no chão" do último passo da física
+	check(r.model.feet._mode.has(FootPlant.PLANTED), "raptor parado: pés presos no chão", str(r.model.feet._mode))
+	for i in 60:  # 120 graus em 1 s, girando no lugar
+		r.rotation.y += deg_to_rad(2.0)
+		await t._frames(1)
+	await t._frames(20)
+	sk.skeleton_updated.disconnect(grab)
+	check(m.drag < 0.01, "girando no lugar o pé preso não arrasta", "%.3f m" % m.drag)
+	check(m.steps >= 2, "girando ele dá passos", str(m.steps))
+	check(not m.both_up, "um pé de cada vez")
+	# no fim, os pés voltam para onde a animação os quer (sem perna torta presa para trás)
+	var xf := sk.get_global_transform_interpolated()
+	var off := 0.0
+	for i in 2:
+		var lock: Vector3 = r.model.feet._lock[i]
+		var hip := xf * sk.get_bone_global_pose(sk.find_bone("Thigh_" + ["L", "R"][i])).origin
+		off = maxf(off, Vector2(lock.x - hip.x, lock.z - hip.z).length())
+	check(off < 0.6, "pés de volta embaixo do corpo depois do giro", "%.2f m" % off)
+
+
+## Virando, a cabeça entra na curva antes do corpo e a cauda fica para trás e volta com mola; parado de novo, tudo
+## volta para a animação.
+func test_turn_sway() -> void:
+	var w: Node3D = await t._fresh_world()
+	var r := Raptor.new()
+	w.add_child(r)
+	await t._frames(30)
+	r.set_physics_process(false)
+	var sk := r.model.skeleton
+	var head := sk.find_bone("Head")
+	var tip := sk.find_bone("Tail4")
+	var poses := {}
+	var grab := func() -> void:
+		poses["head"] = sk.get_bone_global_pose(head).origin
+		poses["tip"] = sk.get_bone_global_pose(tip).origin
+	sk.skeleton_updated.connect(grab)
+	await t._frames(2)
+	var head0: Vector3 = poses["head"]
+	var tip0: Vector3 = poses["tip"]
+	for i in 30:  # virando para a esquerda dele a 120 graus/s
+		r.rotation.y += deg_to_rad(2.0)
+		await t._frames(1)
+	# esqueleto: +X = esquerda dele, +Z = frente; cabeça adiantada para a esquerda, ponta da cauda arrastada para a direita
+	var head_turn: float = poses["head"].x - head0.x
+	var tip_drag: float = poses["tip"].x - tip0.x
+	check(head_turn > 0.05, "virando, a cabeça entra na curva antes do corpo", "%.2f m" % head_turn)
+	check(tip_drag > 0.1, "virando, a ponta da cauda fica para trás", "%.2f m" % tip_drag)
+	await t._frames(150)
+	sk.skeleton_updated.disconnect(grab)
+	check(absf(r.model.sway._tail) < 0.03 and absf(r.model.sway._tip) < 0.05, "parado de novo, a cauda volta com a mola", "%.3f %.3f" % [r.model.sway._tail, r.model.sway._tip])
+
+
+## Andando em curva fechada (a animação é de andar reto), o pé de apoio não escorrega no chão.
+func test_feet_planted_walking_curve() -> void:
+	var w: Node3D = await t._fresh_world()
+	var r := Raptor.new()
+	w.add_child(r)
+	await t._frames(30)
+	r.set_physics_process(false)
+	var sk := r.model.skeleton
+	var toes := [sk.find_bone("Toe_L"), sk.find_bone("Toe_R")]
+	var seen: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	var m := {"drag": 0.0, "planted": 0}  # a lambda copia variável local: o estado vai num dicionário
+	var grab := func() -> void:
+		var xf := sk.get_global_transform_interpolated()
+		for i in 2:
+			var now: Vector3 = xf * sk.get_bone_global_pose(toes[i]).origin
+			var on: bool = r.model.feet._mode[i] == FootPlant.PLANTED
+			if on and seen[i] != Vector3.ZERO:
+				m.drag = maxf(m.drag, Vector2(now.x - seen[i].x, now.z - seen[i].z).length())
+				m.planted += 1
+			seen[i] = now if on else Vector3.ZERO
+	sk.skeleton_updated.connect(grab)
+	var v := 1.2
+	for i in 150:  # 1,2 m/s virando 70 graus/s (curva de ~1 m de raio)
+		r.model.play("Walk", 0.2, v / Raptor.WALK_ANIM_SPEED)
+		r.rotation.y += deg_to_rad(70.0) / 60.0
+		r.position += -r.global_basis.z * v / 60.0
+		await t._frames(1)
+	sk.skeleton_updated.disconnect(grab)
+	check(m.planted > 60, "andando em curva os pés apoiam (presos)", str(m.planted))
+	check(m.drag < 0.01, "andando em curva o pé de apoio não escorrega", "%.3f m" % m.drag)

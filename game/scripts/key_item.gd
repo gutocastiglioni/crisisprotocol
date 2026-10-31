@@ -15,12 +15,18 @@ const FALL_TIME := 0.45
 const TWINKLE := 1.3  # s entre uma piscada e outra
 const BRASS := Color(0.85, 0.66, 0.26)
 const TAG := Color(0.75, 0.12, 0.1)
+const TAG_INK := Color(0.08, 0.04, 0.03)
+const CARD_BLUE := Color(0.12, 0.22, 0.38)  # azul tático (cartão do galpão)
 const SPARKLE := preload("res://shaders/sparkle.gdshader")
 
 @export var id := "container"
 @export var kind := "key"  # "key" ou "keycard"
 @export var display_name := "CHAVE DO CONTAINER"
 @export var description := "Chave de latão com etiqueta vermelha.\nAbre o cadeado de algum container."
+## escrito na etiqueta vermelha da chave (vazio = etiqueta lisa)
+@export var tag := ""
+## cor do plástico do cartão (keycard)
+@export var card_color := CARD_BLUE
 
 ## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, brilhando), "held" (na mão de um morto) ou "taken"
 var state := "hidden"
@@ -37,10 +43,11 @@ var _light: OmniLight3D
 var _t := 0.0
 
 
-## Malha da chave ou keycard (deitada no plano XZ), usada no chão e na tela do item.
-static func build_model(parent: Node3D, item_kind := "key") -> Node3D:
+## Malha da chave ou keycard (deitada no plano XZ), usada no chão e na tela do item. `tag_text` vai escrito na etiqueta
+## da chave; `color` é o plástico do cartão.
+static func build_model(parent: Node3D, item_kind := "key", tag_text := "", color := CARD_BLUE) -> Node3D:
 	if item_kind == "keycard":
-		return build_keycard_model(parent)
+		return build_keycard_model(parent, color)
 	var root := Node3D.new()
 	parent.add_child(root)
 	var brass := StandardMaterial3D.new()
@@ -82,16 +89,29 @@ static func build_model(parent: Node3D, item_kind := "key") -> Node3D:
 	tag.position = Vector3(-0.062, 0, 0.004)
 	tag.rotation.y = 0.35
 	root.add_child(tag)
+	if tag_text != "":
+		tb.size = Vector3(0.036, 0.003, 0.02)  # escrita: cabe o texto
+		tag.position = Vector3(-0.066, 0, 0.004)
+		var ink := Label3D.new()
+		ink.text = tag_text
+		ink.font_size = 32
+		ink.outline_size = 0
+		ink.pixel_size = 0.00042
+		ink.modulate = TAG_INK
+		ink.shaded = true
+		ink.rotation.x = -PI * 0.5  # deitado na face de cima da etiqueta
+		ink.position.y = 0.0016
+		tag.add_child(ink)
 	return root
 
 
-## Malha 3D do cartão de acesso por aproximação (Keycard magnético/RFID).
-static func build_keycard_model(parent: Node3D) -> Node3D:
+## Malha 3D do cartão de acesso por aproximação (Keycard magnético/RFID), com o plástico na cor `color`.
+static func build_keycard_model(parent: Node3D, color := CARD_BLUE) -> Node3D:
 	var root := Node3D.new()
 	parent.add_child(root)
 	# Corpo plástico do cartão (proporção ID-1: 85,6 x 54 mm)
 	var card_mat := StandardMaterial3D.new()
-	card_mat.albedo_color = Color(0.12, 0.22, 0.38)  # azul tático
+	card_mat.albedo_color = color
 	card_mat.roughness = 0.45
 	var card := MeshInstance3D.new()
 	var cb := BoxMesh.new()
@@ -154,7 +174,7 @@ static func build_keycard_model(parent: Node3D) -> Node3D:
 
 func _ready() -> void:
 	add_to_group("keys")
-	_model = build_model(self, kind)
+	_model = build_model(self, kind, tag, card_color)
 	_model.scale = Vector3.ONE * WORLD_SCALE
 	_model.position.y = 0.006
 	_model.rotation.y = randf() * TAU

@@ -51,11 +51,18 @@ def leg_ik(pose, s, ball, meta=None, toe=None):
     nos ângulos de mundo `meta` e `toe` (graus; None = os da pose de descanso)."""
     meta = REST["meta"] if meta is None else meta
     toe = REST["toe"] if toe is None else toe
-    _, df, du = pose.get("loc", (0, 0, 0))
-    pitch = pose.get("Hips", (0, 0, 0))[0]
+    dx, df, du = pose.get("loc", (0, 0, 0))
+    pitch, roll, yaw = pose.get("Hips", (0, 0, 0))
     p = math.radians(pitch)
     rx, ru = HIP[0] - HIP_HEAD[0], HIP[1] - HIP_HEAD[1]
     hip = (HIP_HEAD[0] + df + rx * math.cos(p) - ru * math.sin(p), HIP_HEAD[1] + du + rx * math.sin(p) + ru * math.cos(p))
+    # quadril rolado (Y > 0 sobe o lado esquerdo) e girado (Z < 0 leva o lado esquerdo para a frente): a junta deste
+    # lado sobe/avança. A coxa abre/fecha o ângulo do rolar e o do quadril levado de lado (loc x > 0 = para a direita
+    # dele) para o pé ficar no lugar
+    x = S.LEG_X if s == "L" else -S.LEG_X
+    hip = (hip[0] - x * math.sin(math.radians(yaw)), hip[1] + x * math.sin(math.radians(roll)))
+    tilt = roll + math.degrees(math.atan2(-dx, max(hip[1] - ball[1], 0.1)))
+    splay = -tilt if s == "L" else tilt
     m = math.radians(meta)
     ankle = (ball[0] - L_META * math.cos(m), ball[1] - L_META * math.sin(m))
     d = min(max(_dist(hip, ankle), abs(L_THIGH - L_SHIN) + 1e-3), L_THIGH + L_SHIN - 1e-4)
@@ -64,7 +71,7 @@ def leg_ik(pose, s, ball, meta=None, toe=None):
     knee = (hip[0] + L_THIGH * math.cos(math.radians(thigh)), hip[1] + L_THIGH * math.sin(math.radians(thigh)))
     shin = _ang(knee, ankle)
     return {
-        f"Thigh_{s}": (thigh - REST["thigh"] - pitch, 0, 0),
+        f"Thigh_{s}": (thigh - REST["thigh"] - pitch, 0, splay),
         f"Shin_{s}": ((shin - thigh) - (REST["shin"] - REST["thigh"]), 0, 0),
         f"Meta_{s}": ((meta - shin) - (REST["meta"] - REST["shin"]), 0, 0),
         f"Toe_{s}": ((toe - meta) - (REST["toe"] - REST["meta"]), 0, 0),
@@ -104,31 +111,138 @@ IDLE = merge(ARMS_TUCKED, {
 })
 
 
+def idle_keys(base=None, feet=None, sec=1.0):
+    """Parado vivo (5 s): respira, passa o peso de uma perna para a outra, a cauda ondula devagar e a cabeça vigia como
+    ave: fica parada, vira de estalo para um lado, inclina, volta. `sec` estica o tempo (bicho maior = mais lento)."""
+    base = IDLE if base is None else base
+    g = lambda *p: ground(merge(base, *p), feet)
+    z0 = base.get("loc", (0, 0, 0))[2]
+    # respira (peito sobe) e passa o peso de uma perna para a outra (quadril de lado e rolado; o loc não soma no merge)
+    bw = lambda b, w: {"Chest": (2 * b, 0, 0), "Spine": (1 * b, 1.2 * w, 0), "Neck1": (0, 0.8 * w, 0), "Hips": (0, -3 * w, 0),
+                       "Tail1": (0, 0, -3 * w), "loc": (-0.025 * w * S.LEG_X / 0.17, 0, z0 - 0.006 * b)}
+    look = lambda z, tilt=0.0, x=0.0: {"Neck1": (x * 0.5, 0, z * 0.25), "Neck2": (x * 0.3, 0, z * 0.4), "Head": (x * 0.2, tilt, z * 0.35)}
+    tail = lambda z, x=0.0: {f"Tail{i + 1}": (x * (0.6 + 0.2 * i), 0, z * (0.5 + 0.25 * i)) for i in range(4)}
+    keys = [
+        (0, g()),
+        (18, g(bw(1, 0.6), tail(3))),
+        (30, g(bw(0.4, 1), tail(5, 1), look(0, 0, -2))),
+        (33, g(bw(0.3, 1), tail(5, 1), look(24, 8, -3))),  # estalo para a esquerda
+        (48, g(bw(0.9, 1), tail(3, 1), look(26, 12, -2), {"Jaw": (-4, 0, 0)})),
+        (51, g(bw(0.8, 0.8), tail(2), look(4, -4, -12))),  # olha para o chão
+        (66, g(bw(0.1, 0), tail(-2), look(2, -6, -14))),
+        (78, g(bw(0.6, -0.7), tail(-4, -1), look(0, 0, -2))),
+        (81, g(bw(0.6, -1), tail(-4, -1), look(-22, -10, 1))),  # estalo para a direita
+        (96, g(bw(1, -1), tail(-5), look(-25, -14, 2), {"Jaw": (-7, 0, 0)})),
+        (99, g(bw(0.9, -0.9), tail(-4), look(-8, 4, 6))),  # levanta a cabeça, atento
+        (112, g(bw(0.3, -0.5), tail(-1, 1), look(-3, 6, 7))),
+        (115, g(bw(0.2, -0.3), tail(2, 1), look(0, 0, 0))),
+        (132, g(bw(0.8, 0.2), tail(3), look(2, 0, -1))),
+        (150, g()),
+    ]
+    return [(round(f * sec), p) for f, p in keys]
+
+
+def idle_arms(keys, arms, amp=1.0):
+    """Parado: os braços acompanham a respiração e a troca de peso (sobem um pouco com o peito, um de cada vez, antebraço
+    e mão atrasados), em vez de ficarem travados na pose `arms`."""
+    total = keys[-1][0] or 1
+    out = []
+    for f, pose in keys:
+        ph = f / total
+        pose = dict(pose)
+        for s, sign in (("L", 1), ("R", -1)):
+            for bone, deg, lag in (("Arm", 5.0, 0.0), ("Forearm", -6.0, 0.06), ("Hand", -5.0, 0.12)):
+                x, y, z = pose.get(f"{bone}_{s}", arms.get(f"{bone}_{s}", (0, 0, 0)))
+                w = math.sin(2 * math.pi * (ph * 3 - lag)) + 0.5 * sign * math.sin(2 * math.pi * (ph - lag))
+                pose[f"{bone}_{s}"] = (x + amp * deg * w, y, z + sign * 2.0 * amp * w)
+        out.append((f, pose))
+    return out
+
+
 def tail_wave(amp, phase, lag=0.12):
     """Balanço lateral da cauda, cada segmento atrasado em relação ao anterior."""
     return {f"Tail{i + 1}": (0, 0, amp * (0.6 + 0.25 * i) * math.sin(2 * math.pi * (phase - lag * i))) for i in range(4)}
 
 
-def gait(frames, step, stride, duty, lift, height, bob, upper, pitch=0.0, sway=5.0):
-    """Ciclo de passos gerado: os pés deslizam para trás no apoio e voltam pelo ar no balanço."""
+def _smooth(t):
+    t = min(max(t, 0.0), 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def _bump(t, a, b):
+    """0 fora de [a, b], sobe e desce em seno dentro."""
+    return math.sin(math.pi * (t - a) / (b - a)) if a < t < b else 0.0
+
+
+def gait(frames, step, stride, duty, lift, height, bob, upper, pitch=0.0, sway=5.0,
+         roll=3.0, yaw=3.0, push=18.0, low=0.06, surge=0.0, nod=2.0, tail_bob=2.5, arm=6.0, pant=0.0,
+         shift=0.0, wave=0.0, thrust=0.0, plateau=0.0, scan=0.0, arm_swing=0.0, arm_over=False):
+    """Ciclo de passos gerado: os pés deslizam para trás no apoio (na mesma velocidade, não patinam) e voltam pelo ar.
+
+    Gingado: o quadril desce logo depois de cada pé tocar (`low` = fase do ponto mais baixo; corrida = meio do apoio),
+    avança/freia (`surge`), leva o peso para cima da perna de apoio (`shift` m de lado + `roll` graus) e gira com a
+    passada (`yaw`); essa onda sobe pelo tronco e pescoço atrasada (`wave`) e desce pela cauda, que balança larga e
+    atrasada de segmento em segmento (`sway` de lado, `tail_bob` de cima para baixo), e a cabeça desfaz o giro (fica
+    apontada para a frente, como ave), com o bote de ave a cada passo (`thrust`: a cabeça fica parada e avança de
+    estalo) e uma varredura lenta para os lados (`scan`). Braços sacodem atrasados. O pé rola: no fim do apoio o
+    calcanhar sobe (`push`), no ar os dedos dobram, antes de tocar ele se estica para a frente; `plateau` segura o pé
+    no alto do passo (passada de caçador, devagar e alta). `arm_over` (alossauro): os braços somam o balanço à pose de
+    `upper` em vez de trocá-la, vão e voltam alternados com a passada (`arm_swing`) e antebraço/mão seguem atrasados."""
     keys = []
+    lags = (("Spine", 0.5, 0.05), ("Chest", 0.4, 0.1), ("Neck1", 0.3, 0.16), ("Neck2", 0.2, 0.22))
     for k in range(0, frames + 1, step):
         ph = (k / frames) % 1.0
-        pose = merge(upper, tail_wave(sway, ph), {
-            "loc": (0, 0, height + bob * math.cos(4 * math.pi * ph)),
-            "Hips": (pitch, 0, 1.5 * math.sin(2 * math.pi * ph)),
+        dip = math.cos(4 * math.pi * (ph - low))  # 1 = mais baixo (duas vezes por ciclo, um em cada pé)
+        side = math.cos(2 * math.pi * (ph - duty * 0.5))  # 1 = meio do apoio do pé esquerdo (peso nele)
+        hips_yaw = -yaw * math.cos(2 * math.pi * ph)  # pé esquerdo à frente (tocou agora) = lado esquerdo do quadril à frente
+        chain = {n: wave * w * math.cos(2 * math.pi * (ph - lag)) + yaw * w * math.cos(2 * math.pi * (ph - lag))
+                 for n, w, lag in lags}
+        head_yaw = -0.85 * (hips_yaw + sum(chain.values())) + scan * math.sin(2 * math.pi * ph)
+        st = (2 * ph - 2 * low) % 1.0  # dentro de um passo
+        f = (2 * _smooth(st / 0.3) - 1) if st < 0.3 else 1 - 2 * (st - 0.3) / 0.7  # cabeça: estalo para a frente, volta devagar
+        bounce = math.cos(4 * math.pi * (ph - low - 0.1))
+        tail = {f"Tail{i + 1}": (tail_bob * (0.5 + 0.35 * i) * math.cos(4 * math.pi * (ph - low - 0.07 * (i + 1))), 0,
+                                 sway * (0.55 + 0.3 * i) * math.cos(2 * math.pi * (ph - 0.1 * (i + 1))))
+                for i in range(4)}
+        pose = merge(upper, tail, {
+            "loc": (-shift * side, surge * math.sin(4 * math.pi * (ph - low)), height - bob * dip),
+            "Hips": (pitch - nod * 0.5 * dip, -roll * side, hips_yaw),
+            "Spine": (nod * 0.25 * dip, roll * 0.35 * side, chain["Spine"]),
+            "Chest": (nod * 0.25 * dip, roll * 0.35 * side, chain["Chest"]),
+            "Neck1": (nod * 0.6 * dip - thrust * f, roll * 0.3 * side, chain["Neck1"]),
+            "Neck2": (nod * 0.3 * dip + thrust * 0.6 * f, 0, chain["Neck2"]),
+            "Head": (-nod * 0.4 * dip + thrust * 0.4 * f, -roll * 0.5 * side, head_yaw),
+            "Arm_L": (arm * bounce, 0, 0), "Arm_R": (arm * bounce, 0, 0),
+            "Forearm_L": (-arm * 0.8 * bounce, 0, 0), "Forearm_R": (-arm * 0.8 * bounce, 0, 0),
+            "Jaw": (-pant * (1 + math.cos(4 * math.pi * (ph - low - 0.15))), 0, 0),
         })
+        if arm_over:
+            for s, sign in (("L", 1), ("R", -1)):
+                swing = lambda lag: sign * arm_swing * math.cos(2 * math.pi * (ph - lag))  # o braço do lado do pé que avança
+                drop = lambda lag: math.cos(4 * math.pi * (ph - low - lag))  # cai e sobe com cada passo, atrasado
+                for bone, amt, lag in (("Arm", 1.0, 0.1), ("Forearm", -0.9, 0.2), ("Hand", -0.7, 0.3)):
+                    bx, by, bz = upper.get(f"{bone}_{s}", (0, 0, 0))
+                    pose[f"{bone}_{s}"] = (bx + amt * arm * drop(lag) + (1 if bone == "Arm" else 0.6) * swing(lag + 0.05),
+                                           by, bz + sign * 0.3 * arm * drop(lag))
         feet = {}
         for s, off in (("L", 0.0), ("R", 0.5)):
             q = (ph + off) % 1.0
             front, back = BALL[0] + stride * 0.5, BALL[0] - stride * 0.5
             if q < duty:
-                feet[s] = (front + (back - front) * q / duty, GROUND)
+                u = q / duty
+                heel = push * _smooth((u - 0.65) / 0.35)  # calcanhar sobe no fim do apoio, a bola do pé fica
+                feet[s] = (front + (back - front) * u, GROUND, REST["meta"] - heel, REST["toe"])
             else:
                 t = (q - duty) / (1 - duty)
-                e = t * t * (3 - 2 * t)
-                arc = math.sin(math.pi * t)
-                feet[s] = (back + (front - back) * e, GROUND + lift * arc, REST["meta"] - 40 * arc, REST["toe"] - 50 * arc)
+                e = _smooth(t * 1.08 - 0.04) if t < 1 else 1.0
+                arc = math.sin(math.pi * t ** 0.8)  # sobe depressa (joelho alto) e desce devagar para tocar
+                arc = min(1.0, arc * (1 + plateau))
+                heel = push * (1 - _smooth(t / 0.35))
+                fold = 42 * _bump(t, 0.0, 0.85)
+                reach = 10 * _bump(t, 0.6, 1.0)  # pé esticado à frente antes de tocar
+                meta = REST["meta"] - heel - fold + reach
+                toe = REST["toe"] - 55 * _bump(t, 0.0, 0.75) + 14 * _bump(t, 0.65, 1.0)
+                feet[s] = (back + (front - back) * e, GROUND + lift * arc, meta, toe)
         keys.append((k, ground(pose, feet)))
     return keys
 
@@ -214,18 +328,41 @@ def death_keys():
     return [(0, ground(IDLE)), (6, rear), (16, falling), (26, down), (36, merge(down, {"Head": (-4, 0, 0)}))]
 
 
+# ciclos (o jogo usa a velocidade que eles representam: Raptor.WALK_ANIM_SPEED/RUN_ANIM_SPEED = anim_speed)
+WALK = dict(frames=42, step=1, stride=0.93, duty=0.62, lift=0.14, height=-0.05, bob=0.024, roll=6.0, yaw=8.0, push=18.0,
+            low=0.06, surge=0.012, nod=2.5, tail_bob=3.0, arm=8.0, sway=8.0, shift=0.03, wave=5.0, thrust=5.0,
+            arm_swing=8.0, arm_over=True)
+RUN = dict(frames=18, step=1, stride=1.0, duty=0.4, lift=0.2, height=-0.07, bob=0.045, pitch=-6, sway=7.0, roll=3.0,
+           yaw=5.0, push=28.0, low=0.2, surge=0.025, nod=5.0, tail_bob=5.0, arm=12.0, pant=3.0, shift=0.015, wave=3.0,
+           arm_swing=10.0, arm_over=True)
+# espreita: corpo baixo e inclinado, pescoço esticado rente ao chão, passos lentos e altos que param no ar, cauda larga,
+# cabeça varrendo os lados devagar
+STALK = dict(frames=54, step=1, stride=0.8, duty=0.7, lift=0.17, height=-0.16, bob=0.012, pitch=-8, sway=7.0, roll=4.0,
+             yaw=6.0, push=14.0, low=0.08, surge=0.01, nod=1.5, tail_bob=2.0, arm=3.0, shift=0.025, wave=6.0,
+             plateau=0.6, scan=7.0, arm_swing=4.0, arm_over=True)
+
+
+def anim_speed(g):
+    """m/s que um ciclo representa em velocidade 1 (a passada inteira no tempo de apoio): o pé não patina."""
+    return g["stride"] / (g["duty"] * g["frames"] / FPS)
+
+
 def actions():
     """nome -> lista de (frame, pose)."""
-    walk_up = merge(ARMS_TUCKED, {"Neck1": (-12, 0, 0), "Head": (10, 0, 0), "Tail1": (2, 0, 0)})
+    walk_up = merge(ARMS_TUCKED, {"Neck1": (-16, 0, 0), "Neck2": (-2, 0, 0), "Head": (15, 0, 0), "Tail1": (2, 0, 0)})
+    stalk_up = merge(ARMS_TUCKED, {
+        "Neck1": (-26, 0, 0), "Neck2": (-6, 0, 0), "Head": (26, 0, 0), "Jaw": (-6, 0, 0), "Tail1": (8, 0, 0), "Tail2": (-2, 0, 0),
+        "Arm_L": (15, 0, -4), "Arm_R": (15, 0, -4), "Forearm_L": (25, 0, 0), "Forearm_R": (25, 0, 0),
+    })
     run_up = merge(ARMS_TUCKED, {
         "Neck1": (-20, 0, 0), "Neck2": (-5, 0, 0), "Head": (18, 0, 0), "Jaw": (-10, 0, 0),
         "Tail1": (6, 0, 0), "Arm_L": (40, 0, 8), "Arm_R": (40, 0, 8), "Forearm_L": (60, 0, 0), "Forearm_R": (60, 0, 0),
     })
-    breath = ground(merge(IDLE, tail_wave(4, 0.25), {"loc": (0, 0, -0.035), "Chest": (2, 0, 0), "Neck1": (3, 0, 0), "Head": (-3, 0, 0)}))
     return {
-        "Idle": [(0, ground(IDLE)), (30, breath), (60, ground(IDLE))],
-        "Walk": gait(36, 3, stride=0.8, duty=0.62, lift=0.12, height=-0.04, bob=0.012, upper=walk_up),
-        "Run": gait(18, 2, stride=1.0, duty=0.4, lift=0.18, height=-0.07, bob=0.03, upper=run_up, pitch=-6, sway=3),
+        "Idle": idle_arms(idle_keys(), ARMS_TUCKED, amp=0.8),
+        "Walk": gait(**WALK, upper=walk_up),
+        "Run": gait(**RUN, upper=run_up),
+        "Stalk": gait(**STALK, upper=stalk_up),
         "Roar": roar_keys(),
         "Study": study_keys(),
         "LeapPrep": [(0, ground(IDLE)), (9, ground(CROUCH, FEET_TOGETHER))],

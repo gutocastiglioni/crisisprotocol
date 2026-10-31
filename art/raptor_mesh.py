@@ -72,6 +72,18 @@ def joint(c, rx, ry, w, prev, nxt, push=None, b_hint=None):
     return R(c, rx, ry, w, push, frame=ring_frame(Vector(nxt) - Vector(prev), b_hint))
 
 
+def claw(mb, base, d, length, rx, ry, bone, drop=0.0):
+    """Garra em cone que continua o dedo (jeito Dino Crisis): a base tem o tamanho da ponta do dedo e entra um pouco
+    nele, a ponta é fina; `drop` abaixa a ponta (curva para baixo). `d` = direção do dedo (normalizada)."""
+    w = {bone: 1}
+    down = Vector((0, 0, -drop))
+    mb.loft([
+        R(base - d * (length * 0.1), rx, ry, w),
+        R(base + d * (length * 0.45) + down * 0.3, rx * 0.5, ry * 0.5, w),
+        R(base + d * length + down, rx * 0.06, ry * 0.06, w),
+    ], "claw", 4, b_hint=Z)
+
+
 # ------------------------------------------------------------------ cadeia da coluna
 RIDGE = {0: 0.014, 1: 0.005, 11: 0.005}
 KEEL = {6: 0.025, 5: 0.01, 7: 0.01, 0: 0.012}  # quilha do peito

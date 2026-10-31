@@ -99,8 +99,8 @@ func add_card_reader(local_pos: Vector3, rot_y: float = 0.0) -> void:
 	add_child(_reader_light)
 
 
-## Teclado numérico com fechadura ao lado do vão (`local_pos` no espaço da porta; +Z local do painel = para quem digita):
-## caixa de aço, visor (apagado até a chave ligar o painel), 12 teclas, fechadura e o LED de trancado/aberto.
+## Teclado numérico com leitor de cartão ao lado do vão (`local_pos` no espaço da porta; +Z local do painel = para quem
+## digita): caixa de aço, visor (apagado até o cartão ligar o painel), 12 teclas, fenda do cartão e o LED de trancado/aberto.
 func add_keypad(local_pos: Vector3, rot_y: float = 0.0) -> void:
 	_keypad = Node3D.new()
 	_keypad.position = local_pos
@@ -121,11 +121,15 @@ func add_keypad(local_pos: Vector3, rot_y: float = 0.0) -> void:
 	for row in 4:
 		for col in 3:
 			_kp_box(Vector3(0.045, 0.035, 0.016), Vector3((col - 1) * 0.06, 0.055 - row * 0.05, 0.034), key_mat)
-	var brass := StandardMaterial3D.new()
-	brass.albedo_color = Color(0.85, 0.66, 0.26)
-	brass.metallic = 0.7
-	brass.roughness = 0.35
-	_kp_box(Vector3(0.03, 0.05, 0.01), Vector3(0.105, -0.13, 0.034), brass)  # fechadura
+	# leitor de cartão: moldura escura com a fenda (o cartão entra de pé)
+	var slot := StandardMaterial3D.new()
+	slot.albedo_color = Color(0.1, 0.11, 0.12)
+	slot.roughness = 0.4
+	_kp_box(Vector3(0.05, 0.075, 0.016), Vector3(0.09, -0.13, 0.034), slot)
+	var slit := StandardMaterial3D.new()
+	slit.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	slit.albedo_color = Color(0.01, 0.01, 0.01)
+	_kp_box(Vector3(0.008, 0.058, 0.004), Vector3(0.09, -0.13, 0.043), slit)
 	_reader_mat = StandardMaterial3D.new()
 	_reader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_reader_mat.albedo_color = Color(1.0, 0.15, 0.15) if is_locked_door else Color(0.2, 1.0, 0.3)
@@ -153,11 +157,13 @@ func _kp_box(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 func keypad_view() -> Transform3D:
 	var c := _keypad.global_position
 	var n := _keypad.global_basis.z
-	var eye := c + n * 0.75 + Vector3.UP * 0.05
-	return Transform3D(Basis.looking_at(c - eye), eye)
+	var eye := c + n * 0.95 + Vector3.UP * 0.05
+	# um pouco mais longe e olhando abaixo do meio: o painel inteiro (visor no alto, fenda do cartão embaixo) fica acima da
+	# caixa de texto
+	return Transform3D(Basis.looking_at(c + Vector3.DOWN * 0.1 - eye), eye)
 
 
-## Visor do teclado aceso (a chave ligou o painel) ou apagado.
+## Visor do teclado aceso (o cartão ligou o painel) ou apagado.
 func keypad_power(on: bool) -> void:
 	if _keypad_screen:
 		_keypad_screen.albedo_color = Color(0.3, 1.0, 0.45) if on else Color(0.05, 0.08, 0.06)

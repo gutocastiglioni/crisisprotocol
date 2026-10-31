@@ -16,6 +16,8 @@ extends Node3D
 ##                 quando a tela de inspeção termina de aparecer; fire_m79: --at=segundos para pegar a explosão;
 ##                 corpse = o guerrilheiro morto com a chave na mão, no meio do pátio; --yaw gira em volta dele)
 ##   emboscada:  --shot=ambush  (a cena dos 3 raptors cercando ela no morto do pátio; --at=segundos escolhe o quadro)
+## Showroom (menu de pausa):  --shot=showroom [--creature=raptor|allosaurus] [--anim=Walk] [--move=lugar|circulo|girando]
+##   [--yaw=graus]  (abre o showroom e salva --at segundos depois, contados com o jogo pausado)
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
 ## Perfil de jogo:  --mode=survival|arcade  (F3 alterna no jogo; ver GameMode)
 ## Começo da fase:  --shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|gate|lab|clones  (hatch/clones: --at=segundos escolhe o
@@ -24,9 +26,12 @@ extends Node3D
 ## Caixa de paraquedas:  --shot=drop|drop_get|drop_pick|fire_sd  (drop = de frente para a caixa no teto dos clones, --dist=m
 ##   do lugar de ajoelhar (padrão 2); drop_get pega e salva quando a tela do item aparece; drop_pick = câmera de lado
 ##   enquanto ela pega (--at escolhe o quadro, --yaw gira); fire_sd = atirando com a pistola com silenciador)
-## Sala dos clones e portão da pedreira:  --shot=tank|plate|plate_allo|lab_key|keypad|keypad_on|keypad_ok|gate_open
-##   (tank = o tanque vazio do alossauro; plate/plate_allo/lab_key salvam quando a tela aparece; keypad = sem a chave,
-##   keypad_on = com ela, digitando; keypad_ok = código certo; gate_open = depois, o portão abrindo: --at escolhe o quadro)
+## Sala dos clones e portão da pedreira:  --shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open
+##   (tank = o tanque vazio do alossauro; plate/plate_allo salvam quando a tela aparece; keypad = sem o cartão,
+##   keypad_on = com ele, digitando; keypad_ok = código certo; gate_open = depois, o portão abrindo: --at escolhe o quadro)
+## Torres de guarda do portão do pátio:  --shot=towers|tower_fall|gate_card  (towers = as duas com os snipers, vistas da
+##   estrada; tower_fall = o último sniper tomba da torre, câmera de lado, --at escolhe o quadro; gate_card = pega o cartão
+##   que ele derrubou e salva quando a tela do item aparece)
 ## Menu de pausa:  --shot=pause  (ESC / START no jogo; salva quando o menu aparece)
 ## HUD:  --shot=danger|danger_roll  (no galpão, na mira dos guardas da porta do pátio: sensor de perigo subindo e o radar
 ##   com eles; danger_roll rola em 2,6 s e a barra cai — --at escolhe o quadro)
@@ -47,8 +52,10 @@ const HURT_SHOTS := ["hit_crouch", "stagger", "getup", "getup_fwd"]
 const KEY_SHOTS := ["locked", "unlock", "corpse", "key_get", "ambush", "m79_aim", "fire_m79", "pickup_m79"]
 ## revisão do começo da fase: telhado, alçapão, escada do canto, labirinto, portão e sala dos clones (ver _setup_start_shot)
 const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roof", "sniper_ladder", "maze", "gate", "lab", "clones",
-	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "tank", "plate", "plate_allo", "lab_key", "keypad", "keypad_on", "keypad_ok",
+	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
 	"gate_open"]
+## revisão das torres de guarda do portão do pátio e do cartão do painel (ver _setup_tower_shot)
+const TOWER_SHOTS := ["towers", "tower_fall", "gate_card"]
 const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
@@ -63,7 +70,7 @@ var dummies: Array[TargetDummy] = []
 var chest: Chest
 var chests: Array[Chest] = []
 var locker: Chest  # container trancado com a M79
-var key: KeyItem
+var key: KeyItem  # chave do container da M79 (etiqueta "0M79"), na mão do guerrilheiro morto
 var corpse: Corpse  # guerrilheiro morto no meio do pátio, com a chave do container na mão
 var yard_raptors: Array[Raptor] = []  # os 3 do pátio: escondidos na mata até a emboscada no morto
 var keycard: KeyItem
@@ -76,7 +83,9 @@ var catwalk: Catwalk
 var hatch: Hatch  # alçapão do telhado, por onde ela entra na fase
 var lab: CloneLab  # sala dos clones, atrás da plataforma de carga
 var drop: SupplyDrop  # caixa de paraquedas com a pistola com silenciador, no teto da sala dos clones
-var lab_key: KeyItem  # chave do painel do portão da pedreira, em cima do console da sala dos clones
+var towers: Array[GuardTower] = []  # torres de guarda dos dois lados do portão do pátio (Yard.TOWERS)
+var tower_snipers: Array[Sniper] = []  # um em cada torre, fora de cena até os raptors da emboscada morrerem
+var gate_card: KeyItem  # cartão do painel do portão da pedreira: cai do último sniper das torres
 var cutscene: Cutscene
 var sniper: Sniper
 var sniper_scope: SniperScope
@@ -112,6 +121,7 @@ var _saving := false
 var _yaw := NAN
 var _pitch := -0.15
 var _dist := 2.0  # --dist: distância da revisão da caixa de paraquedas
+var _show := {"creature": "raptor", "anim": "", "move": 0}  # --shot=showroom
 var _review_cam: Camera3D
 var _player_cam := false
 
@@ -153,15 +163,11 @@ func _ready() -> void:
 	drop.position = SupplyDrop.POS
 	drop.rotation.y = SupplyDrop.YAW
 	add_child(drop)
-	# chave do painel do portão da pedreira em cima do console da sala dos clones (o código é o tanque vazio do alossauro)
-	lab_key = KeyItem.new()
-	lab_key.id = Yard.GATE_KEY
-	lab_key.display_name = "CHAVE DO PAINEL"
-	lab_key.description = "Chave do painel do portão da pedreira.\nNa etiqueta: \"CÓDIGO = SUBJECT DO PROTÓTIPO\"."
-	add_child(lab_key)
-	lab_key.hold(lab.key_spot())
+	# a chave do container na mão do morto; a etiqueta "0M79" parece um código (não é o do portão)
 	key = KeyItem.new()
 	key.id = locker.lock
+	key.tag = "0M79"
+	key.description = "Chave de latão. Na etiqueta vermelha: \"0M79\".\nAbre o cadeado de algum container."
 	key.shine = false  # só brilha depois que os raptors da emboscada morrem
 	add_child(key)
 	corpse = Corpse.new()
@@ -207,6 +213,7 @@ func _ready() -> void:
 	add_child(keycard)
 	sniper.loot = keycard
 	keycard.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
+	_build_towers()
 	
 	# soldados de guarda no galpão/pátio (2 patrulhando o pátio, 2 sentinelas no portão; os de "hold" guardam a porta
 	# do pátio e só saem do posto depois que alguém a vê)
@@ -257,7 +264,7 @@ func _ready() -> void:
 	player.read_plate.connect(func(pl: SubjectPlate) -> void: inspect.plate_zoom(pl))
 	key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	drop.picked.connect(func(d: SupplyDrop) -> void: inspect.show_drop(d))
-	lab_key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
+	gate_card.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	player.health_changed.connect(_set_health)
 	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
 	player.notice.connect(show_notice)
@@ -274,10 +281,50 @@ func _lurk_yard_raptors() -> void:
 		yard_raptors[i].lurk(Yard.LURK[i % Yard.LURK.size()])
 
 
-## Morreu um raptor do pátio: com os três mortos, a chave na mão do guerrilheiro começa a brilhar.
+## Morreu um raptor do pátio: com os três mortos, a chave na mão do guerrilheiro começa a brilhar e os snipers sobem nas
+## torres do portão.
 func _on_yard_raptor_killed() -> void:
 	if yard_raptors.all(func(r: Raptor) -> bool: return r.dead):
 		key.shine = true
+		for s in tower_snipers:
+			s.appear()
+
+
+## Torres de guarda dos dois lados do portão do pátio, com um sniper fora de cena em cada (sobem depois da emboscada), e o
+## cartão do painel do portão, que fica com o último deles.
+func _build_towers() -> void:
+	for at: Vector3 in Yard.TOWERS:
+		var tw := GuardTower.new()
+		tw.position = at
+		add_child(tw)
+		towers.append(tw)
+		var s := Sniper.new()
+		s.target = player
+		s.perch = tw.perch()
+		s.floor_y = tw.global_position.y + GuardTower.FLOOR_Y
+		s.home_yaw = tw.facing_yaw()
+		s.ledge = tw.ledge()
+		s.position = tw.post()
+		s.rotation.y = s.home_yaw
+		add_child(s)
+		s.lurk()
+		s.killed.connect(_on_tower_sniper_killed)
+		tower_snipers.append(s)
+	gate_card = KeyItem.new()
+	gate_card.id = Yard.GATE_KEY
+	gate_card.kind = "keycard"
+	gate_card.card_color = Color(0.45, 0.2, 0.07)
+	gate_card.display_name = "CARTÃO DO PAINEL"
+	gate_card.description = "Cartão do painel do portão da pedreira.\nNo verso: \"CÓDIGO = SUBJECT DO PROTÓTIPO\"."
+	add_child(gate_card)
+
+
+## Morreu um sniper das torres: o que sobrou fica com o cartão do painel e, quando morrer, cai da torre e o derruba.
+func _on_tower_sniper_killed() -> void:
+	var alive := tower_snipers.filter(func(s: Sniper) -> bool: return not s.dead)
+	if alive.size() == 1:
+		alive[0].loot = gate_card
+		alive[0].falls = true
 
 
 ## Põe o inimigo no começo da rota, olhando para o próximo ponto, com a rota dele.
@@ -596,8 +643,16 @@ func reset_all() -> void:
 	for d in dummies:
 		d.reset()
 	key.reset()
-	lab_key.reset()
-	lab_key.hold(lab.key_spot())
+	gate_card.reset()
+	for i in tower_snipers.size():
+		var s := tower_snipers[i]
+		s.reset()
+		s.global_position = towers[i].post()
+		s.rotation.y = s.home_yaw
+		s.reset_physics_interpolation()
+		s.loot = null
+		s.falls = false
+		s.lurk()
 	if is_instance_valid(keycard):
 		keycard.reset()
 	for r in raptors:
@@ -662,6 +717,12 @@ func _parse_args() -> void:
 			_pitch = deg_to_rad(float(a.get_slice("=", 1)))
 		elif a.begins_with("--dist="):
 			_dist = float(a.get_slice("=", 1))
+		elif a.begins_with("--creature="):
+			_show.creature = a.get_slice("=", 1)
+		elif a.begins_with("--anim="):
+			_show.anim = a.get_slice("=", 1)
+		elif a.begins_with("--move="):
+			_show.move = maxi(["lugar", "circulo", "girando"].find(a.get_slice("=", 1)), 0)
 		elif a.begins_with("--pos=") and OS.is_debug_build():
 			# ferramenta de revisão: começa em x,z (e olhando para `graus`, 0 = para -Z; o 4º número = altura dos pés)
 			var v := a.get_slice("=", 1).split(",")
@@ -729,6 +790,8 @@ func _parse_args() -> void:
 		_setup_key_shot()
 	if _shot in START_SHOTS:
 		_setup_start_shot()
+	if _shot in TOWER_SHOTS:
+		_setup_tower_shot()
 
 
 func _process(delta: float) -> void:
@@ -868,6 +931,17 @@ func _process(delta: float) -> void:
 			if at.call(0.5):
 				pause_menu.on_shown = _save_and_quit
 				pause_menu.open()
+		"showroom":
+			if at.call(0.3):
+				pause_menu.open()
+				pause_menu._set_visible(false)
+				var room := pause_menu.showroom
+				room.open(_show.creature if _show.creature in Showroom.CREATURES else "raptor", _show.anim, _show.move)
+				if not is_nan(_yaw):
+					room.yaw = _yaw
+				# o jogo fica pausado (o _t daqui para): espera o --at no relógio que roda na pausa
+				await get_tree().create_timer(maxf(_until - 0.3, 0.2), true).timeout
+				_save_and_quit()
 		"game_over":
 			if at.call(0.1):
 				player.take_hit(999, player.global_basis.z, player.global_position + Vector3.UP * 1.2)
@@ -903,6 +977,8 @@ func _process(delta: float) -> void:
 		_key_shot(at)
 	if _shot in START_SHOTS:
 		_start_shot(at)
+	if _shot in TOWER_SHOTS:
+		_tower_shot(at)
 	if _capture != "" and _t >= _until:
 		_save_and_quit()
 
@@ -977,17 +1053,14 @@ func _setup_start_shot() -> void:
 			# no teto dos clones, de frente para a mureta do fundo, com a pistola com silenciador
 			player.silencer = true
 			spot.call(Vector3(2.0, Roof.LAB_Y, -22.0), 0.3)
-		"tank", "plate", "plate_allo", "lab_key":
-			# dentro da sala dos clones (cena do choque já vista): o tanque vazio, uma plaqueta, a chave do console
+		"tank", "plate", "plate_allo":
+			# dentro da sala dos clones (cena do choque já vista): o tanque vazio, uma plaqueta
 			lab.gate.open()
 			lab.played = true
 			if _shot == "tank":
 				var at := Vector3(-0.3, CloneLab.FLOOR_Y, -25.0)
 				var to := CloneLab.TANK - at
 				spot.call(at, atan2(-to.x, -to.z))
-			elif _shot == "lab_key":
-				var k := lab.key_spot().origin
-				spot.call(Vector3(k.x, CloneLab.FLOOR_Y, k.z + 0.8), 0.0)
 			else:
 				var pl: SubjectPlate = lab.plates[-1 if _shot == "plate_allo" else 0]
 				spot.call(pl.global_transform * Vector3(0, 0, 0.8), pl.global_rotation.y)
@@ -1045,7 +1118,7 @@ func _start_shot(at: Callable) -> void:
 				var mid := drop.front_point().lerp(drop.global_position, 0.5) + Vector3.UP * 0.55
 				_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * 2.2 + Vector3.UP * 0.4
 				_review_cam.look_at(mid)
-		"plate", "plate_allo", "lab_key", "keypad", "keypad_on", "keypad_ok", "gate_open":
+		"plate", "plate_allo", "keypad", "keypad_on", "keypad_ok", "gate_open":
 			if at.call(0.3):
 				Input.action_press("interact")
 			if at.call(0.35):
@@ -1062,6 +1135,54 @@ func _start_shot(at: Callable) -> void:
 				_review_cam.fov = 78.0
 				_review_cam.global_position = Vector3(8.4, 1.2, 12.2)
 				_review_cam.look_at(Vector3(11.6, 1.9, 12.4))
+
+
+## Revisão das torres de guarda: os raptors do pátio já mortos (os snipers sobem), ela na estrada olhando para o portão.
+## tower_fall/gate_card: um sniper já morto e o último cai da torre em 0,5 s; gate_card ainda vai até o cartão e o pega.
+func _setup_tower_shot() -> void:
+	corpse.armed = false
+	for r in yard_raptors:
+		r.lurking = false
+		r.take_hit(999, Vector3.FORWARD, r.global_position)
+	player.global_position = Vector3(-43.0, 0, -4.0)
+	player.rotation.y = PI * 0.5
+	player.reset_physics_interpolation()
+	player.camera_rig.yaw = player.rotation.y
+	player.camera_rig.pitch = 0.12
+	for s in tower_snipers:
+		s.sight_range = 0.0  # calmos na revisão (senão atiram nela)
+	if _shot != "towers":
+		tower_snipers[1].take_hit(999, Vector3.RIGHT, tower_snipers[1].global_position + Vector3.UP * 1.3)
+	if _shot == "tower_fall":
+		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_review_cam.fov = 55.0
+		add_child(_review_cam)
+		_review_cam.current = not _player_cam
+	if _shot == "gate_card" and _capture != "":
+		inspect.on_shown = _save_and_quit
+
+
+func _tower_shot(at: Callable) -> void:
+	var last := tower_snipers[0]
+	if _shot != "towers" and at.call(0.5):
+		# tiro de frente (empurra para trás, para dentro da torre): mesmo assim ele tomba para o pátio
+		last.take_hit(999, Vector3.LEFT, last.global_position + Vector3.UP * 1.3)
+	if _review_cam:
+		# de lado, olhando a frente da torre (--yaw gira em volta dela)
+		var tw := towers[0]
+		var a := deg_to_rad(80.0) if is_nan(_yaw) else _yaw
+		var mid := tw.ledge() + Vector3(1.3, -2.6, 0)
+		_review_cam.global_position = mid + Vector3(cos(a), 0.0, sin(a)) * 7.5 + Vector3.UP * 0.6
+		_review_cam.fov = 70.0
+		_review_cam.look_at(mid)
+	if _shot == "gate_card" and gate_card.state == "dropped" and not inspect.busy and not player.has_key(Yard.GATE_KEY):
+		if player.global_position.distance_to(gate_card.global_position) > 0.6:
+			player.global_position = gate_card.global_position + Vector3(0.4, 0, 0)
+			player.reset_physics_interpolation()
+			Input.action_press("interact")
+		else:
+			Input.action_release("interact")
 
 
 ## Revisão do container trancado, da chave e da M79: põe a jogadora no lugar e aperta os botões na hora certa. As telas

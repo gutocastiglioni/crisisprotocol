@@ -35,19 +35,29 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Raptor: `raptor_spec.py`, `raptor_mesh.py` (usa o MeshBuilder da heroína; pele única: cadeias com anel de emenda
   soldado + união booleana `_self_union` das peças que se cruzam), `raptor_rig.py` (aceita `spec`/`mesh`/`name`),
   `raptor_anims.py` (IK nas pernas; convenção de ângulos no cabeçalho), `raptor_atlas.py`, `build_raptor.py`.
-  Alossauro (chefe, 9 m, mesmos ossos do raptor): `allosaurus_spec.py`, `allosaurus_mesh.py` (ferramentas do raptor; cabeça
-  com quinas vivas e cristas em quilha), `allosaurus_anims.py` (IK do raptor recarregado com as medidas dele; quadros
+  Alossauro (chefe, 9 m, mesmos ossos do raptor): `allosaurus_spec.py` (proporções da referência medida: quadril a 1,95 m,
+  dorso ~2,6 m, crista ~3,1 m; juntas das pernas e dos braços = as medidas; `HEAD_LIFT` 0 = o medido fica na altura dela), `allosaurus_mesh.py`
+  (tronco/cauda pelos anéis medidos `allosaurus_rings.body_rings`; pernas, braço e palma pelos cortes medidos `REF.LIMBS`
+  postos nos nossos ossos, 12 lados), `allosaurus_head.py` (pescoço medido + crânio,
+  mandíbula, fileira de dentes de cima por fora da mandíbula jeito Dino Crisis com gengiva atrás, chifres em lâmina
+  (peça rígida), olho com aro de pálpebra, escultura da órbita e da barra pós-orbital), `allosaurus_rings.py` (anéis
+  finais da cabeça/mandíbula, Python puro: a malha e a pintura usam os mesmos), `allosaurus_ref.py` (gerado por
+  `tools/measure_allosaurus.py`: medidas e retopologia da referência "Alice" de `possible_models/`; nada da malha dela
+  entra no jogo; atrás da boca o casco medido com a mandíbula, `HULL`; tronco `BODY`; juntas dos membros
+  `JOINTS` tiradas da borda entre os ossos da pele, porque o esqueleto do arquivo dela veio torto), `allosaurus_anims.py` (IK do raptor recarregado com as medidas dele; quadros
   STOMP_HIT/BITE_SNAP/THROW_RELEASE/ROAR_PEAK usados pelo jogo), `build_allosaurus.py` (`art/allosaurus.blend` fora do git).
   `possible_models/` (modelos extraídos de jogos comerciais) é só referência local, fora do git: nada dali entra no jogo.
 - `tools/` — `make_textures.py` (atlas 512x512 da heroína: corpo pintado em 256 e ampliado) + `paint_clothes.py` (trama,
   rugas, costuras, zíper em 512) + `paint_face.py` (rosto e cabelo em 512, preenchimento das bordas),
-  `make_raptor_texture.py` (atlas 512x512 do raptor), `make_allosaurus_texture.py` (atlas do alossauro com as mesmas ferramentas), `make_level_textures.py` (texturas 256x256 do cenário e dos baús,
+  `make_raptor_texture.py` (atlas 512x512 do raptor), `make_allosaurus_texture.py` (atlas 1024 do alossauro com as mesmas ferramentas; cabeça/mandíbula pintadas pela
+  posição 3D nos anéis de `allosaurus_rings`: mancha do olho e barra pós-orbital medidas na textura da referência,
+  mandíbula e bloco da bochecha claros, listras do corpo jeito Dino Crisis 2 também no pescoço), `make_level_textures.py` (texturas 256x256 do cenário e dos baús,
   buracos de bala `bullet_holes.png`, quadros do clarão/fumaça `shot_fx.png` e do sangue `blood_fx.png`),
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
-- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
-  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones e emboscada do pátio), guerrilheiro morto `corpse.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `pause_tests.gd`, `hud_tests.gd`), `assets/` (gerados — não
+- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
+  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones e emboscada do pátio), guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
@@ -68,8 +78,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
   Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 a roda, ~9,6 o rugido).
   Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder: `--at` escolhe o quadro).
-  Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|lab_key|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
-  lab_key/keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem a chave; gate_open: `--at` escolhe o quadro).
+  Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
+  keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem o cartão; gate_open: `--at` escolhe o quadro).
+  Torres do portão do pátio: `--shot=towers|tower_fall|gate_card` (towers = vistas da estrada com os snipers; tower_fall = o último
+  cambaleia, debruça na cerca e cai, câmera de lado, `--at` escolhe o quadro, `--yaw` gira; gate_card = pega o cartão que ele derrubou).
   Caixa de paraquedas: `--shot=drop [--dist=m]|drop_get|drop_pick|fire_sd` (drop_get salva quando a tela do item aparece; drop_pick = câmera de lado
   enquanto ela pega, `--at` escolhe o quadro, `--yaw` gira; fire_sd = tiro com silenciador).
   Golpes: `--shot=hit_crouch|stagger|getup|getup_fwd` (câmera de revisão de lado; getup = desaba de costas e levanta girando,
@@ -126,7 +138,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Ossos sem ponto no nome (`UpperArm_L`), para virarem nomes válidos no Godot.
 - Ângulos das animações: ver cabeçalho de `art/heroine_anims.py` (X>0 dobra para a frente, joelho dobra com X<0).
 - Orçamento (PS2 do começo): 800–5000 triângulos por personagem (o teste confere). Atlas 512x512 (heroína com alfa nas
-  pontas do cabelo); o Godot usa os PNGs direto, não a cópia do .glb. Fundo dos atlas preenchido (sem magenta) para o filtro.
+  pontas do cabelo). Exceção decidida pelo usuário: o chefe (alossauro) tem teto de 12000 triângulos e atlas 1024; o Godot usa os PNGs direto, não a cópia do .glb. Fundo dos atlas preenchido (sem magenta) para o filtro.
   Cenário: ladrilhos de 256 (~2 m cada), com mipmaps.
 - Tronco da heroína: elipse por anel + `torso_volume` (busto, glúteos, escápulas); laterais na altura do ombro com peso
   parcial no braço (`_shoulder_share`) para não abrir vão ao erguer o braço. `loft` aceita `wfn` (pesos por vértice).
@@ -173,6 +185,21 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (anda até a mão, close do punho com a chave + "ELE ESTÁ SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
   (`start_ambush`, estado "ambush"), o da frente ruge; E pula). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
   A chave fica sem brilho (`KeyItem.shine` falso) até os 3 morrerem; dá para pegá-la antes. R: moitas, chave e cena de volta.
+  A etiqueta vermelha da chave tem "0M79" escrito (`KeyItem.tag`, Label3D na etiqueta, também na tela do item): parece um código e
+  engana (não é o do portão).
+  Torres de guarda (`GuardTower`, `Yard.TOWERS`): uma de cada lado do portão do fundo, encostadas na parede, frente (+X local) para o
+  pátio; plataforma em `FLOOR_Y` 4,2, parapeito de tábuas atrás/dos lados, guarda-corpo vazado na frente cuja barra de cima
+  (`RAIL_H` 1,1 = abdome) só segura o corpo mole (`RAIL_LAYER`, a cápsula viva não encosta), telhado e lâmpada; sem escada
+  (ninguém sobe). Em volta delas `Yard._off_towers` tira árvore (`TOWER_TREES`) e o resto sólido (`TOWER_CLEAR`) depois de montar a
+  mata (o sorteio do resto fica igual). Um sniper em cada (`main._build_towers`: `Sniper.perch` = retângulo da plataforma,
+  `floor_y`, `home_yaw` = vigia o pátio, `ledge` = alto da barra), fora de cena (`Sniper.lurk`) até os 3 raptors da emboscada
+  morrerem (`appear`). Morreu um: o outro fica com o cartão do painel (`main.gate_card`, `loot`) e `falls`. O que cai: morto ainda
+  em pé toca StaggerFwd e cambaleia até a barriga bater na barra (`_stagger_to_rail`), amolece com o embalo num corpo firme
+  (`_firm`: juntas a `FIRM_JOINTS` do normal e giro amortecido em `FIRM_DAMP`, sem chacoalho de boneco mole; só a coluna vai a
+  `SLUMP_WAIST`), o quadril fica na altura da barra, atrás dela, enquanto o tronco pende para fora (`_tip_over`: dobra no
+  abdome, pernas esticadas), depois passa por cima e a gravidade leva; o fuzil fica na mão até o corpo parar no chão e só então
+  o fuzil (pickup) e o cartão aparecem um de cada lado do corpo (`_drop_when_landed`, `DROP_SIDE`). O que morre lá em cima (não cai) fica com o fuzil na mão e não larga nada. R: snipers fora de
+  cena de novo, cartão escondido. Testes: `tower_tests.gd`.
   Texturas `grass/dirt/bark/leaves/rock/grass_card/fern_card` vêm de `tools/make_level_textures.py`. Revisão: `--shot=yard --pos=x,z[,graus]`.
 - Golpes na heroína (`art/heroine_hurt.py`): a reação ao tiro/dano é **aditiva** (`HeroineModel.hit(dir, força)` → nó Add2 por
   cima de tudo; HitFront/HitBack/HitL/HitR pelo lado atingido, `hit_side`; duas entradas por direção que se alternam): agachada
@@ -187,6 +214,22 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Salto (golpe sai das garras dos pés) e investida chamam `Player.launch()`: ragdoll arremessado em C em volta do golpe
   (`Ragdoll.fling` + `_hold_c`), depois ela levanta. A morte do raptor é ragdoll (`RaptorModel.RAGDOLL`), não animação.
   Andando, o raptor só se move para a frente do corpo e a velocidade da animação acompanha (`WALK_ANIM_SPEED`/`RUN_ANIM_SPEED`).
+  Pés presos (`FootPlant`, SkeletonModifier3D do `RaptorModel`, vale para o alossauro; medidas pela perna do esqueleto): o pé
+  que a animação põe no chão fica onde tocou no mundo (IK de coxa/canela, metatarso e dedos como na animação) até a animação
+  levantá-lo; girando no lugar ou andando mais devagar que a animação, o corpo se afasta do pé preso e ele dá um passo (um pé
+  de cada vez, som de passo pelo sinal `stepped`). No ar e no ragdoll segue a animação; clone do tubo (dono não é
+  CharacterBody3D) não usa. Inércia (`TurnSway`, modificador antes do `FootPlant`): virando, pescoço/cabeça entram na curva antes
+  (`LEAD`), a cauda fica para trás no mundo e volta com mola (base e ponta com molas próprias, a ponta chicoteia), o quadril
+  inclina para dentro da curva pela velocidade (`BANK`). Ciclos (`raptor_anims.gait`, `WALK`/`RUN`/`STALK`; o alossauro passa os
+  dele) com gingado: quadril desce depois de cada toque, leva o peso para cima da perna de apoio (`shift` de lado + `roll`) e gira
+  com a passada (`yaw`), a onda sobe pelo tronco/pescoço atrasada (`wave`) e desce pela cauda larga (`sway`), a cabeça desfaz o
+  giro e dá o bote de ave a cada passo (`thrust`), braços atrasados, calcanhar sobe no fim do apoio; o IK abre a coxa pelo rolar
+  e pelo quadril de lado; uma chave por quadro (chave a cada 2 quadros fazia o pé andar aos trancos). Espreita (`Stalk`,
+  `Raptor.STALK_SPEED`/`STALK_ANIM_SPEED`, só raptor): corpo baixo, cabeça rente ao chão varrendo os lados, passo alto que para no
+  ar (`plateau`); usada ao rodear a presa (`_study`). Parado = `idle_keys` (5 s: troca de peso de lado, cabeça vigia em estalos).
+  Testes que leem a pose final usam `Skeleton3D.skeleton_updated`; estado mudado dentro da lambda vai num dicionário (a lambda
+  copia variável local). `possible_models/dino-crisis-*` só como referência de
+  ritmo, nada de keyframe deles no jogo.
 - Começo da fase: ela nasce no telhado do galpão (`Roof.START`; laje sem sombra, parapeito de 1 m que dá para
   escalar e se jogar: a queda mata, ver Queda). Em cima da laje (`Roof.has`) os inimigos não a percebem: passos/tiro não chegam (`Enemy._reaches`) e
   ela não é vista, nem por quem está alertado. Na beira do lado do pátio (`Roof.near_yard`, a `SMELL_DIST` da mureta oeste), uma vez
@@ -222,14 +265,15 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`Player.pick_plate` → sinal `read_plate`) = `Inspect.plate_zoom` (pausa, câmera até a plaqueta, ficha embaixo). No canto do fundo à
   esquerda (`CloneLab.TANK`; a sala foi até `Z_FAR` -32 para caber) o tanque do alossauro: vidro de `TANK_SIDES` lados inteiro,
   drenado, porta de vidro aberta, mangueiras soltas, luz vermelha; a plaqueta dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO") é o
-  código do portão da pedreira. Em cima do console fica a chave do painel (`main.lab_key`, `KeyItem` em `CloneLab.key_spot()`,
-  id `Yard.GATE_KEY`; a etiqueta diz "CÓDIGO = SUBJECT DO PROTÓTIPO"); R a devolve à mesa.
+  código do portão da pedreira. O console não tem mais a chave do painel: o cartão (`main.gate_card`, keycard cor de ferrugem, id
+  `Yard.GATE_KEY`, "No verso: CÓDIGO = SUBJECT DO PROTÓTIPO") cai do último sniper das torres do pátio.
 - Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
   Porta trancada: `Door.lock` = id da chave/cartão. Com leitor (`add_card_reader`, porta do galpão) abre com o cartão no bolso. Com
-  teclado (`add_keypad` + `Door.code`, portão da pedreira: chave `Yard.GATE_KEY` + código `CloneLab.ALLO_SUBJECT`): E emite
-  `Player.keypad` → `main._on_keypad` → `Inspect.keypad` (pausa, câmera no painel; sem a chave "PAINEL DESLIGADO"; com ela o visor
+  teclado (`add_keypad` + `Door.code`, portão da pedreira: cartão `Yard.GATE_KEY` na fenda do lado do teclado + código
+  `CloneLab.ALLO_SUBJECT`): E emite
+  `Player.keypad` → `main._on_keypad` → `Inspect.keypad` (pausa, câmera no painel; sem o cartão "PAINEL DESLIGADO"; com ele o visor
   acende e ela digita 4 algarismos: 0-9 ou setas/direcional, E confirma, C sai; errado = `keypad_error` e zera; certo = `keypad_ok`,
-  a chave é gasta e a porta abre). `Inspect.auto_code` digita sozinho (testes/capturas). R tranca de novo e apaga o visor.
+  o cartão é gasto e a porta abre). `Inspect.auto_code` digita sozinho (testes/capturas). R tranca de novo e apaga o visor.
 - Pedreira (`Arena`): última sala, depois do portão (fechado até abrir) no fundo do pátio; paredões de pedra, ruínas e pedras grandes
   (cobertura que o alossauro não atravessa), capim alto, postes (`Yard.lamp`). Alossauro em `Arena.ALLO` e 2 raptors em `Arena.POSTS`.
 - Alossauro (`allosaurus.gd`, herda `Enemy`; modelo `AllosaurusModel` = `RaptorModel` com outro arquivo/atlas/ragdoll/sons graves):
@@ -264,6 +308,14 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SAIR DO JOGO; árvore pausada, não abre por
   cima de tela de inspeção nem no game over; volta ao jogo dois passos de física depois para o botão não chegar nela).
   START não reinicia mais; R no teclado segue reiniciando. Captura: `--shot=pause`. Testes: `pause_tests.gd`.
+  SHOWROOM (item do menu, `Showroom`, `showroom.gd`): palco 3D próprio (SubViewport com mundo à parte numa camada sem escala,
+  chão quadriculado, luz com sombra) com o raptor ou o alossauro (`RaptorModel.showroom` = pés presos e inércia sem corpo de
+  física) e a lista das animações dele (ciclos primeiro, nome em português de `Showroom.NAMES` + o do arquivo; as que não são
+  ciclo repetem). Cima/baixo ou clique escolhe, A/D/analógico direito/arrastar gira a câmera, roda/Z/X/L1/R1 zoom, Q/TAB/SELECT
+  troca o bicho, F/quadrado o modo (NO LUGAR = animação pura sem FootPlant/TurnSway; EM CÍRCULO = os ciclos de `GAITS` andam
+  numa roda na velocidade do jogo; GIRANDO = vira no lugar a `TURN_RATE`), ESPAÇO/X a velocidade (1x, 1/2, 1/4, parado),
+  ESC/START/C/bola volta ao menu. Captura: `--shot=showroom [--creature=raptor|allosaurus] [--anim=Walk]
+  [--move=lugar|circulo|girando] [--yaw=graus] [--at=s]` (o `--at` conta num relógio que roda com o jogo pausado).
 - Movimentos com deslocamento (cambalhota, subir, escalar, pegar): o caminho da raiz sai do Blender (`*_PATH` em
   `heroine_moves.py`, gravado em heroine_moves.json) e o Godot segue o mesmo caminho (`Moves.hermite`, igual ao Python).
   Mudou pose/caminho: regerar a arte e rodar os testes (conferem mãos na borda e pé sem deslizar).

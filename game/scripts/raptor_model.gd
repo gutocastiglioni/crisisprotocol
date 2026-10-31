@@ -9,7 +9,7 @@ extends Node3D
 const SCENE := preload("res://assets/characters/raptor.glb")
 # o atlas direto (não a cópia dentro do .glb): 512 com mipmaps para o visual PS2
 const ATLAS := preload("res://assets/characters/raptor_atlas.png")
-const LOOPS := ["Idle", "Walk", "Run", "Study", "Shake"]
+const LOOPS := ["Idle", "Walk", "Run", "Stalk", "Study", "Shake"]
 # mesmo formato de Ragdoll.BONES; pernas com cone (joelho e tornozelo dobram em sentidos opostos)
 const RAGDOLL := {
 	"Hips": {"child": "Spine", "len": 0.17, "box": Vector3(0.30, 0.34, 0.24), "joint": "none", "mass": 20.0},
@@ -45,7 +45,7 @@ const ANIM_SOUNDS := {
 ## passo: a ponta do pé (osso Toe_*) subiu acima de STEP_UP e voltou abaixo de STEP_DOWN (m); apoiada fica em 0,05
 const STEP_UP := 0.09
 const STEP_DOWN := 0.065
-const STEP_DB := {"Walk": -4.0, "Run": 2.0}
+const STEP_DB := {"Walk": -4.0, "Run": 2.0, "Stalk": -9.0}
 const CHIRP_GAP := Vector2(6.0, 14.0)  # segundos entre um piado e outro, andando ou parado
 
 ## O alossauro (AllosaurusModel) troca estes valores no _init; o padrão é o raptor.
@@ -60,11 +60,14 @@ var step_db: Dictionary = STEP_DB
 var voice_pitch := 1.0  # vozes e passos (bicho maior = mais grave)
 var chirps := true  # piados de vez em quando, andando ou parado
 var claw_len := 0.2  # da base do dedo do pé até a ponta da garra
+var showroom := false  # no palco do Showroom: pés presos e inércia ligados sem corpo de física (sempre no chão)
 
 var skeleton: Skeleton3D
 var anim_player: AnimationPlayer
 var mouth: Node3D
 var ragdoll: Ragdoll
+var sway: TurnSway  # cabeça guia a curva, cauda com mola, corpo inclina (antes dos pés presos)
+var feet: FootPlant  # pés presos no chão ao girar/andar (só com dono que anda: o clone do tubo não)
 var current := ""
 var _toe_bones: Array[int] = []
 var _toe_up := [false, false]
@@ -88,8 +91,19 @@ func _ready() -> void:
 			m.set_shader_parameter("albedo_tex", atlas)
 			mi.set_surface_override_material(i, m)
 	for a in loops:
-		anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+		if anim_player.has_animation(a):  # o alossauro não tem a espreita
+			anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
 	play("Idle", 0.0)
+	var walks := _walks()
+	sway = TurnSway.new()
+	sway.name = "TurnSway"
+	sway.active = walks
+	skeleton.add_child(sway)
+	feet = FootPlant.new()
+	feet.name = "FootPlant"
+	feet.active = walks
+	skeleton.add_child(feet)  # antes do ragdoll: a física, quando liga, manda na pose
+	feet.stepped.connect(func(at: Vector3) -> void: Sfx.play(self, "raptor_step", at, step_db.get("Walk", 0.0) - 4.0, voice_pitch))
 	ragdoll = Ragdoll.create(skeleton, ragdoll_bones)
 	ragdoll.hit_owner = get_parent()
 	_toe_bones = [skeleton.find_bone("Toe_L"), skeleton.find_bone("Toe_R")]
@@ -98,9 +112,17 @@ func _ready() -> void:
 		get_parent().attacked.connect(_on_attacked)
 
 
+## Só quem anda pelo chão usa pés presos e inércia (o clone do tubo, preso no lugar, não).
+func _walks() -> bool:
+	return showroom or get_parent() is CharacterBody3D
+
+
 func _process(delta: float) -> void:
 	if not anim_player.active:
 		return
+	var body := get_parent() as CharacterBody3D
+	if body:
+		feet.grounded = body.is_on_floor()
 	if step_db.has(current):
 		for i in 2:
 			var toe := skeleton.global_transform * skeleton.get_bone_global_pose(_toe_bones[i]).origin
@@ -147,6 +169,10 @@ func start_ragdoll(vel: Vector3, impulse := Vector3.ZERO, at: Variant = null) ->
 	Sfx.play(self, "raptor_death", mouth_position(), 0.0, voice_pitch)
 	Sfx.play(self, "body_fall", null, 3.0, 0.7, 0.55)  # corpo pesado: mais grave
 	anim_player.active = false
+	feet.active = false
+	feet.reset()
+	sway.active = false
+	sway.reset()
 	await ragdoll.fling(vel)
 	if impulse != Vector3.ZERO:
 		var hit: PhysicalBone3D = ragdoll.closest(at) if at is Vector3 else ragdoll.bodies["Chest"]
@@ -156,6 +182,10 @@ func start_ragdoll(vel: Vector3, impulse := Vector3.ZERO, at: Variant = null) ->
 func stop_ragdoll() -> void:
 	ragdoll.stop()
 	anim_player.active = true
+	feet.reset()
+	feet.active = _walks()
+	sway.reset()
+	sway.active = feet.active
 	current = ""
 	play("Idle", 0.0)
 

@@ -72,10 +72,11 @@ func test_asset() -> void:
 	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
 		for s in mi.mesh.get_surface_count():
 			tris += mi.mesh.surface_get_array_index_len(s) / 3
-	check(tris > 800 and tris < 5000, "alossauro: orçamento de triângulos, PS2 do começo (800-5000)", str(tris))
+	# chefe: cabeça e corpo medidos na referência (crânio, mandíbula, dentes, membros com 12 lados) = teto próprio
+	check(tris > 800 and tris < 12000, "alossauro: orçamento de triângulos do chefe (800-12000)", str(tris))
 	check(inst.find_child("Mouth", true, false) != null, "alossauro: marcador da boca (Mouth)")
 	var atlas: Texture2D = load("res://assets/characters/allosaurus_atlas.png")
-	check(atlas != null and atlas.get_width() == 512 and atlas.get_height() == 512, "alossauro: atlas 512x512")
+	check(atlas != null and atlas.get_width() == 1024 and atlas.get_height() == 1024, "alossauro: atlas 1024x1024 (chefe)")
 	inst.free()
 	var heroine: Node = (load("res://assets/characters/heroine.glb") as PackedScene).instantiate()
 	var hap: AnimationPlayer = heroine.find_children("*", "AnimationPlayer", true, false)[0]
@@ -246,7 +247,7 @@ func test_death_and_reset() -> void:
 		finite = finite and b.global_position.is_finite()
 	check(a.model.is_ragdoll() and finite, "morte em ragdoll sem NaN")
 	var hips: Vector3 = a.model.ragdoll.bodies["Hips"].global_position
-	check(hips.y < 2.4, "corpo tomba", "%.2f" % hips.y)
+	check(hips.y < 1.4, "corpo tomba (quadril em pé a 1,93 m)", "%.2f" % hips.y)
 	a.reset()
 	await t._frames(2)
 	check(not a.dead and a.health == Allosaurus.MAX_HEALTH and not a.model.is_ragdoll(), "reinicia vivo, sem ragdoll")

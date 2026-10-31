@@ -38,8 +38,9 @@ BALL, GROUND = base.BALL, base.GROUND
 STANCE = {"L": (BALL[0] + 0.22, GROUND), "R": (BALL[0] - 0.30, GROUND)}
 
 ARMS = {
-    "Arm_L": (25, 0, 6), "Forearm_L": (35, 0, 0), "Hand_L": (-15, 0, 0),
-    "Arm_R": (25, 0, 6), "Forearm_R": (35, 0, 0), "Hand_R": (-15, 0, 0),
+    # braços pendentes como os do alossauro da Capcom: antebraço caído e a mão na linha dele, garras para baixo
+    "Arm_L": (25, 0, 6), "Forearm_L": (-30, 0, 0), "Hand_L": (-15, 0, 0),
+    "Arm_R": (25, 0, 6), "Forearm_R": (-30, 0, 0), "Hand_R": (-15, 0, 0),
 }
 IDLE = merge(ARMS, {
     "loc": (0, 0, -0.06),
@@ -60,8 +61,13 @@ ROAR_PEAK = 20
 ROAR_AT_PEAK = 16  # rugido na batalha, abaixado e voltado para ela
 HEAD_HIT = 12  # cabeçada: a cabeça passa pelo lado
 TAIL_HIT = 16  # rabada: a cauda passa por trás
-WALK = dict(frames=48, step=3, stride=2.0, duty=0.62, lift=0.30, height=-0.10, bob=0.04, sway=4.0)
-RUN = dict(frames=28, step=2, stride=2.6, duty=0.45, lift=0.50, height=-0.18, bob=0.08, sway=3.0, pitch=-5.0)
+# bicho pesado: rola mais sobre a perna de apoio, a cabeça balança menos, a cauda pesa
+WALK = dict(frames=48, step=1, stride=1.4, duty=0.62, lift=0.21, height=-0.07, bob=0.05, sway=6.0, roll=6.0, yaw=6.0,
+            push=16.0, low=0.08, surge=0.03, nod=2.0, tail_bob=2.5, arm=7.0, shift=0.09, wave=4.0, thrust=2.5,
+            arm_swing=9.0, arm_over=True)
+RUN = dict(frames=28, step=1, stride=1.8, duty=0.45, lift=0.35, height=-0.13, bob=0.09, sway=3.0, pitch=-5.0, roll=3.0,
+           yaw=2.5, push=24.0, low=0.22, surge=0.05, nod=4.0, tail_bob=4.0, arm=12.0, pant=3.0, shift=0.04, wave=3.0,
+           arm_swing=12.0, arm_over=True)
 
 
 def anim_speed(g):
@@ -203,17 +209,13 @@ def actions():
     walk_up = merge(ARMS, {"Neck1": (-6, 0, 0), "Head": (5, 0, 0), "Tail1": (2, 0, 0)})
     run_up = merge(ARMS, {"Neck1": (-12, 0, 0), "Neck2": (-4, 0, 0), "Head": (10, 0, 0), "Jaw": (-10, 0, 0),
                           "Tail1": (5, 0, 0)})
-    breath = ground(merge(IDLE, base.tail_wave(3, 0.25), {"loc": (0, 0, -0.08), "Chest": (2, 0, 0), "Neck1": (2, 0, 0),
-                                                          "Head": (-2, 0, 0)}))
     hit = ground(merge(IDLE, {"loc": (0, -0.12, -0.04), "Chest": (-8, 0, 0), "Neck1": (14, 0, 0), "Neck2": (6, 0, 0),
                               "Head": (10, 0, 0), "Jaw": (-30, 0, 0)}))
     w, r = WALK, RUN
     return {
-        "Idle": [(0, ground(IDLE)), (40, breath), (80, ground(IDLE))],
-        "Walk": base.gait(w["frames"], w["step"], stride=w["stride"], duty=w["duty"], lift=w["lift"],
-                          height=w["height"], bob=w["bob"], upper=walk_up, sway=w["sway"]),
-        "Run": base.gait(r["frames"], r["step"], stride=r["stride"], duty=r["duty"], lift=r["lift"],
-                         height=r["height"], bob=r["bob"], upper=run_up, pitch=r["pitch"], sway=r["sway"]),
+        "Idle": base.idle_arms(base.idle_keys(IDLE, STANCE, sec=1.4), ARMS),
+        "Walk": base.gait(**w, upper=walk_up),
+        "Run": base.gait(**r, upper=run_up),
         "Roar": roar_keys(),
         "Study": study_keys(),
         "Stomp": stomp_keys(),

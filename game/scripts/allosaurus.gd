@@ -12,8 +12,8 @@ extends Enemy
 signal killed
 signal attacked(kind: String)
 
-const WALK_ANIM_SPEED := 2.016  # m/s da animação Walk em velocidade 1 (art/allosaurus_anims.py, anim_speed)
-const RUN_ANIM_SPEED := 6.19  # idem Run
+const WALK_ANIM_SPEED := 1.411  # m/s da animação Walk em velocidade 1 (art/allosaurus_anims.py, anim_speed)
+const RUN_ANIM_SPEED := 4.286  # idem Run
 const WALK_SPEED := 1.8
 const RUN_SPEED := 6.2  # mais rápido que ela correndo (4,4): tem que rolar ou se esconder
 const STALK_DIST := 6.0
@@ -65,28 +65,28 @@ func _ready() -> void:
 	var legs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.9
-	cap.height = 2.8
+	cap.height = 2.2  # até o alto do dorso (~2,6 m nas proporções medidas)
 	legs.shape = cap
-	legs.position.y = 1.4
+	legs.position.y = 1.1
 	add_child(legs)
 	var torso := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(1.2, 1.6, 4.6)
+	box.size = Vector3(1.2, 1.4, 4.6)
 	torso.shape = box
-	torso.position = Vector3(0, 2.75, -0.9)
+	torso.position = Vector3(0, 1.95, -0.9)
 	add_child(torso)
 	var head := CollisionShape3D.new()
 	var hb := BoxShape3D.new()
 	hb.size = Vector3(0.8, 1.0, 1.4)
 	head.shape = hb
-	head.position = Vector3(0, 3.2, -2.75)
+	head.position = Vector3(0, 2.6, -2.75)
 	add_child(head)
 	model = AllosaurusModel.new()
 	add_child(model)
 	sight_range = 18.0
 	fov_half = deg_to_rad(70.0)
-	eye_height = 3.4
-	marker_height = 4.6
+	eye_height = 2.7
+	marker_height = 3.8
 	turn_rate = 2.5
 	patrol_speed = 1.6
 	investigate_speed = 2.0

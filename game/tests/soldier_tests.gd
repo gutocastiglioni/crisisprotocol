@@ -109,31 +109,41 @@ func test_guerrilla_asset() -> void:
 
 
 ## Mesmo critério de passo da jogadora: o andar nunca toca acima da velocidade em que foi resolvido; mais rápido
-## (investigando a 1,8 m/s, caçando) é a corrida no ritmo da velocidade, nunca o andar acelerado.
+## (investigando = trote, caçando) é a corrida, nunca o andar acelerado nem a corrida em câmera lenta (nem nas curvas:
+## virando muito, freia para o passo de andar).
 func test_soldier_gait_like_player() -> void:
 	var pr := await _spawn_soldier(Vector3(0, 0, 30), Vector3(-6, 0, 0), -PI * 0.5)
 	var s: Soldier = pr[1]
 	s.sight_range = 0.0
 	s.set_physics_process(false)  # só o _go manda no corpo (parado, a rotina dele trocaria para "idle")
-	var seen := {}
-	for speed in [s.patrol_speed, s.investigate_speed, s.hunt_speed]:
+	var seen := []
+	# o último caso começa de costas para o destino (curva de 180°) na velocidade de caçar
+	for c in [[s.patrol_speed, -PI * 0.5], [s.investigate_speed, -PI * 0.5], [s.hunt_speed, -PI * 0.5], [s.hunt_speed, PI * 0.5]]:
 		s.global_position = Vector3(-6, 0, 0)
-		s.rotation.y = -PI * 0.5
+		s.rotation.y = c[1]
 		s._best_left = INF
 		var worst_walk := 0.0
-		for i in 30:
-			s._go(Vector3(6, 0, 0), speed, 1.0 / 60.0)
+		var slowest_run := INF
+		var gaits := {}
+		for i in 40:
+			s._go(Vector3(6, 0, 0), c[0], 1.0 / 60.0)
+			gaits[s.model.state] = true
 			if s.model.state == "walk":
 				worst_walk = maxf(worst_walk, float(s.model.tree.get("parameters/walk_speed/scale")))
+			elif s.model.state == "run":
+				slowest_run = minf(slowest_run, float(s.model.tree.get("parameters/run_speed/scale")))
 			await t._frames(1)
-		seen[speed] = [s.model.state, worst_walk, float(s.model.tree.get("parameters/run_speed/scale"))]
-	var walk := Moves.speed("walk")
-	check(seen[s.patrol_speed][0] == "walk" and seen[s.patrol_speed][1] <= HeroineModel.GAIT_WALK_MAX + 0.01,
-		"ronda: passo de andar na velocidade dele", str(seen[s.patrol_speed]))
-	check(s.investigate_speed > walk and seen[s.investigate_speed][0] == "run" and seen[s.investigate_speed][1] <= HeroineModel.GAIT_WALK_MAX + 0.01,
-		"investigando mais rápido que o passo: corre (sem andar acelerado)", str(seen[s.investigate_speed]))
-	check(seen[s.hunt_speed][0] == "run" and absf(seen[s.hunt_speed][2] - s.hunt_speed / Player.RUN_SPEED) < 0.05,
-		"caçando: corrida no ritmo da velocidade", str(seen[s.hunt_speed]))
+		seen.append([s.model.state, worst_walk, float(s.model.tree.get("parameters/run_speed/scale")), slowest_run, gaits.keys()])
+	var patrol: Array = seen[0]
+	var investigate: Array = seen[1]
+	var hunt: Array = seen[2]
+	var turn: Array = seen[3]
+	check(patrol[0] == "walk" and patrol[1] <= HeroineModel.GAIT_WALK_MAX + 0.01, "ronda: passo de andar na velocidade dele", str(patrol))
+	check(investigate[0] == "run" and investigate[1] <= HeroineModel.GAIT_WALK_MAX + 0.01 and investigate[3] >= Enemy.RUN_MIN_SCALE - 0.01,
+		"investigando: trote (corrida a %.0f%%), sem andar acelerado nem câmera lenta" % (Enemy.JOG_SCALE * 100.0), str(investigate))
+	check(hunt[0] == "run" and absf(hunt[2] - s.hunt_speed / Player.RUN_SPEED) < 0.05, "caçando: corrida no ritmo da velocidade", str(hunt))
+	check(turn[0] == "run" and "walk" in turn[4] and turn[1] <= HeroineModel.GAIT_WALK_MAX + 0.01 and turn[3] >= Enemy.RUN_MIN_SCALE - 0.01,
+		"curva fechada correndo: freia no passo de andar e volta a correr, sem corrida em câmera lenta", str(turn))
 
 
 func test_soldier_patrol_and_spot() -> void:

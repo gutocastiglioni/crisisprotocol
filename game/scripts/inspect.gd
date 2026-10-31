@@ -301,8 +301,8 @@ func plate_zoom(plate: SubjectPlate) -> void:
 	await _zoom_back()
 
 
-## Teclado de uma porta trancada por código. `has_key` = ela tem a chave que liga o painel. Devolve true se digitou o
-## código certo (quem chamou gasta a chave e destranca).
+## Teclado de uma porta trancada por código. `has_key` = ela tem o cartão que liga o painel. Devolve true se digitou o
+## código certo (quem chamou gasta o cartão e destranca).
 func keypad(door: Door, has_key: bool) -> bool:
 	if busy:
 		return false
@@ -312,7 +312,7 @@ func keypad(door: Door, has_key: bool) -> bool:
 	var ok := false
 	if not has_key:
 		Sfx.ui(self, "lock_rattle")
-		_text("PAINEL DESLIGADO", "O teclado tem uma fechadura do lado.\nPrecisa de uma chave para ligar.")
+		_text("PAINEL DESLIGADO", "O teclado tem um leitor de cartão do lado.\nPrecisa de um cartão para ligar.")
 		await _wait_confirm()
 	else:
 		Sfx.ui(self, "keypad_beep")
@@ -448,7 +448,7 @@ func show_item(item: KeyItem) -> void:
 	_open()
 	for c in _pivot.get_children():
 		c.queue_free()
-	var model := KeyItem.build_model(_pivot, item.kind)
+	var model := KeyItem.build_model(_pivot, item.kind, item.tag, item.card_color)
 	if item.kind == "keycard":
 		model.rotation = Vector3(PI * 0.5, 0.0, 0.0)  # em pé como a chave; deitado, girando, só aparecia a quina
 		model.scale = Vector3.ONE * 1.7  # em pé, no 2,0 de antes cortava embaixo

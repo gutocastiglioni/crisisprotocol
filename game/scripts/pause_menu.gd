@@ -1,14 +1,15 @@
 class_name PauseMenu
 extends Node
 ## Menu de pausa (ESC / START): árvore pausada (este nó roda mesmo assim), fundo escurecido e a lista
-## CONTINUAR / REINICIAR / SAIR DO JOGO. Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
+## CONTINUAR / REINICIAR / SHOWROOM / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por cima; voltar dele
+## devolve o menu). Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
 ## ESC / START / bola volta ao jogo; o mouse também escolhe e clica. Quem abre é o `main` (não abre com o jogo já pausado
 ## por uma tela de inspeção nem no game over). Captura e testes: `on_shown` é chamado quando o menu aparece.
 
 signal restart
 signal quit
 
-const ITEMS := ["CONTINUAR", "REINICIAR", "SAIR DO JOGO"]
+const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "SAIR DO JOGO"]
 const UP := ["move_forward", "ui_up"]
 const DOWN := ["move_back", "ui_down"]
 const CONFIRM := ["interact", "roll", "ui_accept"]
@@ -29,6 +30,7 @@ var _title: Label
 var _hint: UiStyle.Hint
 var _rows: Array[Label] = []
 var _opened_frame := -1
+var showroom: Showroom
 
 
 func _ready() -> void:
@@ -49,6 +51,9 @@ func _ready() -> void:
 		l.mouse_entered.connect(_select.bind(i))
 		l.gui_input.connect(_on_row_input.bind(i))
 		_rows.append(l)
+	showroom = Showroom.new()
+	add_child(showroom)
+	showroom.closed.connect(_on_showroom_closed)
 	_set_visible(false)
 
 
@@ -66,6 +71,7 @@ func _set_visible(v: bool) -> void:
 ## Escala do HUD (main.apply_gfx): o menu foi feito para 320x240 como ele.
 func set_ui_scale(k: float) -> void:
 	layer.scale = Vector2(k, k)
+	showroom.set_ui_scale(k)
 
 
 func open() -> void:
@@ -125,18 +131,31 @@ func _choose() -> void:
 		"REINICIAR":
 			close()
 			restart.emit()
+		"SHOWROOM":
+			_set_visible(false)
+			showroom.open()
 		"SAIR DO JOGO":
 			quit.emit()
 
 
+## Voltou do showroom: o menu reaparece e o botão que fechou o showroom não conta aqui.
+func _on_showroom_closed() -> void:
+	if not is_open:
+		return
+	_opened_frame = Engine.get_process_frames()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_layout()
+	_set_visible(true)
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if is_open and event.is_action_pressed("pause") and not event.is_echo():
+	if is_open and not showroom.is_open and event.is_action_pressed("pause") and not event.is_echo():
 		get_viewport().set_input_as_handled()
 		close()
 
 
 func _process(_delta: float) -> void:
-	if not is_open:
+	if not is_open or showroom.is_open:
 		return
 	_layout()
 	if Engine.get_process_frames() == _opened_frame:
