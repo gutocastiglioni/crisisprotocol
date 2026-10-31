@@ -23,6 +23,7 @@ func run(runner: SceneTree) -> void:
 	await test_alerted_can_hide()
 	await test_yard_nav()
 	await test_main_scene_patrols()
+	await test_blind_spot_kills()
 	await test_doors_seal_rooms()
 	await test_unreachable_hunt_gives_up()
 	await test_sniper_forgets()
@@ -449,13 +450,85 @@ func test_main_scene_patrols() -> void:
 		check(rs[k].global_position.y > -0.5, "raptor %d não caiu do mundo" % k, str(rs[k].global_position))
 	check(sold_moved > 3.0, "soldado faz a ronda de verdade", "%.1f m" % sold_moved)
 	# os guardas novos da porta do pátio: de posto, no canto cercado pelas caixas (Level.DIVIDERS), parados
-	check(posts.size() == 4 and posts.all(func(s: Soldier) -> bool: return s.route.is_empty() and s.global_position.x < -3.75 and s.global_position.z < 0.4),
-		"4 guardas novos de posto na porta do pátio, no canto cercado de caixas", str(posts.size()))
+	check(posts.size() == 2 and posts.all(func(s: Soldier) -> bool: return s.route.is_empty() and s.global_position.x < -3.75 and s.global_position.z < 0.4),
+		"2 guardas de posto na porta do pátio, no canto cercado de caixas", str(posts.size()))
 	check(post_moved < 0.2, "os guardas de posto ficam parados (sem ronda)", "%.2f m" % post_moved)
 	check(main.dummies.is_empty() and t.get_nodes_in_group("dummies").is_empty(), "o galpão não tem mais bonecos de treino")
 	check(not alerted, "a heroína parada na entrada não é notada por ninguém (raptors, alossauro nem guardas do galpão)")
 	main.queue_free()
 	await t.process_frame
+
+
+## Cada ronda do galpão tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas): morta ali, em silêncio
+## ou não (o barulho do corpo caindo não atravessa caixa, `Enemy.hear_death`), ninguém é alertado — nem os sentinelas, nem
+## o sniper do mezanino, nem as outras rondas passando. Fora dele é achada: no vão da parede de caixas (guarda de posto),
+## na descida do 6 (o outro vertical, o 11, e a porta norte) e no fim do 6, bem na frente da rota do 8.
+func test_blind_spot_kills() -> void:
+	# furtivo: uma ronda morta por vez, e as outras andam uma volta inteira depois (passam por perto do corpo);
+	# com barulho: todas na mesma cena, menos o 6 (o corredor dele abre para a rota do 8: o corpo caindo é ouvido pelo vão)
+	var runs: Array = Soldier.BLIND_SPOTS.keys().map(func(gi: int) -> Array: return [true, [gi]])
+	runs.append([false, Soldier.BLIND_SPOTS.keys().filter(func(gi: int) -> bool: return gi != 6)])
+	for run: Array in runs:
+		var silent: bool = run[0]
+		var main: Node = await _main_scene()
+		var left: Array = run[1].duplicate()
+		var killed_at := {}
+		var alerted := ""
+		for i in 60 * 110:
+			await t._frames(1)
+			for gi: int in left.duplicate():
+				var sd: Soldier = main.soldiers[gi]
+				for spot: Vector3 in Soldier.BLIND_SPOTS[gi]:
+					# parada no ponto cego (a ronda para olhando em volta a `arrival_dist` do ponto da rota)
+					if sd.state == "look" and Vector2(sd.global_position.x - spot.x, sd.global_position.z - spot.z).length() < 0.8:
+						if silent:
+							sd.assassinate(-sd.global_basis.z)
+						else:
+							sd.die(-sd.global_basis.z, sd.global_position + Vector3.UP * 1.2)
+						killed_at[gi] = i
+						left.erase(gi)
+						break
+			for e: Enemy in t.get_nodes_in_group("enemies"):
+				if not e.dead and e.alert_level() > 0 and alerted == "":
+					alerted = "%s %d em %s (%s)" % [e.get_script().get_global_name(), main.soldiers.find(e), e.global_position.snapped(Vector3.ONE * 0.1), e.state]
+			if left.is_empty() and i - killed_at.values().max() > 60 * (45 if silent else 20):
+				break
+		var how := ("furtivo, ronda %d" % run[1][0]) if silent else "todas, corpo caindo com barulho"
+		check(left.is_empty(), "ronda chega ao ponto cego (%s)" % how, "faltou " + str(left))
+		check(alerted == "", "morte das rondas no ponto cego não alerta ninguém (%s)" % how, alerted)
+		main.queue_free()
+		await t.process_frame
+	# controles: fora do ponto cego alguém acha o corpo
+	for c in [[0, Vector3(-8.4, 0, 1.9), "no vão das caixas, à vista do guarda de posto"],
+			[6, Vector3(-1.5, 0, -5.5), "do 6 no meio da descida (o 11 desce paralelo)"],
+			[6, Vector3(-1.8, 0, 1.7), "do 6 no fim, bem na frente da rota do 8"]]:
+		var main: Node = await _main_scene()
+		var v: Soldier = main.soldiers[c[0]]
+		v.global_position = c[1]
+		v.route.clear()
+		v.reset_physics_interpolation()
+		await t._frames(5)
+		v.assassinate(Vector3.FORWARD)
+		var noticed := false
+		for i in 60 * 45:
+			await t._frames(1)
+			noticed = main.soldiers.any(func(s: Soldier) -> bool: return s != v and s.alert_level() > 0)
+			if noticed:
+				break
+		check(noticed, "morte %s é notada" % c[2])
+		main.queue_free()
+		await t.process_frame
+
+
+func _main_scene() -> Node:
+	if t._world:
+		t._world.queue_free()
+		t._world = null
+		await t.process_frame
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	t.get_root().add_child(main)
+	await t._frames(3)
+	return main
 
 
 ## Três salas separadas por portas fechadas: o tiro e o alarme de uma sala não chamam os inimigos das outras; com a porta

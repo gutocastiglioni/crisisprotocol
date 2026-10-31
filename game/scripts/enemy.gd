@@ -10,6 +10,7 @@ const CLOSE_SIGHT := 2.5  # até aqui vê em volta toda, não só o cone
 const ALERT_SIGHT := 22.0  # alcance de quem já foi alertado (vezes a visibilidade dela: agachada ou no capim ainda se esconde)
 const ALERT_FOV_BONUS := deg_to_rad(35.0)  # alertado olha mais para os lados, mas não vê nas costas (dá para escapar por trás)
 const COMBAT_SENSE := 5.0  # em combate, até aqui sabe onde ela está mesmo agachada (com nada no meio)
+const CORPSE_SIGHT := 7.0  # corpo caído no chão só se nota até aqui (de longe, no galpão escuro, passa batido)
 const SUSPECT_AT := 0.3  # atenção a partir da qual para e olha
 const AWARE_DECAY := 0.3  # por segundo, sem nada de novo
 const ALERT_TIME := 15.0  # depois de alertado, fica caçando por este tempo
@@ -517,11 +518,22 @@ func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 	aware = minf(aware + power * (1.0 - d / radius), 1.0)
 	_heard = _heard or aware >= 1.0
 
-## Morte de companheiro próximo: se estiver vasculhando, interpreta como posição revelada e encontra.
+## Companheiro morreu em `at` e o corpo caindo faz barulho a `radius` m: só nota quem tem linha livre até ele (caixa, parede
+## ou porta no meio abafam). O tiro que matou é outro barulho (`Player.make_noise`) e segue chegando como sempre.
+func hear_death(at: Vector3, radius: float, power: float) -> void:
+	if not dead and _flat(at - global_position).length() < radius and _clear_line(at):
+		hear_noise(at, radius, power)
+
+## Nada do cenário entre os olhos e o chão em `at`.
+func _clear_line(at: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * eye_height, at + Vector3.UP * 0.3, 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## Morte de companheiro próximo (com linha livre até ele): se estiver vasculhando, interpreta como posição revelada e encontra.
 func on_nearby_kill(at: Vector3, radius := 8.0) -> void:
 	if dead or lurking or in_combat() or not _reaches(at):
 		return
-	if is_searching() and _flat(at - global_position).length() <= radius:
+	if is_searching() and _flat(at - global_position).length() <= radius and _clear_line(at):
 		_last_known = at
 		_stimulus = at
 		aware = 1.0
@@ -869,7 +881,7 @@ func _check_corpses() -> void:
 		var to := e.global_position - global_position
 		to.y = 0.0
 		var d := to.length()
-		if d > sight_range or d < 0.2 or absf(angle_difference(look, atan2(-to.x, -to.z))) > half:
+		if d > minf(sight_range, CORPSE_SIGHT) or d < 0.2 or absf(angle_difference(look, atan2(-to.x, -to.z))) > half:
 			continue
 		if not space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, e.global_position + Vector3.UP * 0.3, 1)).is_empty():
 			continue

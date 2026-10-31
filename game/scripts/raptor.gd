@@ -599,7 +599,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, silent := false) -> void:
 	model.start_ragdoll(carry + flat * (0.6 if was_down else 1.8), flat * (12.0 if was_down else 30.0), at)
 	Blood.pool(model.ragdoll.bodies["Spine"], 2.4)
 	if not silent and is_inside_tree():
-		get_tree().call_group("enemies", "hear_noise", global_position, 6.0, 1.2)
+		get_tree().call_group("enemies", "hear_death", global_position, 6.0, 1.2)
 	if is_inside_tree():
 		get_tree().call_group("enemies", "on_nearby_kill", global_position, 8.0)
 	_update_marker()

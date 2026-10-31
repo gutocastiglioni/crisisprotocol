@@ -27,24 +27,42 @@ const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anter
 const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
 const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "engage", "hit"]
-## Guardas do galpão/pátio:
-## - 1 vasculhando a ala oeste do galpão em ronda
-## - 1 fazendo ronda na ala leste/fundo
-## - 1 parado de sentinela à direita do baú da M16 no canto superior direito
-## - 2 parados de sentinela guardando o portão da primeira fase
-## - 4 de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
-##   raptors, atrás das paredes de caixas (`Level.DIVIDERS`): no vão do sul, no vão do leste, no canto do fundo e na quina
+## Guardas do galpão/pátio. Cada ronda tem um ponto cego (`BLIND_SPOTS`): corpo ali fica atrás das paredes de caixas
+## (`Level.DIVIDERS`) ou além de `Enemy.CORPSE_SIGHT` dos sentinelas, do sniper e das outras rondas, então matá-la ali em
+## silêncio não alerta ninguém (ai_tests `test_blind_spot_kills`). Fora dele outra ronda acha o corpo quando passa:
+## os dois verticais do meio (6 e 11) se veem na descida, e `RISK_SPOTS` são pontas que só a ronda 8 vê, de passagem.
+## - 0: ronda em T saindo da porta do pátio: desce pelo vão da parede de caixas do sul e anda na frente dela
+## - 1: ronda na ala leste/fundo, na frente do canto da M16 e descendo pela parede leste (a ponta de baixo é o ponto cego)
+## - 2: sentinela à direita do baú da M16 no canto superior direito
+## - 3, 4: sentinelas guardando a porta do pátio
+## - 5, 7: de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
+##   raptors, atrás das paredes de caixas: no vão do sul e no canto do fundo
+## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
+##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
+## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
+## - 9, 10: porta norte (portão da sala dos clones), sentinelas nos cantos da plataforma de carga
+## - 11: ronda em T da porta norte, desce até a fileira de caixas do meio
 const GUARDS := [
-	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, -2.5), Vector3(-7.0, 0, -6.5)]},
-	{"route": [Vector3(10.5, 0, -2), Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0)]},
+	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
+	{"route": [Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0), Vector3(10.5, 0, -9.0), Vector3(11.4, 0, 1.4)]},
 	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
 	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": []},
 	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": []},
 	{"pos": Vector3(-9.6, 0, -2.2), "rot_y": -2.7, "route": [], "hold": true},
-	{"pos": Vector3(-6.0, 0, -8.4), "rot_y": -PI * 0.5, "route": [], "hold": true},
+	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
 	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true},
-	{"pos": Vector3(-5.6, 0, -1.6), "rot_y": -2.74, "route": [], "hold": true},
+	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
+	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": []},
+	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": []},
+	{"route": [Vector3(2.4, 0, -9.4), Vector3(2.4, 0, -0.2), Vector3(0.2, 0, -0.2), Vector3(4.2, 0, -0.2), Vector3(2.4, 0, -0.2)]},
 ]
+## Índice em GUARDS de cada ronda -> pontos da rota onde o corpo fica fora da vista de todos (testes).
+const BLIND_SPOTS := {
+	0: [Vector3(-12.4, 0, 1.9)], 1: [Vector3(11.4, 0, 1.4)], 6: [Vector3(-1.5, 0, -2.0)], 8: [Vector3(8.3, 0, -1.2)],
+	11: [Vector3(0.9, 0, -0.2)],
+}
+## Pontas de ronda escondidas dos sentinelas e do sniper, mas que a ronda 8 vê de passagem (matar ali = esperar a hora).
+const RISK_SPOTS := {0: [Vector3(-7.0, 0, 1.9)], 11: [Vector3(4.2, 0, -0.2)]}
 
 var model: HeroineModel
 var health := MAX_HEALTH
@@ -468,7 +486,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 	if head:
 		Blood.pool(model.ragdoll.bodies["Head"], 0.6, Blood.POOL_DELAY + 0.4)
 	if not silent and is_inside_tree():
-		get_tree().call_group("enemies", "hear_noise", global_position, 6.0, 1.2)
+		get_tree().call_group("enemies", "hear_death", global_position, 6.0, 1.2)
 	if is_inside_tree():
 		get_tree().call_group("enemies", "on_nearby_kill", global_position, 8.0)
 	_update_marker()

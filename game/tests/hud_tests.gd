@@ -381,10 +381,15 @@ func test_radar_all_enemies() -> void:
 		e.process_mode = Node.PROCESS_MODE_DISABLED  # parados: não a veem nem atiram
 	main.yard_raptors[0].lurking = false
 	await t._frames(10)
-	# um lugar sabidamente à vista: o de um guarda que o radar já pegou (caixas tapam boa parte do galpão)
+	# um lugar sabidamente à vista: o de um guarda que o radar já pegou e que a câmera de agora vê (caixas tapam boa parte
+	# do galpão, e nos primeiros quadros a câmera ainda vinha do telhado)
 	var spot := Vector3.INF
+	var cam := main.get_viewport().get_camera_3d()
+	var space := p.get_world_3d().direct_space_state
 	for sd: Soldier in main.soldiers:
-		if not sd in all and radar.is_tracked(sd):
+		var body := sd.global_position + Vector3.UP * sd.eye_height * 0.75
+		if not sd in all and radar.is_tracked(sd) and cam.is_position_in_frustum(body) \
+				and space.intersect_ray(PhysicsRayQueryParameters3D.create(cam.global_position, body, 1)).is_empty():
 			spot = sd.global_position
 	t.check(spot != Vector3.INF, "radar: algum guarda à vista no galpão")
 	var homes := {}

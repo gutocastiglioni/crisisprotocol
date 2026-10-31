@@ -96,10 +96,10 @@ static func build(parent: Node) -> Dictionary:
 	var crates := [
 		[Vector3(1.2, 1.2, 1.2), Vector3(-2.5, 0.6, -1.5), 0.2],
 		[Vector3(1.2, 1.2, 1.2), Vector3(-2.3, 1.8, -1.6), -0.15],
-		[Vector3(1.0, 1.0, 1.0), Vector3(3.0, 0.5, 1.0), 0.5],
-		[Vector3(2.4, 1.0, 1.2), Vector3(0.5, 0.5, -7.0), 0.0],
-		[Vector3(1.2, 1.2, 1.2), Vector3(8.0, 0.6, -8.5), 0.3],
-		[Vector3(1.2, 1.2, 1.2), Vector3(-8.5, 0.6, 7.5), 0.0],
+		[Vector3(1.0, LOW_CRATE_H, 1.0), Vector3(3.0, LOW_CRATE_H * 0.5, 1.0), 0.5],
+		[Vector3(2.4, LOW_CRATE_H, 1.2), Vector3(0.5, LOW_CRATE_H * 0.5, -7.0), 0.0],
+		[Vector3(1.2, LOW_CRATE_H, 1.2), Vector3(8.0, LOW_CRATE_H * 0.5, -8.5), 0.3],
+		[Vector3(1.2, LOW_CRATE_H, 1.2), Vector3(-8.5, LOW_CRATE_H * 0.5, 7.5), 0.0],
 	]
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
@@ -146,8 +146,8 @@ const MAZE_CELL := 1.6
 const MAZE_X0 := -5.6  # centro da coluna 0
 const MAZE_Z0 := 7.2  # centro da linha 0 (a frente)
 const MAZE_STACK := 2.7  # altura da pilha (2,6 debaixo do mezanino)
-## Caixas que dividem o galpão: [centro no chão (x, z), caixas na pilha (2 = 2,4 m, tapa a visão; 1 = só esconde
-## agachada), giro]. Cercam o canto da porta do pátio (Soldier.GUARDS) com uma parede ao sul (z = 0,4) e outra a leste
+## Caixas que dividem o galpão: [centro no chão (x, z), caixas na pilha (2 = 2,4 m, tapa a visão; 1 = caixa baixa de
+## LOW_CRATE_H, esconde agachada), giro]. Cercam o canto da porta do pátio (Soldier.GUARDS) com uma parede ao sul (z = 0,4) e outra a leste
 ## (x = -3,75), cada uma com um vão de 1,6 m (x = -8,4 / z = -8,4); a terceira entrada é a quina perto da coluna.
 ## Dentro, caixas baixas para chegar agachada; fora, uma parede curta separa o canto do baú da M16 do meio do galpão.
 const DIVIDERS := [
@@ -158,8 +158,23 @@ const DIVIDERS := [
 	[Vector2(-7.4, -3.6), 1, 0.25], [Vector2(-9.6, -5.2), 1, -0.2], [Vector2(-6.4, -11.4), 1, 0.1],
 	# parede curta separando o canto do baú da M16 do meio do galpão (termina em x = 9: a ronda da ala leste passa ao lado)
 	[Vector2(6.0, -2.6), 2, 0.02], [Vector2(7.2, -2.6), 2, -0.02], [Vector2(8.4, -2.6), 1, 0.04],
+	# pontos cegos das rondas (Soldier.BLIND_SPOTS): o corpo atrás destas pilhas não é visto pelos sentinelas nem pelas
+	# outras rondas. Coluna oeste do corredor da ronda 6 (com a pilha do meio, a esconde da ronda 8 que desce em x = -4,7;
+	# acima dela fica livre a passagem dos raptors do canto da porta do pátio para o resto do galpão)
+	[Vector2(-3.7, -0.2), 2, 0.03], [Vector2(-3.7, 1.0), 2, -0.01],
+	# parede leste do corredor da ronda 6 = oeste da barra do T da ronda 11 (um vertical não vê o fim do outro)
+	[Vector2(-0.4, -3.9), 2, -0.01], [Vector2(-0.4, -2.7), 2, 0.02], [Vector2(-0.4, -1.5), 2, -0.03], [Vector2(-0.4, -0.3), 2, 0.01],
+	# fileira ao sul da barra do T da ronda 11 (a ronda 8 passa atrás, em z = 2,4); o vão a oeste dela é a saída da ronda 6
+	[Vector2(-0.6, 1.2), 2, -0.02], [Vector2(0.6, 1.2), 2, 0.02], [Vector2(1.8, 1.2), 2, -0.01],
+	# a leste da barra do T da ronda 11 (esconde o fim da ronda 8 da ronda 11)
+	[Vector2(6.4, -1.0), 2, 0.03], [Vector2(6.4, 0.2), 2, -0.02],
+	# parede entre o fim da ronda 8 (x = 8,3) e a ronda 1 descendo pela parede leste
+	[Vector2(9.8, -2.2), 2, 0.01], [Vector2(9.8, -1.0), 2, -0.03], [Vector2(9.8, 0.2), 2, 0.02], [Vector2(9.8, 1.4), 2, -0.01],
 ]
 const DIVIDER_CRATE := 1.22  # um pouco mais que o passo de 1,2 m: vizinhas encostadas, sem fresta para a visão
+## Caixa baixa (sozinha ou do divisor): agachada, o alto da cabeça dela fica a ~1,3 m, então cabe toda atrás; ainda dá
+## para escalar (heroine_moves.json mantle.max 1,6).
+const LOW_CRATE_H := 1.5
 
 
 ## Centro da célula (coluna, linha) do labirinto, no chão.
@@ -195,6 +210,8 @@ static func _dividers(parent: Node) -> void:
 	for d in DIVIDERS:
 		var at := Vector3(d[0].x, 0, d[0].y)
 		var size := Vector3.ONE * DIVIDER_CRATE
+		if d[1] == 1:
+			size.y = LOW_CRATE_H
 		block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, d[2])
 		if d[1] > 1:
 			# a de cima um pouco menor e torta, como nas pilhas do labirinto

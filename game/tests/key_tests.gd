@@ -346,7 +346,7 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 	t.check(main.sniper != null and main.sniper.loot == main.keycard, "sniper possui o keycard como loot")
 	t.check(main.keycard.state == "hidden", "keycard começa oculto com o sniper")
 
-	t.check(main.soldiers.size() == 9, "9 soldados no total (2 patrulhando + 3 sentinelas + 4 de posto na porta)")
+	t.check(main.soldiers.size() == 12, "12 soldados no total (5 em ronda + 5 sentinelas + 2 de posto na porta)")
 	var sentinels := 0
 	var yard_patrollers := 0
 	var posts := 0
@@ -357,7 +357,7 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 			sentinels += 1
 		else:
 			yard_patrollers += 1
-	t.check(sentinels == 3 and yard_patrollers == 2 and posts == 4, "3 sentinelas parados, 2 patrulhando e 4 de posto")
+	t.check(sentinels == 5 and yard_patrollers == 5 and posts == 2, "5 sentinelas parados (2 na porta do pátio, 1 no baú da M16, 2 na porta norte), 5 em ronda e 2 de posto")
 
 	var gate: Door = null
 	for d: Door in t.get_nodes_in_group("doors"):
