@@ -559,6 +559,8 @@ func test_crosshair() -> void:
 	t.check(is_equal_approx(cross.half, cross.goal), "mira: chega ao tamanho", "%.1f %.1f" % [cross.half, cross.goal])
 	# M16 atirando seguido: a dispersão sobe e a mira abre (mesmo focada)
 	p.model.set_weapon("m16")
+	# a dispersão sorteia onde os tiros 2 e 3 caem: um na cabeça (×4) mataria o boneco e a mira ficaria sem alvo
+	d.health = d.max_health * 10
 	var calm := cross.goal
 	for i in 3:
 		p.camera_rig.look_at_point(chest.call())
