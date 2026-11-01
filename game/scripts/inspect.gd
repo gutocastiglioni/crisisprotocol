@@ -196,8 +196,15 @@ func _open() -> void:
 		hud.visible = false
 
 
+## Fecha a tela. O botão que confirmou não chega nela (esquiva, pulo, tiro, pegar): as ações são soltas e o jogo só
+## volta dois passos de física depois (como o `PauseMenu.close`).
 func _close() -> void:
 	_hide_all()
+	for a in CONFIRM + KEYPAD_OK + KEYPAD_EXIT:
+		if InputMap.has_action(a):
+			Input.action_release(a)
+	for i in 2:
+		await get_tree().physics_frame
 	get_tree().paused = false
 	if hud:
 		hud.visible = true
@@ -287,7 +294,7 @@ func _zoom_back() -> void:
 	await _fly(_cam.global_transform, eye.global_transform, _cam.fov, eye.fov, ZOOM_OUT)
 	_cam.current = false
 	eye.current = true
-	_close()
+	await _close()
 
 
 ## Plaqueta de um tubo de perto: número, espécie e estado.
@@ -493,7 +500,7 @@ func show_message(body: String) -> void:
 	_open()
 	_text("", body)
 	await _wait_confirm()
-	_close()
+	await _close()
 
 
 ## Item pronto no `_pivot`: mostra girando com o título e o texto e espera confirmar.
@@ -504,4 +511,4 @@ func _present(title: String, body: String) -> void:
 	Sfx.ui(self, "item_get")
 	_text("PEGOU: " + title, body)
 	await _wait_confirm()
-	_close()
+	await _close()

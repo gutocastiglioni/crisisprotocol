@@ -15,7 +15,7 @@ const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 
 const LOOPS := [
 	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
-	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed", "LadderUp", "LadderDown", "LadderIdle",
+	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed", "LadderUp", "LadderDown", "LadderIdle", "Console",
 ]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
@@ -30,7 +30,7 @@ const STATES := {
 	"assassinate": "Assassinate", "crit_strike": "CritStrike",
 	"death": "Death", "dazed": "Dazed", "ladder_up": "LadderUp", "ladder_down": "LadderDown", "ladder_idle": "LadderIdle",
 	"ladder_out": "LadderOut", "ladder_in": "LadderIn", "ladder_out_low": "LadderOutLow", "ladder_in_low": "LadderInLow",
-	"hatch_open": "HatchOpen", "shocked": "Shocked",
+	"hatch_open": "HatchOpen", "shocked": "Shocked", "console": "Console",
 	"stagger_back": "StaggerBack", "stagger_fwd": "StaggerFwd", "getup_front": "GetUpFront", "getup_back": "GetUpBack",
 }
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")

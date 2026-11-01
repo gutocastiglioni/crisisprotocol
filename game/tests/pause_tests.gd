@@ -127,7 +127,21 @@ func test_pause_menu() -> void:
 	t.check(main.inspect.busy and not menu.is_open, "com a mensagem na tela o START não abre o menu")
 	await t._frames(int((Inspect.MIN_SHOW + 0.2) * 60.0))
 	await _tap("interact")
+	await t._frames(3)
 	t.check(not main.inspect.busy and not t.paused, "mensagem fechada")
+	# fechar a tela com o X (ou pular/atirar) não chega nela: nada de esquiva/cambalhota ao voltar ao jogo
+	for a in ["roll", "jump", "shoot"]:
+		main.inspect.show_message("TESTE")
+		await t._frames(int((Inspect.MIN_SHOW + 0.2) * 60.0))
+		Input.action_press(a)
+		var seen := {"busy": false}
+		for i in 12:
+			await t._frames(1)
+			if p.moves.busy() or p.rolling or p.hopping:
+				seen.busy = true
+		Input.action_release(a)
+		t.check(not main.inspect.busy and not t.paused and not seen.busy, "fechar a mensagem com %s não faz ela agir" % a, p.moves.mode)
+		await t._frames(10)
 	main.game_over = true
 	await _start_button()
 	t.check(not menu.is_open and not t.paused, "no game over o START não abre o menu")

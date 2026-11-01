@@ -21,6 +21,7 @@ const SUITES := [
 	["raptor", "velociraptor", preload("res://tests/raptor_tests.gd")],
 	["ai", "IA, furtividade e pátio da mata", preload("res://tests/ai_tests.gd")],
 	["soldier", "guerrilheiros", preload("res://tests/soldier_tests.gd")],
+	["console", "guarda distraído no painel e caixas baixas novas", preload("res://tests/console_tests.gd")],
 	["stealth_kill", "abate furtivo e golpe crítico", preload("res://tests/stealth_kill_tests.gd")],
 	["sniper_ladder", "sniper, passarela e escada", preload("res://tests/sniper_ladder_tests.gd")],
 	["start", "começo da fase: telhado, alçapão, labirinto, queda e sala dos clones", preload("res://tests/start_tests.gd")],

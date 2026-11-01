@@ -371,7 +371,7 @@ func test_yard_nav() -> void:
 			if NavigationServer3D.map_get_closest_point(map, p).distance_to(p) > 0.5:
 				bad.append(p)
 	check(bad.is_empty(), "todos os pontos de patrulha estão na malha (fora das árvores)", str(bad))
-	var shed := Vector3(0, 0, 6)
+	var shed := Vector3(2.4, 0, -5)  # chão livre no meio do galpão (rota do 11); na frente do labirinto o raptor não cabe entre as caixas
 	var cut := []
 	for post in Yard.POSTS:
 		var path := NavigationServer3D.map_get_path(map, post.pos, shed, true)
@@ -462,7 +462,7 @@ func test_main_scene_patrols() -> void:
 
 ## Cada ronda do galpão tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas): morta ali, em silêncio
 ## ou não (o barulho do corpo caindo não atravessa caixa, `Enemy.hear_death`), ninguém é alertado — nem os sentinelas, nem
-## o sniper do mezanino, nem as outras rondas passando. Fora dele é achada: no vão da parede de caixas (guarda de posto),
+## o sniper do mezanino, nem as outras rondas passando. Fora dele é achada: no canto que o guarda de posto 5 vigia,
 ## na descida do 6 (o outro vertical, o 11, e a porta norte) e no fim do 6, bem na frente da rota do 8.
 func test_blind_spot_kills() -> void:
 	# furtivo: uma ronda morta por vez, e as outras andam uma volta inteira depois (passam por perto do corpo);
@@ -500,7 +500,7 @@ func test_blind_spot_kills() -> void:
 		main.queue_free()
 		await t.process_frame
 	# controles: fora do ponto cego alguém acha o corpo
-	for c in [[0, Vector3(-8.4, 0, 1.9), "no vão das caixas, à vista do guarda de posto"],
+	for c in [[0, Vector3(-7.2, 0, -5.4), "no canto que o guarda de posto 5 vigia"],
 			[6, Vector3(-1.5, 0, -5.5), "do 6 no meio da descida (o 11 desce paralelo)"],
 			[6, Vector3(-1.8, 0, 1.7), "do 6 no fim, bem na frente da rota do 8"]]:
 		var main: Node = await _main_scene()
@@ -524,7 +524,7 @@ func test_blind_spot_kills() -> void:
 ## Gente avisa gritando (`Enemy.shouts`): ferido sem tê-la notado grita `SHOUT_DELAY` depois (morto antes, nada) e quem acha
 ## um corpo grita na hora; o grito só chega a quem está perto com linha livre, não à sala toda.
 func test_shout_earshot() -> void:
-	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto do vão do sul (5); as rondas
+	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto atrás da caixa baixa (5); as rondas
 	# dependem de onde estão na hora do grito
 	var far := [2, 3, 4, 5]
 	# ronda 6 morta no alto do corredor: o sentinela 9 ouve o corpo cair e vai lá; achando o corpo, grita
@@ -578,9 +578,8 @@ func test_shout_earshot() -> void:
 	await t._frames(roundi(60 * Enemy.SHOUT_DELAY))
 	check(not early and main.soldiers[10].alert_t > 0.0, "ferido grita depois de SHOUT_DELAY e o vizinho ouve",
 		"antes=%s depois=%.1f" % [early, main.soldiers[10].alert_t])
-	# a ala norte (0, 3, 4, 7) tem linha livre até ele a menos de SHOUT_RANGE: ouve; o canto da M16 (1, 2) e o de posto atrás
-	# das caixas do sul (5) não
-	var far_told: Array = [1, 2, 5].filter(func(i: int) -> bool: return main.soldiers[i].alert_t > 0.0)
+	# a ala norte (0, 3, 4, 5, 7) tem linha livre até ele a menos de SHOUT_RANGE: ouve; o canto da M16 (1, 2) não
+	var far_told: Array = [1, 2].filter(func(i: int) -> bool: return main.soldiers[i].alert_t > 0.0)
 	check(far_told.is_empty(), "grito do ferido não chega à sala toda", str(far_told))
 	main.queue_free()
 	await t.process_frame

@@ -9,6 +9,7 @@ func run(runner: SceneTree) -> void:
 	await test_soldier_patrol_and_spot()
 	await test_soldier_gait_like_player()
 	await test_soldier_shoots_and_misses()
+	await test_danger_before_hit()
 	await test_soldier_presses_fire()
 	await test_soldier_dies()
 	await test_vest_and_flak()
@@ -201,6 +202,51 @@ func test_soldier_shoots_and_misses() -> void:
 	for i in 40:
 		s._fire()
 	check(p.health == 100, "parede no meio: nenhum tiro chega", str(p.health))
+
+
+## O sensor de perigo avisa antes do acerto: o tiro só pode acertar depois de `Soldier.LOCK_TIME` mirando nela à vista
+## (antes passa raspando). Sumiu atrás de algo, a contagem zera e volta a valer quando ela reaparece.
+func test_danger_before_hit() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 8))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	p.health = 100000
+	var meter := DangerMeter.new()
+	meter.player = p
+	w.add_child(meter)
+	s.start_engage()
+	var dt := 1.0 / 60.0
+	var warn_at := -1.0
+	var hit_at := -1.0
+	var shots_before := 0
+	for i in 600:
+		await t._frames(1)
+		meter.update(dt)
+		if warn_at < 0.0 and meter.blink:
+			warn_at = i * dt
+		if p.health < 100000:
+			hit_at = i * dt
+			break
+		shots_before = s.shots_fired
+	check(warn_at >= 0.0 and hit_at >= 0.0, "perigo/tiro: o sensor acende e depois o tiro acerta", "aviso=%.2f tiro=%.2f" % [warn_at, hit_at])
+	check(hit_at - warn_at >= Soldier.LOCK_TIME - 0.3, "perigo/tiro: o acerto vem depois do aviso, não junto",
+		"aviso=%.2f tiro=%.2f" % [warn_at, hit_at])
+	check(shots_before > 0, "perigo/tiro: antes de travar a mira os tiros passam raspando", str(shots_before))
+	# atrás da parede perde a mira; reapareceu, espera de novo antes de acertar
+	_wall(w, Vector3(0, 2, 4))
+	var wall: Node = w.get_child(w.get_child_count() - 1)
+	await t._frames(60)
+	check(s._lock_t == 0.0, "perigo/tiro: sumiu de vista, a mira zera", str(s._lock_t))
+	wall.queue_free()
+	var hp := p.health
+	var back := -1.0
+	for i in 600:
+		await t._frames(1)
+		if p.health < hp:
+			back = i * dt
+			break
+	check(back >= Soldier.LOCK_TIME, "perigo/tiro: reapareceu, o acerto espera a mira de novo", "%.2f" % back)
 
 
 ## Rajadas longas com descanso curto (sem pausas de segundos) e, quando ela some atrás de algo, um pouco de fogo de

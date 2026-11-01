@@ -247,8 +247,8 @@ func _physics_process(delta: float) -> void:
 			make_noise(7.0, 0.7)
 			_roll_cd = GameMode.roll_cooldown()
 			if GameMode.short_dodge():
-				# pulinho para onde o direcional aponta (parado, para trás), ou cambalhota com clique duplo
-				moves.request_dodge(wish.normalized() if wish.length() > 0.1 else global_basis.z)
+				# pulinho na hora para onde o direcional aponta (parado, para trás); clique duplo vira cambalhota
+				moves.start_dodge(wish.normalized() if wish.length() > 0.1 else global_basis.z)
 			else:
 				moves.start_roll(wish.normalized() if wish.length() > 0.1 else -global_basis.z)
 			return

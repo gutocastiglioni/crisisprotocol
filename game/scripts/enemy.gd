@@ -100,6 +100,9 @@ var _shout_at := Vector3.ZERO
 ## Guarda de posto (guardas da porta do pátio): barulho e vulto só o fazem parar e olhar para lá, sem sair do lugar,
 ## até alguém vê-la (alerta: `alert_t` > 0); aí caça e procura como os outros e, quando desiste, volta ao posto.
 var hold_post := false
+## Guarda distraído no posto (o do painel no canto do labirinto): de volta ao lugar e sem alerta, mexe no painel e não vê
+## nada (nem ela, nem corpo caído); o barulho chega como em qualquer guarda e o tira de lá (`is_distracted`).
+var distracted := false
 var _heeding := false  # "look" por causa do alarme de outro: olha para o lugar dele
 var _sweeps_left := 0
 var _search_center := Vector3.ZERO  # o lugar que está procurando (onde a viu ou ouviu)
@@ -680,6 +683,11 @@ func _perceive(delta: float) -> void:
 	elif aware >= SUSPECT_AT and state in ["idle", "patrol", "look"]:
 		start_suspicious()
 
+## Mexendo no painel: parado no posto (o lugar exato, não só perto, e virado para ele) e sem alerta. Qualquer outro estado
+## (desconfiado, procurando, voltando) é o guarda normal.
+func is_distracted() -> bool:
+	return distracted and not dead and state == "idle" and alert_t <= 0.0 and _flat(_spawn.origin - global_position).length() < 0.15 		and absf(angle_difference(rotation.y, _spawn.basis.get_euler().y)) < 0.2
+
 ## Guarda de posto que ainda não foi alertado: não sai do lugar para ver o que foi.
 func _holds_post() -> bool:
 	return hold_post and alert_t <= 0.0
@@ -732,9 +740,9 @@ func _target_hidden() -> bool:
 	return Roof.has(target.global_position) or target.moves.hidden_on_ladder()
 
 ## Vê a presa: dentro do alcance (menor se ela anda devagar, agachada ou no capim), no cone à frente
-## (alertado, cone mais aberto; muito perto, em volta toda) e sem nada no meio.
+## (alertado, cone mais aberto; muito perto, em volta toda) e sem nada no meio. Distraído no posto, nada.
 func _sees_target() -> bool:
-	if not _has_target() or _target_hidden():
+	if not _has_target() or _target_hidden() or is_distracted():
 		return false
 	var to := _to_target()
 	var d := to.length()
@@ -920,7 +928,7 @@ func _idle_vigil(delta: float) -> void:
 	head_yaw = lerpf(head_yaw, _vigil_target_yaw, 1.0 - exp(-3.0 * delta))
 
 func _check_corpses() -> void:
-	if dead or in_combat() or state in ["dead", "down"]:
+	if dead or in_combat() or state in ["dead", "down"] or is_distracted():
 		return
 	var eye := global_position + Vector3.UP * eye_height
 	var look := rotation.y + head_yaw

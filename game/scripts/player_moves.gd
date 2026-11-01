@@ -11,11 +11,10 @@ const DROP_PUSH := 0.14  # ao soltar da borda, afasta da parede (pendurada, a c�
 const ROLL_TURN := 18.0  # rapidez com que vira para a direção da cambalhota
 const KNEEL_WALK := 8.0  # quadros até chegar ao lugar de ajoelhar na frente do baú
 const DODGE_BACK_COS := cos(deg_to_rad(50.0))  # direção pedida até 50° das costas dela: pulinho para trás
-const DOUBLE_TAP := 0.2  # segundo X até este tempo depois do primeiro = clique duplo = cambalhota (sem pulinho antes)
-const WAIT_BRAKE := 25.0  # m/s² com que ela freia esperando o segundo clique (planta os pés para pular)
+const DOUBLE_TAP := 0.2  # segundo X até este tempo depois do primeiro = clique duplo = o pulinho vira cambalhota
 
 var p: Player
-var mode := ""  # "", "roll", "dodge_wait", "dodge", "grab", "hang", "climb", "mantle", "pickup"
+var mode := ""  # "", "roll", "dodge", "grab", "hang", "climb", "mantle", "pickup"
 var t := 0.0
 var _base := Vector3.ZERO  # origem do caminho da ação
 var _fwd := Vector3.FORWARD  # frente do caminho (para a parede, ou para onde rola)
@@ -68,7 +67,6 @@ func update(delta: float) -> void:
 	t += delta
 	match mode:
 		"roll": _roll(delta)
-		"dodge_wait": _dodge_wait(delta)
 		"dodge": _dodge(delta)
 		"grab": _grab()
 		"hang": _hang()
@@ -125,38 +123,9 @@ func _roll(delta: float) -> void:
 
 
 # ------------------------------------------------------------------ pulinho de esquiva
-## Primeiro X: espera DOUBLE_TAP pelo segundo antes de decidir, já invulnerável e freando o embalo de antes. Veio o
-## segundo: cambalhota direto (o pulinho nem começa), para o direcional ou para `dir`. Não veio: pulinho para `dir`
-## (ou para o direcional, se ele foi apertado durante a espera).
-func request_dodge(dir: Vector3) -> void:
-	mode = "dodge_wait"
-	t = 0.0
-	_fwd = dir
-	p.hopping = true
-	p.crouching = false
-	p.model.set_state("idle")
-
-
-func _dodge_wait(delta: float) -> void:
-	var wish := p.move_wish()
-	if wish.length() > 0.1:
-		_fwd = wish.normalized()
-	if Input.is_action_just_pressed("roll"):
-		p.hopping = false
-		start_roll(_fwd)
-		return
-	var h := Vector2(p.velocity.x, p.velocity.z).move_toward(Vector2.ZERO, WAIT_BRAKE * delta)
-	p.velocity.x = h.x
-	p.velocity.z = h.y
-	if not p.is_on_floor():
-		p.velocity.y -= Player.GRAVITY * delta
-	p.move_and_slide()
-	if t >= DOUBLE_TAP:
-		start_dodge(_fwd)
-
-
 ## Pulinho curto para `dir` (no chão, normalizada) sem rolar: para trás se `dir` está até 50° das costas dela; senão de
 ## lado, virando só o necessário para `dir` ficar à esquerda ou à direita dela. Invulnerável até o quadro "guard".
+## Sai no mesmo passo do X (sem esperar o clique duplo); um segundo X até DOUBLE_TAP vira cambalhota (`_dodge`).
 func start_dodge(dir: Vector3) -> void:
 	var d: Dictionary = Moves.data().dodge
 	var fwd := -p.global_basis.z
@@ -183,6 +152,12 @@ func start_dodge(dir: Vector3) -> void:
 
 
 func _dodge(delta: float) -> void:
+	if t < DOUBLE_TAP and Input.is_action_just_pressed("roll"):
+		# clique duplo: o pulinho ainda está no impulso (quase parada) e vira cambalhota, para o direcional ou para `dir`
+		var wish := p.move_wish()
+		p.hopping = false
+		start_roll(wish.normalized() if wish.length() > 0.1 else _fwd)
+		return
 	var d: Dictionary = Moves.data().dodge
 	var f := t * Moves.fps()
 	var dist := Moves.path_at(_path, f).x

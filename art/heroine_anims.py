@@ -16,7 +16,7 @@ FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
 LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
-         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle")
+         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle", "Console")
 
 
 def merge(*poses):
@@ -89,6 +89,59 @@ DAZED = {
 def dazed_keys():
     sway = lambda k: merge(DAZED, {"Spine": (0, 0, 4 * k), "Chest": (0, 0, 3 * k), "Head": (0, 10 * k, 4 * k)})
     return [(0, sway(1)), (20, sway(-1)), (40, sway(1))]
+
+
+# Mexendo no painel da parede (o guarda distraído do canto do labirinto, game/scripts/soldier.gd): de pé na frente da
+# bancada, um pouco curvado, os punhos no teclado (palma para baixo) batendo um de cada vez, a cabeça indo do teclado à
+# tela. Teclado em relação à raiz: CONSOLE_REACH à frente e CONSOLE_DROP abaixo do cotovelo em repouso (o Godot monta a
+# bancada na altura do guerrilheiro: Level.CONSOLE_*).
+CONSOLE_REACH = 0.36
+CONSOLE_DROP = 0.13
+CONSOLE_GAP = 0.12  # meia distância entre os punhos
+CONSOLE_TAP = 0.035  # quanto o punho sobe entre uma tecla e outra
+CONSOLE_FRAMES = 90
+
+
+def console_keys(sk):
+    import heroine_ik as IK
+    from mathutils import Vector
+
+    body = merge(IDLE, {"loc": (0, -0.01, 0), "Spine": (8, 0, 0), "Chest": (4, 0, 0), "Neck": (6, 0, 0), "Head": (10, 0, 0)})
+    rest = sk.matrices({})
+    key_z = rest["LowerArm_L"].translation.z - CONSOLE_DROP
+
+    def solve(pose, lift_l=0.0, lift_r=0.0):
+        pose = dict(pose)
+        for s, lift in (("L", lift_l), ("R", lift_r)):
+            x = CONSOLE_GAP if s == "L" else -CONSOLE_GAP
+            target = Vector((x, -CONSOLE_REACH, key_z + lift))
+            # palma (eixo X do osso da mão em repouso) para baixo; dedos para a frente, um pouco para dentro e para baixo
+            palm_rest = rest[f"Hand_{s}"].col[0].to_3d()
+            along_rest = rest[f"Hand_{s}"].col[1].to_3d()
+            along = Vector((-0.2 if s == "L" else 0.2, -1.0, -0.35)).normalized()
+
+            def res(m, s=s, target=target, palm_rest=palm_rest, along_rest=along_rest, along=along):
+                e = list(IK.palm(sk, m, s) - target)
+                e += list((sk.axis(m, f"Hand_{s}", palm_rest) - Vector((0, 0, -1))) * 0.15)
+                e += list((sk.axis(m, f"Hand_{s}", along_rest) - along) * 0.15)
+                return e
+
+            pose, err = IK.solve(sk, pose, IK.arm_unknowns(s), res, IK.arm_bounds(s))
+            if err > 0.02:
+                print(f"[console] punho {s} longe do teclado: {err * 1000:.0f} mm")
+        return pose
+
+    rest_pose = solve(body)
+    look_up = merge(rest_pose, {"Neck": (-3, 0, 0), "Head": (-8, 4, 0)})
+    look_side = merge(rest_pose, {"Head": (2, -8, -2), "Chest": (0, -2, 0)})
+    tap_l = solve(body, lift_l=CONSOLE_TAP)
+    tap_r = solve(body, lift_r=CONSOLE_TAP)
+    print(f"[console] teclado a {key_z:.3f} m, {CONSOLE_REACH} m à frente")
+    return [
+        (0, rest_pose), (6, tap_l), (11, rest_pose), (17, tap_r), (22, rest_pose), (27, tap_l), (31, rest_pose),
+        (36, tap_r), (41, rest_pose), (52, look_up), (62, look_up), (70, rest_pose), (75, tap_r), (80, rest_pose),
+        (85, look_side), (CONSOLE_FRAMES, rest_pose),
+    ]
 
 
 # Corrida de reação (Regina em Dino Crisis 2 / Syphon Filter): quase em pé, passadas curtas e rápidas, quique
@@ -411,6 +464,7 @@ def actions(sk):
         "GetUpFront": HU.getup_front_keys(A, sk),
         "GetUpBack": HU.getup_back_keys(A, sk),
         "Dazed": dazed_keys(),
+        "Console": console_keys(sk),
         "HatchOpen": CS.hatch_open_keys(A, sk),
         "Shocked": CS.shocked_keys(A),
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],

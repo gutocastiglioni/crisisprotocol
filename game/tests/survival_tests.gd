@@ -453,10 +453,9 @@ func _press_x(dir := "") -> void:
 		Input.action_release(dir)
 
 
-## Um X só e espera a janela do clique duplo passar (aí sai o pulinho).
+## Um X só: o pulinho sai na hora.
 func _dodge(dir := "") -> void:
 	await _press_x(dir)
-	await t._frames(int(PlayerMoves.DOUBLE_TAP * 60.0) + 3)
 
 
 ## Survival: o botão de esquiva dá um pulinho curto sem rolar: parada = para trás, com direção = de lado, sem virar.
@@ -477,7 +476,7 @@ func test_short_dodge() -> void:
 	t.check(absf(p.rotation.y) < 0.05, "para trás sem girar", str(p.rotation.y))
 	await t._frames(90)
 	await _dodge("move_left")
-	p0 = p.global_position  # o pulinho mal saiu do lugar (a espera do clique duplo pode ter freado um embalo)
+	p0 = p.global_position  # o pulinho mal saiu do lugar (ainda no impulso)
 	t.check(p.model.state == "dodge_l", "esquerda + esquiva = pulinho para a esquerda", p.model.state)
 	await t._frames(whole)
 	var side := p.global_position - p0
@@ -554,30 +553,28 @@ func test_dodge_edge_cases() -> void:
 	p.queue_free()
 
 
-## Clique duplo no X = cambalhota direto, sem o pulinho começar antes; um X só = espera a janela do clique duplo
-## (já invulnerável) e pula; um segundo X depois da janela não faz nada.
+## Um X = o pulinho sai na hora (sem esperar o clique duplo); um segundo X ainda no impulso (DOUBLE_TAP) vira cambalhota
+## dali mesmo; um segundo X depois da janela não faz nada.
 func test_double_x_roll() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 4))
 	await t._frames(10)
 	var p0 := p.global_position
 	await _press_x()
-	t.check(p.moves.mode == "dodge_wait" and p.is_dodging() and not p.model.state.begins_with("dodge"), "primeiro X: espera o segundo clique, já invulnerável, sem começar o pulinho", p.model.state)
+	t.check(p.moves.mode == "dodge" and p.model.state == "dodge_back" and p.is_dodging(), "primeiro X: o pulinho sai na hora, invulnerável", "%s %s" % [p.moves.mode, p.model.state])
 	await t._frames(4)
+	var hop := p.global_position.distance_to(p0)
 	await _press_x()
-	t.check(p.moves.mode == "roll" and p.rolling and p.model.state == "roll", "clique duplo: cambalhota direto", p.moves.mode)
-	var states := {}
-	while p.moves.mode != "":
-		states[p.model.state] = true
-		await t._frames(1)
-	t.check(not (states.has("dodge_back") or states.has("dodge_l") or states.has("dodge_r")), "clique duplo: nenhum quadro do pulinho", str(states.keys()))
+	t.check(p.moves.mode == "roll" and p.rolling and p.model.state == "roll", "clique duplo: o pulinho vira cambalhota", p.moves.mode)
+	t.check(hop < 0.25, "o pulinho ainda estava no impulso (quase parada) quando virou cambalhota", "%.2f m" % hop)
+	await _until(func() -> bool: return p.moves.mode == "", 120)
 	var moved := p.global_position - p0
 	t.check(moved.z > 3.5 and absf(moved.x) < 0.2, "clique duplo parada: cambalhota para trás", "%.2f, %.2f" % [moved.x, moved.z])
 	t.check(p._roll_cd > 0.0, "a cambalhota do clique duplo também conta o intervalo", str(p._roll_cd))
 	await t._frames(90)
 	await _dodge()
-	t.check(p.moves.mode == "dodge", "um X só: passou a janela, pulinho")
-	await t._frames(4)
+	t.check(p.moves.mode == "dodge", "um X só: pulinho")
+	await t._frames(int(PlayerMoves.DOUBLE_TAP * 60.0) + 2)
 	await _press_x()
 	t.check(p.moves.mode == "dodge", "segundo X devagar (fora da janela): continua só o pulinho", p.moves.mode)
 	await _until(func() -> bool: return p.moves.mode == "", 60)

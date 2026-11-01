@@ -105,6 +105,7 @@ static func build(parent: Node) -> Dictionary:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
 	_dividers(parent)
 	_maze(parent)
+	_console(parent)
 	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar; o portão da sala dos clones fica atrás dela)
 	# e a faixa de perigo na frente dela
 	block(parent, Vector3(6.0, CloneLab.FLOOR_Y, 2.0), Vector3(0, CloneLab.FLOOR_Y * 0.5, -h + 1.2), "concrete", 0.35)
@@ -170,11 +171,29 @@ const DIVIDERS := [
 	[Vector2(6.4, -1.0), 2, 0.03], [Vector2(6.4, 0.2), 2, -0.02],
 	# parede entre o fim da ronda 8 (x = 8,3) e a ronda 1 descendo pela parede leste
 	[Vector2(9.8, -2.2), 2, 0.01], [Vector2(9.8, -1.0), 2, -0.03], [Vector2(9.8, 0.2), 2, 0.02], [Vector2(9.8, 1.4), 2, -0.01],
+	# caixas baixas: fileira descendo da caixa (8; -8,5) no canto da M16
+	[Vector2(7.95, -7.05), 1, 0.03], [Vector2(7.95, -5.85), 1, -0.02],
+	# fileiras na frente do labirinto (z = 4,1; a ronda 8 passa em z = 2,4): encostada na coluna (-5; 4), no meio e a leste
+	[Vector2(-7.25, 4.1), 1, 0.02], [Vector2(-6.05, 4.1), 1, -0.03],
+	[Vector2(-2.4, 4.1), 1, -0.01], [Vector2(-1.2, 4.1), 1, 0.03], [Vector2(0.0, 4.1), 1, -0.02],
+	[Vector2(8.35, 4.1), 1, 0.02], [Vector2(9.55, 4.1), 1, -0.01], [Vector2(10.75, 4.1), 1, 0.03],
+	# fecham por cima o canto do painel (CONSOLE): o guarda dele e o corpo caído ficam fora da vista da ronda 0
+	[Vector2(-12.15, 7.6), 1, -0.02], [Vector2(-10.95, 7.6), 1, 0.01],
 ]
 const DIVIDER_CRATE := 1.22  # um pouco mais que o passo de 1,2 m: vizinhas encostadas, sem fresta para a visão
 ## Caixa baixa (sozinha ou do divisor): agachada, o alto da cabeça dela fica a ~1,3 m, então cabe toda atrás; ainda dá
 ## para escalar (heroine_moves.json mantle.max 1,6).
 const LOW_CRATE_H := 1.5
+## Painel de computador na parede oeste, no canto da saída do labirinto (o guarda distraído de Soldier.GUARDS mexe nele):
+## ponto na face da parede, no chão. Bancada até CONSOLE_DESK da parede (o armário embaixo, com corpo, só até
+## CONSOLE_BASE: a cápsula do guarda cabe na frente) e o teclado na altura dos punhos do guerrilheiro na animação Console
+## (art/heroine_anims.console_keys: 1,077 m, 0,36 m à frente da raiz dele).
+const CONSOLE := Vector3(-SIZE * 0.5 + 0.2, 0, 9.25)
+const CONSOLE_W := 1.1
+const CONSOLE_DESK := 0.5
+const CONSOLE_BASE := 0.32
+const CONSOLE_KEYS_Y := 1.037  # alto do teclado (o punho fechado tem ~4 cm abaixo do centro)
+const CONSOLE_SCREEN := Color(0.3, 1.0, 0.55)
 
 
 ## Centro da célula (coluna, linha) do labirinto, no chão.
@@ -224,6 +243,57 @@ static func _dividers(parent: Node) -> void:
 			# a de cima um pouco menor e torta, como nas pilhas do labirinto
 			var top := Vector3(size.x - 0.04, size.y, size.z - 0.04)
 			block(parent, top, at + Vector3(0, size.y + top.y * 0.5, 0), "crate", 1.0 / top.x, -d[2] * 1.5)
+
+
+## Painel de computador na parede (CONSOLE): armário com a bancada por cima, teclado, painel com a tela acesa e as
+## luzinhas, e uma luz verde fraca na frente (o canto não tem lâmpada: é ela que mostra o guarda).
+static func _console(parent: Node) -> void:
+	var c := CONSOLE
+	var keys_y := CONSOLE_KEYS_Y
+	var desk_y := keys_y - 0.03
+	block(parent, Vector3(CONSOLE_BASE, desk_y - 0.04, CONSOLE_W - 0.1), c + Vector3(CONSOLE_BASE * 0.5, (desk_y - 0.04) * 0.5, 0), "wall", 0.75)
+	_prop(parent, BoxMesh.new(), Vector3(CONSOLE_DESK, 0.04, CONSOLE_W + 0.1), c + Vector3(CONSOLE_DESK * 0.5, desk_y - 0.02, 0), "wall", 1.5)
+	var kb := _prop(parent, BoxMesh.new(), Vector3(0.16, 0.03, 0.46), c + Vector3(CONSOLE_DESK - 0.12, desk_y + 0.015, 0), "wall", 3.0)
+	(kb.material_override as ShaderMaterial).set_shader_parameter("tint", Color(0.25, 0.25, 0.28))  # teclado escuro
+	# painel na parede, tela inclinada para quem está na bancada
+	_prop(parent, BoxMesh.new(), Vector3(0.1, 0.8, CONSOLE_W), c + Vector3(0.05, keys_y + 0.55, 0), "wall", 1.5)
+	var lit := StandardMaterial3D.new()
+	lit.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lit.albedo_color = CONSOLE_SCREEN
+	var screen := _glow(parent, Vector2(0.62, 0.4), c + Vector3(0.105, keys_y + 0.62, 0), lit)
+	# linhas de texto escuras na tela
+	var ink := StandardMaterial3D.new()
+	ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ink.albedo_color = CONSOLE_SCREEN.darkened(0.7)
+	for i in 6:
+		var w := [0.42, 0.3, 0.5, 0.22, 0.36, 0.14][i] as float
+		var line := _glow(screen, Vector2(w, 0.022), Vector3(-0.25 + w * 0.5, 0.14 - i * 0.05, 0.002), ink)
+		line.rotation = Vector3.ZERO
+	# luzinhas embaixo da tela
+	for i in 3:
+		var led := StandardMaterial3D.new()
+		led.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		led.albedo_color = [Color(1, 0.2, 0.15), Color(1, 0.75, 0.2), CONSOLE_SCREEN][i]
+		_glow(parent, Vector2(0.035, 0.035), c + Vector3(0.105, keys_y + 0.32, -0.2 + i * 0.08), led)
+	var o := OmniLight3D.new()
+	o.position = c + Vector3(0.6, keys_y + 0.6, 0)
+	o.light_color = CONSOLE_SCREEN
+	o.light_energy = 0.7
+	o.omni_range = 3.0
+	parent.add_child(o)
+
+
+## Quadro aceso virado para longe da parede oeste (+X).
+static func _glow(parent: Node, size: Vector2, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = size
+	mi.mesh = q
+	mi.material_override = mat
+	mi.rotation_degrees.y = 90.0
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
 
 
 ## Parede de caixas logo atrás da escada do mezanino, do chão até embaixo do piso dele: o nicho da escada não se liga ao

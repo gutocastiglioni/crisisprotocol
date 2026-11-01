@@ -2,7 +2,8 @@ class_name Crosshair
 extends Control
 ## Mira de quando ela aponta a arma (jeito Syphon Filter): uma cruz com um retângulo no meio. O retângulo é feito de dois
 ## colchetes "[ ]" nas laterais e um tracinho no meio da borda de cima e da de baixo; os braços da cruz saem do meio de
-## cada borda para fora (os verticais atravessam um pouco o tracinho) e crescem junto com o retângulo.
+## cada borda para fora (os verticais atravessam um pouco o tracinho) e crescem junto com o retângulo. No centro, um
+## pontinho de tamanho fixo (DOT) marca onde o tiro vai.
 ## Tamanho dinâmico: meia altura = AREA_R m na distância do que está sob ela (inimigo ou cenário), pela lente da câmera
 ## (perto = maior, longe = menor), entre MIN_HALF e LOOSE_MAX, mais o cone em que o próximo tiro sai (`Player.aim_spread`:
 ## a arma, os tiros seguidos e andando). Focada num inimigo (o mesmo, com o tiro livre) ela vai fechando em FOCUS_TIME até
@@ -29,6 +30,7 @@ const MID := 0.33  # meio tracinho de cima e de baixo (× w)
 const ARM_H := 1.0  # braço horizontal da cruz para fora (× w)
 const ARM_V := 1.1  # braço vertical para fora (× h)
 const ARM_IN := 0.15  # o braço vertical entra no retângulo, cruzando o tracinho (× h)
+const DOT := 1.0  # lado do pontinho do centro, em unidades de 240 (não cresce com o retângulo)
 # linha do HEADSHOT (unidades de 240): diagonal do canto de cima à direita, depois reta sob a palavra
 const HEAD_RISE := 9.0
 const HEAD_TEXT := "HEADSHOT"
@@ -146,12 +148,14 @@ func _draw() -> void:
 		segs.append([Vector2(w, -h), knee])
 		segs.append([knee, knee + Vector2(tw + 2.0 * line, 0)])
 		text_at = c + knee + Vector2(line, -2.0 * line)
+	var dot := maxf(line, roundf(DOT * ui_scale))
 	# sombra um pixel abaixo/à direita: a mira não some no chão claro nem no céu
 	for pass_i in 2:
 		var o := c + (Vector2(line, line) if pass_i == 0 else Vector2.ZERO)
 		var col := Color(0, 0, 0, 0.45) if pass_i == 0 else color
 		for sg: Array in segs:
 			draw_line(o + sg[0], o + sg[1], col, line)
+		draw_rect(Rect2(o - Vector2(dot, dot) * 0.5, Vector2(dot, dot)), col)
 	if tag != "":
 		draw_string_outline(font, text_at, tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiStyle.OUTLINE * int(ui_scale), Color.BLACK)
 		draw_string(font, text_at, tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)

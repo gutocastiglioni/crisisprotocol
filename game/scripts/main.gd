@@ -227,6 +227,8 @@ func _ready() -> void:
 		sd.target = player
 		sd.hold_post = g.get("hold", false)
 		sd.flak = g.get("flak", false)
+		sd.weapon = g.get("weapon", Soldier.WEAPON)
+		sd.distracted = g.get("console", false)
 		if g.route.is_empty():
 			sd.position = g.pos
 			sd.rotation.y = g.rot_y
@@ -752,6 +754,17 @@ func _parse_args() -> void:
 		sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	elif _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_setup_soldier_shot()
+	elif _shot == "console":
+		# atrás do guarda distraído no painel (só ele anda; os outros parados): de pé e quieta, ele não a nota
+		for sd in soldiers:
+			if not sd.distracted:
+				sd.process_mode = Node.PROCESS_MODE_DISABLED
+		if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
+			player.global_position = Vector3(-9.2, 0, 10.6)
+			player.rotation.y = deg_to_rad(65.0)
+			player.camera_rig.yaw = player.rotation.y
+			player.reset_physics_interpolation()
+		sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	else:
 		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
 		for sd in soldiers:
