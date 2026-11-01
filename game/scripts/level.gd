@@ -182,6 +182,13 @@ static func maze_cell(c: int, r: int) -> Vector3:
 	return Vector3(MAZE_X0 + c * MAZE_CELL, 0, MAZE_Z0 + r * MAZE_CELL)
 
 
+## Dentro do retângulo do labirinto (no plano)?
+static func in_maze(p: Vector3) -> bool:
+	var h := MAZE_CELL * 0.5
+	var cols := (MAZE[0] as String).length()
+	return p.x > MAZE_X0 - h and p.x < MAZE_X0 + (cols - 0.5) * MAZE_CELL and p.z > MAZE_Z0 - h and p.z < MAZE_Z0 + (MAZE.size() - 0.5) * MAZE_CELL
+
+
 ## Célula do nicho onde fica o pé da escada do mezanino.
 static func maze_ladder_cell() -> Vector2i:
 	return Vector2i(roundi((Catwalk.LADDER_X - MAZE_X0) / MAZE_CELL), roundi((Catwalk.FRONT_Z - 0.4 - MAZE_Z0) / MAZE_CELL))

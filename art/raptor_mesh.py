@@ -6,7 +6,8 @@ Uma pele só, não peças coladas:
   soldados (remove_doubles);
 - onde uma peça sai de outra (coxa e braço do tronco, dedos do pé), uma união booleana do Blender ("self union")
   funde tudo numa superfície fechada, então a sombra passa lisa pela junta;
-- ficam soltas só as peças que precisam: mandíbula (abre), dentes (triângulos) e garras.
+- ficam soltas só as peças que precisam: mandíbula (abre), dentes (triângulos) e garras (cones que continuam
+  os dedos do pé e da mão, como nos modelos da Capcom).
 Peças horizontais usam b_hint = Z: u = 0 no dorso, u = 0.5 na barriga.
 Proporções medidas contra a referência (na mesma escala): tronco em cunha, mais fundo no peito e afinando para o
 quadril, sem pança; coxa forte mas estreita vista de cima; braço comprido; cabeça longa e baixa com arco ósseo sobre o
@@ -70,18 +71,6 @@ def joint(c, rx, ry, w, prev, nxt, push=None, b_hint=None):
     """Anel de emenda entre dois lofts: eixos fixos (tangente de `prev` para `nxt`), para os dois lofts gerarem
     exatamente os mesmos vértices."""
     return R(c, rx, ry, w, push, frame=ring_frame(Vector(nxt) - Vector(prev), b_hint))
-
-
-def claw(mb, base, d, length, rx, ry, bone, drop=0.0):
-    """Garra em cone que continua o dedo (jeito Dino Crisis): a base tem o tamanho da ponta do dedo e entra um pouco
-    nele, a ponta é fina; `drop` abaixa a ponta (curva para baixo). `d` = direção do dedo (normalizada)."""
-    w = {bone: 1}
-    down = Vector((0, 0, -drop))
-    mb.loft([
-        R(base - d * (length * 0.1), rx, ry, w),
-        R(base + d * (length * 0.45) + down * 0.3, rx * 0.5, ry * 0.5, w),
-        R(base + d * length + down, rx * 0.06, ry * 0.06, w),
-    ], "claw", 4, b_hint=Z)
 
 
 # ------------------------------------------------------------------ cadeia da coluna
@@ -186,12 +175,37 @@ def build_teeth(mb):
 
 
 # ------------------------------------------------------------------ pernas e braços
+def claw(mb, base, d, length, rx, ry, bone, drop=0.0):
+    """Garra em cone que continua o dedo (jeito Dino Crisis): a base tem o tamanho da ponta do dedo e entra um pouco
+    nele, a ponta é fina; `drop` abaixa a ponta (curva para baixo). `d` = direção do dedo (normalizada)."""
+    w = {bone: 1}
+    down = Vector((0, 0, -drop))
+    mb.loft([
+        R(base - d * (length * 0.1), rx, ry, w),
+        R(base + d * (length * 0.45) + down * 0.3, rx * 0.5, ry * 0.5, w),
+        R(base + d * length + down, rx * 0.06, ry * 0.06, w),
+    ], "claw", 4, b_hint=Z)
+
+
+def _toe_end(spec, x, k):
+    """Ponta (sem a garra) e direção de cada dedo do chão: (dx da base, dx da ponta, y da ponta, z da ponta)."""
+    for dx0, dx1, y1, z1 in spec:
+        a = Vector((x + k * dx0, S.BALL.y, 0.045))
+        b = Vector((x + k * dx1, y1, z1))
+        yield a, b, (b - a).normalized()
+
+
+# dedos no chão, abertos em leque (Capcom): (dx da base, dx da ponta, y da ponta, z da ponta); III no meio é o maior
+TOES = ((0.0, 0.0, -0.15, 0.03), (0.026, 0.095, -0.11, 0.027), (-0.026, -0.08, -0.10, 0.027))
+TOE_R = ((0.044, 0.04), (0.036, 0.03), (0.026, 0.021))  # (rx, ry) na base, no meio e na ponta
+
+
 def build_leg(mb, s):
     k = 1 if s == "L" else -1
     x = k * S.LEG_X
     th, sh, mt, toe = f"Thigh_{s}", f"Shin_{s}", f"Meta_{s}", f"Toe_{s}"
     knee = joint((x, -0.20, 0.56), 0.06, 0.066, {th: 0.5, sh: 0.5}, (k * 0.175, -0.13, 0.65), (x, -0.12, 0.48))
-    ankle = joint((x, 0.12, 0.20), 0.04, 0.042, {sh: 0.5, mt: 0.5}, (x, -0.03, 0.36), (x, 0.08, 0.12))
+    ankle = joint((x, 0.12, 0.20), 0.062, 0.062, {sh: 0.5, mt: 0.5}, (x, -0.03, 0.36), (x, 0.08, 0.12))
     # coxa: nasce de dentro do quadril (o primeiro anel fica escondido no tronco, então a junta é só a linha onde a
     # coxa sai da pele), larga no alto e afinando rápido até o joelho
     mb.loft([
@@ -206,47 +220,43 @@ def build_leg(mb, s):
     mb.loft([
         knee,
         R((x, -0.12, 0.48), 0.072, 0.085, {sh: 1}, {0: 0.045, 1: 0.022, 7: 0.022}),
-        R((x, -0.03, 0.36), 0.054, 0.062, {sh: 1}, {0: 0.02}),
+        R((x, -0.03, 0.36), 0.062, 0.066, {sh: 1}, {0: 0.02}),
         ankle,
     ], "shin", LEG_SIDES, caps=(False, False))
+    # metatarso grosso como o da Capcom (medido: ~0,14 m de largura na escala dele; antes era um palito)
     mb.loft([
         ankle,
-        R((x, 0.08, 0.12), 0.034, 0.036, {mt: 1}),
-        R((x, 0.04, 0.05), 0.04, 0.036, {mt: 0.5, toe: 0.5}),
+        R((x, 0.08, 0.12), 0.064, 0.058, {mt: 1}),
+        R((x, 0.04, 0.05), 0.07, 0.045, {mt: 0.5, toe: 0.5}),
     ], "meta", LEG_SIDES, caps=(False, True))
-    # dedos III e IV no chão (fundidos ao pé) e dedo II levantado
-    for dx, reach in ((0.0, 0.0), (k * 0.045, 0.05)):
-        tx = x + dx
+    # três dedos no chão (fundidos ao pé): cunhas grossas em leque, de quina em cima, que afinam até a garra
+    (r0, r1, r2) = TOE_R
+    for a, b, _ in _toe_end(TOES, x, k):
+        mid = a.lerp(b, 0.55) + Vector((0, 0, 0.002))
+        scale = 1.0 if (b - a).length > 0.17 else 0.9
         mb.loft([
-            R((tx, 0.05, 0.04), 0.026, 0.026, {toe: 1}),
-            R((tx, -0.07 + reach, 0.032), 0.021, 0.019, {toe: 1}),
-            R((tx, -0.15 + reach, 0.022), 0.011, 0.01, {toe: 1}),
+            R(a, r0[0] * scale, r0[1] * scale, {toe: 1}),
+            R(mid, r1[0] * scale, r1[1] * scale, {toe: 1}),
+            R(b, r2[0] * scale, r2[1] * scale, {toe: 1}),
         ], "toe", 4, b_hint=Z)
-    ix = x - k * 0.035
-    mb.loft([
-        R((ix, 0.04, 0.05), 0.016, 0.016, {mt: 0.5, toe: 0.5}),
-        R((ix, -0.02, 0.05), 0.014, 0.014, {toe: 1}),
-    ], "toe", 4, b_hint=Z)
 
 
 def build_foot_claws(mb, s):
     k = 1 if s == "L" else -1
     x = k * S.LEG_X
     toe = f"Toe_{s}"
-    for dx, reach in ((0.0, 0.0), (k * 0.045, 0.05)):
-        tx = x + dx
-        mb.loft([
-            R((tx, -0.145 + reach, 0.024), 0.008, 0.008, {toe: 1}),
-            R((tx, -0.19 + reach, 0.012), 0.004, 0.004, {toe: 1}),
-            R((tx, -0.205 + reach, 0.0), 0.001, 0.001, {toe: 1}),
-        ], "claw", 4, b_hint=Z)
-    # garra em foice do dedo II
-    ix = x - k * 0.035
+    r2 = TOE_R[2]
+    for a, b, d in _toe_end(TOES, x, k):
+        scale = 1.0 if (b - a).length > 0.17 else 0.9
+        claw(mb, b, d, 0.08 * scale, r2[0] * scale * 0.9, r2[1] * scale * 0.9, toe, drop=0.03)
+    # garra em foice do dedo II, levantada do lado de dentro e alta como a da Capcom (a ponta a ~0,2 m do chão):
+    # grossa na raiz (entra no metatarso)
+    ix = x - k * 0.055
     mb.loft([
-        R((ix, -0.015, 0.06), 0.013, 0.015, {toe: 1}),
-        R((ix, -0.05, 0.105), 0.01, 0.012, {toe: 1}),
-        R((ix, -0.105, 0.10), 0.006, 0.007, {toe: 1}),
-        R((ix, -0.135, 0.06), 0.001, 0.001, {toe: 1}),
+        R((ix, 0.03, 0.08), 0.026, 0.03, {toe: 1}),
+        R((ix, 0.0, 0.15), 0.019, 0.022, {toe: 1}),
+        R((ix, -0.05, 0.195), 0.011, 0.012, {toe: 1}),
+        R((ix, -0.10, 0.17), 0.001, 0.001, {toe: 1}),
     ], "claw", 4, b_hint=Z)
 
 
@@ -263,30 +273,44 @@ def build_arm(mb, s):
     ], "arm", ARM_SIDES, caps=(True, False))
     mb.loft([
         elbow,
-        R(mid_f, 0.044, 0.048, {fore: 1}),
-        R(wr, 0.034, 0.036, {fore: 0.5, hand: 0.5}),
+        R(mid_f, 0.048, 0.052, {fore: 1}),
+        R(wr, 0.042, 0.046, {fore: 0.5, hand: 0.5}),
     ], "arm", ARM_SIDES, caps=(False, True))
 
 
-def build_hand_claws(mb, s):
-    """Três dedos relaxados (juntos, curvados para baixo, garra voltada para trás). Nascem de dentro do antebraço
-    (entram na união com a pele), então a mão não termina numa tampa com os dedos espetados."""
+def hand_fingers(spec, s, spread, length, fan=0.1, bend=0.0):
+    """(raiz, base, junta, direção) de cada um dos três dedos: saem do pulso na direção da mão (`bend` a vira para
+    baixo), abertos em leque no plano da mão (em pé, um dedo acima do outro, como na Capcom) e um pouco para fora
+    (`fan`)."""
     k = 1 if s == "L" else -1
+    el, wr, tip = spec.side(spec.ELBOW, s), spec.side(spec.WRIST, s), spec.side(spec.HAND_TIP, s)
+    d = ((tip - wr).normalized() - Z * bend).normalized()
+    up = (Z - d * d.dot(Z)).normalized()  # perpendicular à mão, para cima
+    out_ = Vector((k, 0, 0))
+    res = []
+    for i in (-1, 0, 1):
+        di = (d + up * (spread * i) + out_ * (fan * (i + 1))).normalized()
+        base = wr + up * (length * 0.3 * i)
+        res.append((wr.lerp(el, 0.12) + up * (length * 0.15 * i), base, base + di * length, di))
+    return res
+
+
+def build_hand(mb, s):
+    """Pata da Capcom: dedos curtos, grossos e achatados (pele) saindo do pulso em leque; as garras vêm depois
+    (build_hand_claws)."""
     hand = f"Hand_{s}"
-    el, wr = S.side(S.ELBOW, s), S.side(S.WRIST, s)
-    root = wr.lerp(el, 0.15)
-    for dx, reach in ((-0.016, 0.85), (0.0, 1.0), (0.016, 0.9)):
-        base = wr + Vector((k * dx, 0, 0))
-        knuckle = base + Vector((k * dx * 0.3, -0.06 * reach, -0.025))
-        bend = knuckle + Vector((-k * dx * 0.2, -0.03 * reach, -0.06 * reach))
-        tip = bend + Vector((0, 0.02, -0.045 * reach))
+    for root, base, knuckle, _ in hand_fingers(S, s, 0.3, 0.05):
         mb.loft([
-            R(root + Vector((k * dx * 0.4, 0, 0)), 0.014, 0.014, {"Forearm_" + s: 0.5, hand: 0.5}),
-            R(base, 0.017, 0.017, {hand: 1}),
-            R(knuckle, 0.013, 0.013, {hand: 1}),
-            R(bend, 0.008, 0.008, {hand: 1}),
-            R(tip, 0.002, 0.002, {hand: 1}),
-        ], "claw", 4)
+            R(root, 0.026, 0.022, {"Forearm_" + s: 0.5, hand: 0.5}),
+            R(base, 0.028, 0.022, {hand: 1}),
+            R(knuckle, 0.022, 0.018, {hand: 1}),
+        ], "toe", 4)
+
+
+def build_hand_claws(mb, s):
+    """Garras retas e compridas em leque, apontadas para a frente e para baixo (jeito Dino Crisis)."""
+    for _, _, knuckle, d in hand_fingers(S, s, 0.3, 0.05):
+        claw(mb, knuckle, d, 0.16, 0.02, 0.017, f"Hand_{s}", drop=0.012)
 
 
 # ------------------------------------------------------------------ montagem
@@ -373,7 +397,7 @@ def build_all(bone_names):
     for s in ("L", "R"):
         build_leg(skin, s)
         build_arm(skin, s)
-        build_hand_claws(skin, s)
+        build_hand(skin, s)
     bmesh.ops.remove_doubles(skin.bm, verts=skin.bm.verts, dist=1e-5)  # solda os anéis das emendas
     # o resto entra no mesmo bmesh, depois da fusão
     mb = MeshBuilder(bone_names, raptor_atlas)
@@ -385,4 +409,5 @@ def build_all(bone_names):
     build_teeth(mb)
     for s in ("L", "R"):
         build_foot_claws(mb, s)
+        build_hand_claws(mb, s)
     return mb

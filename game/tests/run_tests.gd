@@ -10,28 +10,34 @@ const EXPECTED_BONES := [
 ]
 const EXPECTED_ANIMS := ["Idle", "Walk", "Run", "AimIdle", "Shoot", "StrafeL", "StrafeR", "Crouch", "Roll", "Hit", "Death"]
 
-const RAPTOR_TESTS := preload("res://tests/raptor_tests.gd")
-const AI_TESTS := preload("res://tests/ai_tests.gd")
-const SOLDIER_TESTS := preload("res://tests/soldier_tests.gd")
-const GFX_TESTS := preload("res://tests/gfx_tests.gd")
-const MOVES_TESTS := preload("res://tests/moves_tests.gd")
-const WEAPONS_TESTS := preload("res://tests/weapons_tests.gd")
-const BLOOD_TESTS := preload("res://tests/blood_tests.gd")
-const SFX_TESTS := preload("res://tests/sfx_tests.gd")
-const ALLOSAURUS_TESTS := preload("res://tests/allosaurus_tests.gd")
-const SURVIVAL_TESTS := preload("res://tests/survival_tests.gd")
-const KEY_TESTS := preload("res://tests/key_tests.gd")
-const STEALTH_KILL_TESTS := preload("res://tests/stealth_kill_tests.gd")
-const SNIPER_LADDER_TESTS := preload("res://tests/sniper_ladder_tests.gd")
-const START_TESTS := preload("res://tests/start_tests.gd")
-const LAB_GATE_TESTS := preload("res://tests/lab_gate_tests.gd")
-const AMBUSH_TESTS := preload("res://tests/ambush_tests.gd")
-const TOWER_TESTS := preload("res://tests/tower_tests.gd")
-const HURT_TESTS := preload("res://tests/hurt_tests.gd")
-const SUPPLY_DROP_TESTS := preload("res://tests/supply_drop_tests.gd")
-const PAUSE_TESTS := preload("res://tests/pause_tests.gd")
-const HUD_TESTS := preload("res://tests/hud_tests.gd")
-const UI_STYLE_TESTS := preload("res://tests/ui_style_tests.gd")
+## Partes da suíte: [nome, título, script]. `node tools/run_godot_tests.mjs raptor ai` roda só essas
+## (nome = arquivo *_tests.gd sem o sufixo; "core" = os testes deste arquivo). Sem nome, roda tudo nesta ordem.
+const SUITES := [
+	["moves", "movimentos novos e fuzil", preload("res://tests/moves_tests.gd")],
+	["hurt", "golpes e levantar", preload("res://tests/hurt_tests.gd")],
+	["weapons", "escopeta, buracos de bala e disparos", preload("res://tests/weapons_tests.gd")],
+	["key", "container trancado, chave e M79", preload("res://tests/key_tests.gd")],
+	["blood", "sangue e tiro na cabeça", preload("res://tests/blood_tests.gd")],
+	["raptor", "velociraptor", preload("res://tests/raptor_tests.gd")],
+	["ai", "IA, furtividade e pátio da mata", preload("res://tests/ai_tests.gd")],
+	["soldier", "guerrilheiros", preload("res://tests/soldier_tests.gd")],
+	["stealth_kill", "abate furtivo e golpe crítico", preload("res://tests/stealth_kill_tests.gd")],
+	["sniper_ladder", "sniper, passarela e escada", preload("res://tests/sniper_ladder_tests.gd")],
+	["start", "começo da fase: telhado, alçapão, labirinto, queda e sala dos clones", preload("res://tests/start_tests.gd")],
+	["lab_gate", "sala dos clones: plaquetas, tanque vazio do alossauro, chave do painel e portão da pedreira com código",
+		preload("res://tests/lab_gate_tests.gd")],
+	["pause", "menu de pausa (START / ESC)", preload("res://tests/pause_tests.gd")],
+	["hud", "HUD: sensor de perigo, radar e modelo da arma", preload("res://tests/hud_tests.gd")],
+	["ui_style", "design system dos textos: glifos dos botões e caixa de texto", preload("res://tests/ui_style_tests.gd")],
+	["supply_drop", "caixa de paraquedas, pistola com silenciador e neblina do telhado", preload("res://tests/supply_drop_tests.gd")],
+	["ambush", "guerrilheiro morto, chave e emboscada no pátio", preload("res://tests/ambush_tests.gd")],
+	["tower", "torres de guarda do portão: snipers, queda do último, cartão do painel e chave 0M79",
+		preload("res://tests/tower_tests.gd")],
+	["allosaurus", "alossauro e pedreira (última sala)", preload("res://tests/allosaurus_tests.gd")],
+	["survival", "sobrevivência: câmera, armas, munição e dano", preload("res://tests/survival_tests.gd")],
+	["gfx", "visual (PS1/PS2) e atlas", preload("res://tests/gfx_tests.gd")],
+	["sfx", "efeitos sonoros", preload("res://tests/sfx_tests.gd")],
+]
 
 var _failures: Array[String] = []
 var _passed := 0
@@ -78,6 +84,34 @@ func _frames(n: int) -> void:
 
 
 func _run() -> void:
+	var only := _only()
+	var names: Array = SUITES.map(func(t): return t[0]) + ["core"]
+	for n in only:
+		if n not in names:
+			print("parte desconhecida: %s (válidas: %s)" % [n, ", ".join(names)])
+			quit(1)
+			return
+	if only.is_empty() or "core" in only:
+		await _run_core()
+	for t in SUITES:
+		if only.is_empty() or t[0] in only:
+			print("== ", t[1])
+			await t[2].new().run(self)
+	print("\n%d ok, %d falharam" % [_passed, _failures.size()])
+	for f in _failures:
+		print("  - ", f)
+	quit(1 if _failures.size() > 0 else 0)
+
+
+## Partes pedidas depois de "--" (`-- --only=raptor,ai`); vazio = tudo.
+func _only() -> PackedStringArray:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--only="):
+			return a.trim_prefix("--only=").split(",", false)
+	return PackedStringArray()
+
+
+func _run_core() -> void:
 	print("== asset")
 	await test_asset()
 	print("== animação")
@@ -102,54 +136,6 @@ func _run() -> void:
 	print("== movimento avançado")
 	await test_crouch_aim()
 	await test_strafe_right()
-	print("== movimentos novos e fuzil")
-	await MOVES_TESTS.new().run(self)
-	print("== golpes e levantar")
-	await HURT_TESTS.new().run(self)
-	print("== escopeta, buracos de bala e disparos")
-	await WEAPONS_TESTS.new().run(self)
-	print("== container trancado, chave e M79")
-	await KEY_TESTS.new().run(self)
-	print("== sangue e tiro na cabeça")
-	await BLOOD_TESTS.new().run(self)
-	print("== velociraptor")
-	await RAPTOR_TESTS.new().run(self)
-	print("== IA, furtividade e pátio da mata")
-	await AI_TESTS.new().run(self)
-	print("== guerrilheiros")
-	await SOLDIER_TESTS.new().run(self)
-	print("== abate furtivo e golpe crítico")
-	await STEALTH_KILL_TESTS.new().run(self)
-	print("== sniper, passarela e escada")
-	await SNIPER_LADDER_TESTS.new().run(self)
-	print("== começo da fase: telhado, alçapão, labirinto, queda e sala dos clones")
-	await START_TESTS.new().run(self)
-	print("== sala dos clones: plaquetas, tanque vazio do alossauro, chave do painel e portão da pedreira com código")
-	await LAB_GATE_TESTS.new().run(self)
-	print("== menu de pausa (START / ESC)")
-	await PAUSE_TESTS.new().run(self)
-	print("== HUD: sensor de perigo, radar e modelo da arma")
-	await HUD_TESTS.new().run(self)
-	print("== design system dos textos: glifos dos botões e caixa de texto")
-	await UI_STYLE_TESTS.new().run(self)
-	print("== caixa de paraquedas, pistola com silenciador e neblina do telhado")
-	await SUPPLY_DROP_TESTS.new().run(self)
-	print("== guerrilheiro morto, chave e emboscada no pátio")
-	await AMBUSH_TESTS.new().run(self)
-	print("== torres de guarda do portão: snipers, queda do último, cartão do painel e chave 0M79")
-	await TOWER_TESTS.new().run(self)
-	print("== alossauro e pedreira (última sala)")
-	await ALLOSAURUS_TESTS.new().run(self)
-	print("== sobrevivência: câmera, armas, munição e dano")
-	await SURVIVAL_TESTS.new().run(self)
-	print("== visual (PS1/PS2) e atlas")
-	await GFX_TESTS.new().run(self)
-	print("== efeitos sonoros")
-	await SFX_TESTS.new().run(self)
-	print("\n%d ok, %d falharam" % [_passed, _failures.size()])
-	for f in _failures:
-		print("  - ", f)
-	quit(1 if _failures.size() > 0 else 0)
 
 
 func test_asset() -> void:

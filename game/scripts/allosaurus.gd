@@ -5,20 +5,24 @@ extends Enemy
 ## persegue andando pesado e ataca conforme a distância e o lado em que ela está: pisada (perto dos pés: esmaga e
 ## arremessa), cabeçada (perto, do lado da cabeça: derruba para o lado), rabada (atrás dele: o corpo gira e a cauda varre),
 ## mordida (na frente, a meia distância: agarra pelo corpo, sacode e arremessa para o lado), rugido na batalha (abaixa e
-## ruge na cara dela: atordoa só quem está na frente, até ROAR_AT_RANGE) ou investida (longe). Rolar na hora certa
+## ruge na cara dela: atordoa só quem está na frente, até ROAR_AT_RANGE) ou investida (longe). Não deixa que ela o
+## rodeie: com ela fora da frente (HOP_ANGLE) dá um pulinho esgueirado de lado (HopL/HopR) virando para ela; com ela
+## mirando nele de frente, de vez em quando o pulinho é uma esquiva para um lado (DODGE_CHANCE). Rolar na hora certa
 ## esquiva dos golpes (não do rugido). Grande demais para se encolher a cada tiro: só reage (Hit) depois de juntar
-## FLINCH_DAMAGE. Morre em ragdoll (sinal `killed`: fim do jogo).
+## FLINCH_DAMAGE. Casco duro (HARDENED, jeito Syphon Filter): o tiro só machuca de verdade nas costelas (RIBS); cabeça,
+## pescoço, pernas e cauda levam HARDENED_MULT do dano e a mira escreve HARDENED nelas. A granada não passa pelo casco.
+## Morre em ragdoll (sinal `killed`: fim do jogo).
 
 signal killed
 signal attacked(kind: String)
 
 const WALK_ANIM_SPEED := 1.411  # m/s da animação Walk em velocidade 1 (art/allosaurus_anims.py, anim_speed)
 const RUN_ANIM_SPEED := 4.286  # idem Run
-const WALK_SPEED := 1.8
-const RUN_SPEED := 6.2  # mais rápido que ela correndo (4,4): tem que rolar ou se esconder
+const WALK_SPEED := 2.2
+const RUN_SPEED := 7.0  # mais rápido que ela correndo (4,4): tem que rolar ou se esconder
 const STALK_DIST := 6.0
 const MAX_HEALTH := 900
-const FLINCH_DAMAGE := 140
+const FLINCH_DAMAGE := 200
 const ROAR_RANGE := 18.0
 const ROAR_PEAK := 0.667  # quadro 20 do Roar
 const ROAR_COOLDOWN := 14.0
@@ -43,7 +47,22 @@ const TAIL_HIT := Vector2(0.4, 0.75)  # janela em que a cauda varre (quadro 16 d
 const TAIL_REACH := 6.5  # ela atrás dele, até esta distância: rabada
 const TAIL_SPIN := deg_to_rad(70.0)
 const DAMAGE := {"stomp": 30, "bite": 8, "throw": 14, "charge": 22, "headbutt": 18, "tail": 20}
-const COMBAT := ["roar", "roar_at", "stalk", "charge", "stomp", "bite", "hold", "throw", "headbutt", "tail", "recover", "hit"]
+const HOP_AIR := Vector2(0.3, 0.633)  # quadros 9 a 19 do Hop: no ar, levado de lado e virando (art/allosaurus_anims.py)
+const HOP_DIST := 2.0  # m de lado por pulinho
+const HOP_TURN := deg_to_rad(80.0)  # o máximo que um pulinho vira
+const HOP_ANGLE := deg_to_rad(40.0)  # ela mais fora da frente que isto (e não atrás, perto: rabada): pulinho para encará-la
+const HOP_RANGE := 16.0  # só se reposiciona com ela até esta distância (mais longe, vira andando)
+const HOP_NEAR := 4.5  # ela mais perto que isto: o pulinho é para o lado contrário dela (abre espaço)
+const HOP_COOLDOWN := 1.6
+const DODGE_CHANCE := 0.6  # por segundo, com ela mirando nele de frente (DODGE_AIM): pulinho de esquiva
+const DODGE_AIM := deg_to_rad(12.0)  # a frente dela apontada para ele até este ângulo
+const RIBS := ["Spine", "Chest"]  # partes do ragdoll que o tiro machuca (o resto é casco)
+const HARDENED_MULT := 0.05
+const HARDENED_TEXT := "HARDENED"
+const STALK_TIME := Vector2(0.7, 1.5)  # andando atrás dela antes de escolher o golpe
+const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
+const COMBAT := ["roar", "roar_at", "stalk", "charge", "stomp", "bite", "hold", "throw", "headbutt", "tail", "recover", "hit",
+	"hop"]
 
 var model: AllosaurusModel
 var health := MAX_HEALTH
@@ -56,6 +75,10 @@ var _flinch := 0
 var _ticks := 0
 var _spin := 0.0
 var _side := 1.0  # para onde o golpe varre: 1 = esquerda dele
+var airborne := false  # no ar no pulinho: os pés seguem a animação (RaptorModel -> FootPlant.grounded)
+var _hop_cd := 0.0
+var _hop_dir := Vector3.ZERO  # mundo: para onde o pulinho leva
+var _hop_yaw := Vector2.ZERO  # giro do pulinho: de, até
 
 
 func _ready() -> void:
@@ -87,17 +110,21 @@ func _ready() -> void:
 	fov_half = deg_to_rad(70.0)
 	eye_height = 2.7
 	marker_height = 3.8
-	turn_rate = 2.5
+	turn_rate = 3.0
 	patrol_speed = 1.6
 	investigate_speed = 2.0
-	hunt_speed = 5.0
-	head_mult = 1.5
+	hunt_speed = 5.8
+	head_mult = 1.0  # cabeça de casco: sem headshot
+	part_probe = 3.0  # as caixas de colisão dele ficam longe dos ossos
+	armor = HARDENED_MULT
+	armor_name = HARDENED_TEXT
 	_enemy_ready()
 
 
 func _physics_process(delta: float) -> void:
 	_tick(delta)
 	_roar_cd = maxf(_roar_cd - delta, 0.0)
+	_hop_cd = maxf(_hop_cd - delta, 0.0)
 	if not _calm_state(delta):
 		_combat_state(delta)
 	EnemyCrowd.apply_separation(self)
@@ -141,6 +168,8 @@ func _combat_state(delta: float) -> void:
 			_headbutt(delta)
 		"tail":
 			_tail(delta)
+		"hop":
+			_hop(delta)
 		"stalk":
 			_stalk(delta)
 		"charge":
@@ -157,6 +186,8 @@ func _combat_state(delta: float) -> void:
 			_stop(delta)
 			if _has_target():
 				_face(_to_target(), delta, 1.5)
+			if state == "recover" and _t >= _dur * 0.5 and _try_hop(delta):
+				return
 			if _t >= _dur:
 				start_stalk()
 		"dead":
@@ -197,7 +228,60 @@ func start_stalk() -> void:
 		_enter("idle", "Idle")
 		return
 	_enter("stalk", "Walk", 0.3)
-	_dur = rng.randf_range(1.2, 2.4)
+	_dur = rng.randf_range(STALK_TIME.x, STALK_TIME.y)
+
+
+## Pulinho para o lado `side` (1 = esquerda dele) virando até `turn` (rad, somado ao giro de agora).
+func start_hop(side: float, turn: float) -> void:
+	_hop_dir = -global_basis.x * side  # esquerda dele = -X do corpo (o modelo é girado 180°)
+	_hop_yaw = Vector2(rotation.y, rotation.y + clampf(turn, -HOP_TURN, HOP_TURN))
+	_hop_cd = HOP_COOLDOWN
+	_enter("hop", "HopL" if side > 0.0 else "HopR", 0.1)
+
+
+## Ela fora da frente dele: pulinho de lado que termina virado para ela. Ela mirando nele de frente: às vezes, pulinho
+## de esquiva para um lado. Falso se não pulou (no intervalo, sem lugar dos dois lados ou sem motivo).
+func _try_hop(delta: float) -> bool:
+	if _hop_cd > 0.0 or not _has_target() or not _combat_sees():
+		return false
+	var to := _to_target()
+	var dist := to.length()
+	var local := global_basis.inverse() * to
+	var off := absf(angle_difference(rotation.y, atan2(-to.x, -to.z)))
+	var side := 0.0
+	if off > HOP_ANGLE and dist < HOP_RANGE and not (local.z > 0.5 and dist < TAIL_REACH):
+		side = 1.0 if local.x < 0.0 else -1.0  # para o lado dela (-X = esquerda dele)
+		if dist < HOP_NEAR:
+			side = -side
+	elif off < HOP_ANGLE and dist > BITE_RANGE.y and _aimed_at() and rng.randf() < DODGE_CHANCE * delta:
+		side = 1.0 if rng.randf() < 0.5 else -1.0
+	if side == 0.0:
+		return false
+	if not _hop_room(side):
+		side = -side
+		if not _hop_room(side):
+			return false
+	var land := global_position - global_basis.x * side * HOP_DIST
+	var at := _flat(target.global_position - land)
+	start_hop(side, angle_difference(rotation.y, atan2(-at.x, -at.z)))
+	return true
+
+
+## Cabe o pulinho para o lado `side`: nada do cenário no caminho, na altura das coxas.
+func _hop_room(side: float) -> bool:
+	var from := global_position + Vector3.UP * 1.2
+	var dir := -global_basis.x * side
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * (HOP_DIST + 1.2), 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## Ela mirando nele: arma apontada e a frente dela virada para ele.
+func _aimed_at() -> bool:
+	if not target.get("aiming"):
+		return false
+	var to := _flat(global_position - target.global_position)
+	var fwd := _flat(-target.global_basis.z)
+	return to.length() > 0.1 and fwd.length() > 0.1 and fwd.angle_to(to) < DODGE_AIM
 
 
 func start_charge() -> void:
@@ -214,7 +298,7 @@ func start_bite() -> void:
 
 func _recover(time := 0.9) -> void:
 	_enter("recover", "Idle", 0.3)
-	_dur = time
+	_dur = time * RECOVER_SCALE
 
 
 ## Decide o ataque pela distância e pelo lado em que ela está.
@@ -302,6 +386,21 @@ func _tail(delta: float) -> void:
 		_recover(0.6)
 
 
+## Pulinho: agacha, no ar é levado de lado e gira até ficar de frente para ela, pousa e volta a persegui-la.
+func _hop(delta: float) -> void:
+	airborne = _t >= HOP_AIR.x and _t <= HOP_AIR.y
+	if airborne:
+		var speed := HOP_DIST / (HOP_AIR.y - HOP_AIR.x)
+		velocity.x = _hop_dir.x * speed
+		velocity.z = _hop_dir.z * speed
+	else:
+		_stop(delta * 3.0)
+	rotation.y = lerp_angle(_hop_yaw.x, _hop_yaw.y, smoothstep(HOP_AIR.x - 0.1, HOP_AIR.y, _t))
+	if _t >= model.length_of("HopL"):
+		airborne = false
+		start_stalk()
+
+
 ## Persegue andando pesado até a distância de ataque, sempre de frente para ela.
 func _stalk(delta: float) -> void:
 	if not _has_target():
@@ -315,6 +414,8 @@ func _stalk(delta: float) -> void:
 	var local := global_basis.inverse() * _to_target()
 	if local.z > 0.5 and _to_target().length() < TAIL_REACH - 1.0:
 		start_tail()
+		return
+	if _try_hop(delta):
 		return
 	var to := _to_target()
 	var dist := to.length()
@@ -453,6 +554,15 @@ func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 
 
 # ------------------------------------------------------------------ dano
+## Casco: tudo que não é costela (inclusive a cápsula sem parte achada).
+func armor_mult(part: String) -> float:
+	return 1.0 if part in RIBS else armor
+
+
+func armor_tag(part: String) -> String:
+	return "" if part in RIBS else armor_name
+
+
 func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 	if dead:
 		return
@@ -477,6 +587,7 @@ func wound() -> float:
 
 func die(dir := Vector3.ZERO, at: Variant = null) -> void:
 	_release(-global_basis.z * 2.0)
+	airborne = false
 	dead = true
 	state = "dead"
 	_t = 0.0
@@ -496,5 +607,7 @@ func reset() -> void:
 	health = MAX_HEALTH
 	_flinch = 0
 	_roar_cd = 0.0
+	_hop_cd = 0.0
+	airborne = false
 	collision_layer = 2
 	_enter("idle", "Idle", 0.0)

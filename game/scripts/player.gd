@@ -26,6 +26,7 @@ extends CharacterBody3D
 signal health_changed(value: int)
 signal died
 signal headshot(who: Node)
+signal armor_hit(who: Node, tag: String)  ## o tiro bateu numa proteção com nome (Flak Jacket, casco): a mira mostra
 ## aviso para o HUD ("SEM MUNIÇÃO", "PARE PARA ATIRAR", "M16 +15")
 signal notice(text: String)
 ## interagiu com um baú trancado (o main mostra o cadeado e, se ela tem a chave, destranca)
@@ -734,6 +735,8 @@ func fire() -> void:
 				headshot.emit(who)
 			else:
 				who.take_hit(h.damage, h.dir, h.at)
+				if h.armor != "":
+					armor_hit.emit(who, h.armor)
 
 
 ## Abertura (graus) do cone em que o próximo tiro sai: a da arma + a dos tiros seguidos + andando. A mira (Crosshair) mostra.
@@ -766,9 +769,11 @@ func _pellet_hit(hit: Dictionary, dir: Vector3, stats: Dictionary, hits: Diction
 	var wound := float(stats.damage) / DAMAGE * falloff  # tamanho do esguicho (1 = pistola de perto)
 	var who: Node = null
 	var head := false
+	var part := ""
 	if col is PhysicalBone3D:
 		who = Ragdoll.owner_of(col)
-		head = _has_headshot(who) and ((col as PhysicalBone3D).bone_name == "Head" or body_part(who, hit.position, dir) == "Head")
+		part = (col as PhysicalBone3D).bone_name
+		head = _has_headshot(who) and (part == "Head" or body_part(who, hit.position, dir) == "Head")
 		if not (who and who.has_method("take_hit") and not who.get("dead")):
 			# corpo já caído: o tiro empurra a parte atingida
 			Ragdoll.push(col, dir * float(stats.push), hit.position)
@@ -776,15 +781,20 @@ func _pellet_hit(hit: Dictionary, dir: Vector3, stats: Dictionary, hits: Diction
 		Blood.splash(parent, hit.position, dir, hit.normal, wound, head)
 	elif col.has_method("take_hit"):
 		who = col
-		head = _has_headshot(col) and body_part(col, hit.position, dir) == "Head"
+		if _has_headshot(col) or col.has_method("armor_mult"):
+			part = body_part(col, hit.position, dir)
+		head = _has_headshot(col) and part == "Head"
 		Blood.splash(parent, hit.position, dir, hit.normal, wound, head)
 	else:
 		Fx.impact(parent, hit.position, false, hit.normal, (col as Node).get_meta("surface", "concrete"))
 		Fx.decal(col, hit.position, hit.normal, float(stats.hole) * randf_range(0.85, 1.15), int(stats.pellets) > 1)
 	if who:
-		var h: Dictionary = hits.get(who, {"damage": 0, "dir": dir, "at": hit.position, "head": false})
-		var mult: float = float(who.get("head_mult")) if head else 1.0
+		var h: Dictionary = hits.get(who, {"damage": 0, "dir": dir, "at": hit.position, "head": false, "armor": ""})
+		# na cabeça o headshot; no resto, a proteção da parte atingida (colete, casco do alossauro)
+		var mult: float = float(who.get("head_mult")) if head else (who.armor_mult(part) if who.has_method("armor_mult") else 1.0)
 		h.damage += maxi(1, roundi(float(stats.damage) * falloff * mult))
+		if not head and who.has_method("armor_tag") and h.armor == "":
+			h.armor = who.armor_tag(part)
 		if head and not h.head:
 			h.head = true
 			h.at = hit.position  # o golpe do ragdoll vai na cabeça
@@ -879,7 +889,9 @@ func aim_target_info() -> Dictionary:
 ## cápsula cobre o corpo todo, então o raio segue mais um pouco só contra as partes do ragdoll (que acompanham a
 ## animação enquanto ele está vivo).
 func body_part(who: Object, at: Vector3, dir: Vector3) -> String:
-	var q := PhysicsRayQueryParameters3D.create(at - dir * 0.05, at + dir * 0.8, Ragdoll.LAYER, model.ragdoll.body_rids())
+	var probe: Variant = who.get("part_probe")  # bicho grande: a cápsula fica mais longe das partes
+	var reach: float = probe if probe != null else 0.8
+	var q := PhysicsRayQueryParameters3D.create(at - dir * 0.05, at + dir * reach, Ragdoll.LAYER, model.ragdoll.body_rids())
 	var h := get_world_3d().direct_space_state.intersect_ray(q)
 	if h and h.collider is PhysicalBone3D and Ragdoll.owner_of(h.collider) == who:
 		if (h.collider as PhysicalBone3D).bone_name == "Head":

@@ -24,6 +24,7 @@ const NAMES := {
 	"Bite": "MORDIDA", "Shake": "SACODE A PRESA", "TailWhip": "RABADA (ESQ.)", "TailWhipR": "RABADA (DIR.)",
 	"Headbutt": "CABEÇADA (ESQ.)", "HeadbuttR": "CABEÇADA (DIR.)", "Stomp": "PISADA", "Throw": "ARREMESSO",
 	"Hit": "LEVA TIRO", "Death": "MORTE",
+	"HopL": "PULINHO (ESQ.)", "HopR": "PULINHO (DIR.)",
 }
 ## ciclos de locomoção: m/s em velocidade 1 (o mesmo que o jogo usa) = andam no modo EM CÍRCULO
 const GAITS := {

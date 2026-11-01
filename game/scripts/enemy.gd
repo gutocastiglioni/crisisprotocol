@@ -11,6 +11,12 @@ const ALERT_SIGHT := 22.0  # alcance de quem já foi alertado (vezes a visibilid
 const ALERT_FOV_BONUS := deg_to_rad(35.0)  # alertado olha mais para os lados, mas não vê nas costas (dá para escapar por trás)
 const COMBAT_SENSE := 5.0  # em combate, até aqui sabe onde ela está mesmo agachada (com nada no meio)
 const CORPSE_SIGHT := 7.0  # corpo caído no chão só se nota até aqui (de longe, no galpão escuro, passa batido)
+## Grito de gente (`shouts`: ferido sem tê-la notado ou achou um corpo): sai SHOUT_DELAY depois (morto antes disso não grita,
+## só o corpo caindo faz barulho, `hear_death`) e só chega a quem está a SHOUT_RANGE com linha livre ou SHOUT_MUFFLED atrás
+## de caixa/parede.
+const SHOUT_DELAY := 1.0
+const SHOUT_RANGE := 12.0
+const SHOUT_MUFFLED := 4.0
 const SUSPECT_AT := 0.3  # atenção a partir da qual para e olha
 const AWARE_DECAY := 0.3  # por segundo, sem nada de novo
 const ALERT_TIME := 15.0  # depois de alertado, fica caçando por este tempo
@@ -47,6 +53,10 @@ var patrol_speed := 1.4
 var investigate_speed := 2.4
 var hunt_speed := 4.2
 var head_mult := 2.0  # o tiro na cabeça tira esta vez o dano normal (quem atira multiplica); 1 = sem headshot
+var armor_parts: Array = []  # partes protegidas (ossos do ragdoll; "" = bateu na cápsula sem achar parte)
+var armor := 1.0  # fração do dano do tiro que passa pela proteção
+var armor_name := ""  # o que a mira escreve na parte protegida (jeito Syphon Filter, como o HEADSHOT); "" = nada
+var part_probe := 0.8  # m que o tiro segue dentro da cápsula procurando a parte do corpo (Player.body_part)
 var can_stealth := false  # aceita abate furtivo pelas costas (soldado e velociraptor; alossauro nunca)
 var head_yaw := 0.0
 var head_pitch := 0.0
@@ -84,6 +94,9 @@ var nav_map := RID()
 var search_sweeps := SEARCH_SWEEPS  # 0 = só olha em volta onde chegou (sniper preso à passarela)
 var alarm_responders := 99  # quantos do mesmo tipo (os mais perto) saem do posto quando um dá o alarme (raptors: a matilha toda)
 var alarm_walks := false  # vai ao alarme como quem investiga (gente: trote, "?"), em vez de caçar na corrida
+var shouts := false  # gente: ferido ou achando corpo avisa só quem ouve o grito (raptor: o guincho chama a sala toda)
+var _shout_t := -1.0  # > 0: o grito sai quando chegar a 0
+var _shout_at := Vector3.ZERO
 ## Guarda de posto (guardas da porta do pátio): barulho e vulto só o fazem parar e olhar para lá, sem sair do lugar,
 ## até alguém vê-la (alerta: `alert_t` > 0); aí caça e procura como os outros e, quando desiste, volta ao posto.
 var hold_post := false
@@ -148,6 +161,10 @@ func _tick(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 	_trail.update(self, delta, wound())
+	if _shout_t > 0.0:
+		_shout_t -= delta
+		if _shout_t <= 0.0:
+			broadcast_alarm(_shout_at, true)
 	if state == "down":
 		return
 	if not in_combat():
@@ -214,6 +231,14 @@ func take_hit(_amount: int, _dir: Vector3, _at: Vector3, _head := false) -> void
 func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:
 	take_hit(amount, dir, at, true)
 
+## Fração do dano de um tiro que acertou `part` (colete, casco). Granada e golpe furtivo não passam por aqui.
+func armor_mult(part: String) -> float:
+	return armor if part in armor_parts else 1.0
+
+## O que a mira escreve sobre `part` ("" = nada).
+func armor_tag(part: String) -> String:
+	return armor_name if part in armor_parts else ""
+
 ## Quanto da vida já perdeu (0..1): ferido, sangra pelo caminho.
 func wound() -> float:
 	return 0.0
@@ -253,6 +278,7 @@ func _reset_enemy() -> void:
 	alert_t = 0.0
 	_route_i = 0
 	_alarm_delay = -1.0
+	_shout_t = -1.0
 	_lost_t = 0.0
 	_path = PackedVector3Array()
 	_dropped = false
@@ -577,21 +603,47 @@ func _wake_on_alarm(delta: float) -> void:
 			start_hunt(_last_known)
 
 func _raise_alarm() -> void:
+	_alert_self(target.global_position)
+	broadcast_alarm(_last_known)
+
+## Sabe (ou desconfia) que ela está em `at`: alerta só a si mesmo.
+func _alert_self(at: Vector3) -> void:
 	alert_t = ALERT_TIME
 	aware = 1.0
 	_lost_t = 0.0
-	_last_known = target.global_position
-	broadcast_alarm(_last_known)
+	_last_known = at
+
+## Ferido sem tê-la notado ou achou um corpo em `at`: alerta-se e avisa os outros. Gente (`shouts`) grita SHOUT_DELAY depois
+## e só vem quem ouve; raptor/alossauro chamam a sala toda na hora.
+func _alarm_from(at: Vector3) -> void:
+	_alert_self(at)
+	if shouts:
+		_shout_at = at
+		_shout_t = SHOUT_DELAY
+	else:
+		broadcast_alarm(at)
 
 ## Avisa os outros que ela está em `at`, do mais perto ao mais longe (a ordem de cada tipo é o `rank` de `on_alarm`).
-func broadcast_alarm(at: Vector3) -> void:
-	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool: return e is Enemy and e != self and not e.dead)
+## `earshot` = grito: só quem ouve (`_hears_shout`).
+func broadcast_alarm(at: Vector3, earshot := false) -> void:
+	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool:
+		return e is Enemy and e != self and not e.dead and (not earshot or _hears_shout(e)))
 	others.sort_custom(func(a: Enemy, b: Enemy) -> bool: return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
 	var ranks := {}
 	for e: Enemy in others:
 		var kind: Script = e.get_script()
 		e.on_alarm(self, at, ranks.get(kind, 0))
 		ranks[kind] = ranks.get(kind, 0) + 1
+
+## `e` ouve o grito deste: até SHOUT_MUFFLED sempre, até SHOUT_RANGE só com nada do cenário entre as cabeças.
+func _hears_shout(e: Enemy) -> bool:
+	var d := _flat(e.global_position - global_position).length()
+	if d > SHOUT_RANGE:
+		return false
+	if d <= SHOUT_MUFFLED:
+		return true
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * eye_height, e.global_position + Vector3.UP * e.eye_height, 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## Viu a presa: dá o alarme aos outros e reage à sua maneira (`_on_spotted`).
 func spot() -> void:
@@ -888,7 +940,7 @@ func _check_corpses() -> void:
 		_stimulus = e.global_position
 		if d <= 2.2 and not e.has_meta("reported"):
 			e.set_meta("reported", true)
-			_raise_alarm()
+			_alarm_from(e.global_position)  # achou o corpo, não ela: o alarme é o lugar do corpo
 			start_hunt(e.global_position)
 			return
 		elif state in ["idle", "patrol", "look"]:

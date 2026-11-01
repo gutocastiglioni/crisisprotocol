@@ -122,7 +122,7 @@ func _process(delta: float) -> void:
 		return
 	var body := get_parent() as CharacterBody3D
 	if body:
-		feet.grounded = body.is_on_floor()
+		feet.grounded = body.is_on_floor() and body.get("airborne") != true  # pulinho do alossauro: pés soltos
 	if step_db.has(current):
 		for i in 2:
 			var toe := skeleton.global_transform * skeleton.get_bone_global_pose(_toe_bones[i]).origin

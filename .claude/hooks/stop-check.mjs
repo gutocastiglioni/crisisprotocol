@@ -10,7 +10,9 @@ import { join } from 'node:path';
 const MAX_BLOCKS = 3;
 const MAX_LINES = 600;
 const CODE = /\.(ts|tsx|js|jsx|mjs|cjs|vue|svelte|astro|css|scss|html|dart|py|go|rs|java|kt|kts|swift|cs|php|rb|sql|rules)$/;
-const EXEMPT = /(^|\/)(extensions|node_modules|dist|build|\.next|\.dart_tool|\.venv|vendor|supabase\/migrations)\/|\.d\.ts$|database\.types\.ts$|\.generated\.|\.g\.dart$|\.freezed\.dart$|_pb2\.py$/;
+// Godot: mudança aqui dispara os testes, mas fica fora do limite de linhas (vários scripts do jogo já passam dele)
+const ENGINE = /\.(gd|gdshader|tscn)$/;
+const EXEMPT =/(^|\/)(extensions|node_modules|dist|build|\.next|\.dart_tool|\.venv|vendor|supabase\/migrations)\/|\.d\.ts$|database\.types\.ts$|\.generated\.|\.g\.dart$|\.freezed\.dart$|_pb2\.py$/;
 
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const input = (() => { try { return JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { return {}; } })();
@@ -57,6 +59,7 @@ const allChanged = status.stdout.split('\n')
   .map((l) => l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '').trim())
   .filter(Boolean);
 const changed = allChanged.filter((f) => CODE.test(f));
+const tested = allChanged.filter((f) => CODE.test(f) || ENGINE.test(f));
 if (!status.ok || allChanged.length === 0) process.exit(0);
 
 const failures = allChanged.flatMap(secretProblems);
@@ -75,7 +78,7 @@ if (quality) {
   if (scripts.lint) checks.push(['lint', 'npm run -s lint']);
   if (scripts['test:unit']) checks.push(['unit', 'npm run -s test:unit']);
 }
-if (changed.length) {
+if (tested.length) {
   for (const [name, cmd] of checks) {
     const r = run(cmd);
     if (!r.ok) failures.push(`${name} (${cmd}):\n${r.out}`);

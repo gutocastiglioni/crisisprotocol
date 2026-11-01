@@ -18,6 +18,7 @@ var t: SceneTree  # o runner (run_tests.gd)
 func run(runner: SceneTree) -> void:
 	t = runner
 	await test_asset()
+	await test_arms_down()
 	await test_jaw()
 	await test_roar_on_sight()
 	await test_blind()
@@ -85,6 +86,47 @@ func test_asset() -> void:
 		tris += mi.mesh.surface_get_array_index_len(s) / 3
 	check(tris > 800 and tris < 5000, "raptor: orçamento de triângulos, PS2 do começo (800-5000)", str(tris))
 	check(inst.find_child("Mouth", true, false) != null, "raptor: marcador da boca (Mouth)")
+	inst.free()
+
+
+func test_arms_down() -> void:
+	# Em nenhum quadro de nenhuma animação o antebraço sobe acima da horizontal ("braço fazendo muque") nem a mão
+	# aponta para cima: ângulos (do osso, que segue o +Y local) no referencial do peito (frente = +Z do .glb, cima = +Y),
+	# compostos das trilhas.
+	var inst: Node3D = load("res://assets/characters/raptor.glb").instantiate()
+	var sk: Skeleton3D = inst.find_children("*", "Skeleton3D", true, false)[0]
+	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
+	var chest := sk.get_bone_global_rest(sk.find_bone("Chest")).basis
+	var elev := func(v: Vector3) -> float:
+		var w := chest * v
+		return rad_to_deg(atan2(w.y, w.z))
+	var local := func(anim: Animation, bone: String, time: float) -> Transform3D:
+		var i := sk.find_bone(bone)
+		var tr := sk.get_bone_rest(i)
+		for k in anim.get_track_count():
+			if anim.track_get_type(k) == Animation.TYPE_ROTATION_3D and anim.track_get_path(k).get_concatenated_subnames() == bone:
+				tr.basis = Basis(anim.rotation_track_interpolate(k, time))
+		return tr
+	var rest_fore: float = elev.call((sk.get_bone_rest(sk.find_bone("Arm_L")) * sk.get_bone_rest(sk.find_bone("Forearm_L"))).basis * Vector3.UP)
+	check(rest_fore < -10.0 and rest_fore > -40.0, "raptor: antebraço em repouso para a frente e para baixo", "%.1f" % rest_fore)
+	var worst := ""
+	var top := -INF
+	for a in EXPECTED_ANIMS:
+		var anim := ap.get_animation(a)
+		var time := 0.0
+		while time <= anim.length + 1e-4:
+			for s in ["L", "R"]:
+				var arm: Transform3D = local.call(anim, "Arm_" + s, time)
+				var fore: Transform3D = arm * local.call(anim, "Forearm_" + s, time)
+				var hand: Transform3D = fore * local.call(anim, "Hand_" + s, time)
+				var f: float = elev.call(fore.basis * Vector3.UP)
+				var h: float = elev.call(hand.basis * Vector3.UP)
+				for pair in [[f, 10.0, "antebraço"], [h, 0.0, "mão"]]:
+					if pair[0] - pair[1] > top:
+						top = pair[0] - pair[1]
+						worst = "%s %s_%s t=%.2f %.1f°" % [a, pair[2], s, time, pair[0]]
+			time += 1.0 / 30.0
+	check(top <= 0.0, "raptor: antebraço até a horizontal e mão para baixo em todas as animações", worst)
 	inst.free()
 
 

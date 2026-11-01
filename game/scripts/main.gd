@@ -9,7 +9,10 @@ extends Node3D
 ##            (câmera de revisão em volta dele; --yaw=graus gira a câmera; --playercam usa a câmera dela)
 ##   sangue:  --shot=soldier_headshot|soldier_wounded|raptor_blood  (esguicho/poça: --at=segundos)
 ##   alossauro:  --shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end
-##               (na pedreira; --yaw, --playercam)
+##               |allo_hop  (na pedreira; --yaw, --playercam; allo_hop = ela do lado dele, ele pula para encará-la)
+##               allo_aim [--part=Head|Chest|Thigh_L...]: a câmera dela mirando a parte, atira em 2 s (casco = HARDENED
+##               na mira por 1 s: --at=2.3)
+##   Flak Jacket:  --shot=flak [--part=Chest|Head]  (mirando o sentinela da porta da sala dos clones; atira em 2 s, --at=2.3)
 ##   pedreira:  --shot=arena (a câmera dela olhando a sala da entrada; --pos=x,z[,graus] para outro ponto)
 ##   --pitch=graus inclina a câmera dela junto com --yaw (> 0 = para cima; mirando, a arma acompanha)
 ##   M79 e chave:  --shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79  (locked/unlock/key_get salvam
@@ -57,6 +60,7 @@ const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roo
 ## revisão das torres de guarda do portão do pátio e do cartão do painel (ver _setup_tower_shot)
 const TOWER_SHOTS := ["towers", "tower_fall", "gate_card"]
 const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
+const AIM_SHOT_AT := 2.0  # capturas allo_aim / flak: quando ela atira
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
 const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparece (dá tempo de ver o corpo cair)
@@ -124,6 +128,7 @@ var _dist := 2.0  # --dist: distância da revisão da caixa de paraquedas
 var _show := {"creature": "raptor", "anim": "", "move": 0}  # --shot=showroom
 var _review_cam: Camera3D
 var _player_cam := false
+var _part := ""  # --part=: parte mirada nas capturas allo_aim / flak
 
 
 func _ready() -> void:
@@ -221,6 +226,7 @@ func _ready() -> void:
 		var sd := Soldier.new()
 		sd.target = player
 		sd.hold_post = g.get("hold", false)
+		sd.flak = g.get("flak", false)
 		if g.route.is_empty():
 			sd.position = g.pos
 			sd.rotation.y = g.rot_y
@@ -709,6 +715,8 @@ func _parse_args() -> void:
 				apply_gfx(g)
 		elif a == "--playercam":
 			_player_cam = true
+		elif a.begins_with("--part="):
+			_part = a.get_slice("=", 1)
 		elif a == "--pad":
 			UiStyle.pad = true  # captura com os glifos do controle
 		elif a.begins_with("--yaw="):
@@ -770,6 +778,13 @@ func _parse_args() -> void:
 		allosaurus.process_mode = Node.PROCESS_MODE_DISABLED
 		for r in raptors:
 			r.process_mode = Node.PROCESS_MODE_DISABLED
+	elif _shot == "flak":
+		# 6 m na frente do sentinela de Flak Jacket da esquerda da porta da sala dos clones (parado), mirando
+		_still_target(soldiers[9])
+		player.global_position = soldiers[9].global_position - soldiers[9].global_basis.z * 6.0
+		player.rotation.y = soldiers[9].rotation.y + PI
+		player.camera_rig.yaw = player.rotation.y
+		player.reset_physics_interpolation()
 	elif _shot == "face":
 		# close do rosto (--yaw gira em volta dela: 0 = de frente)
 		_review_cam = Camera3D.new()
@@ -898,6 +913,8 @@ func _process(delta: float) -> void:
 		_raptor_shot(at)
 	elif _shot.begins_with("allo_"):
 		_allo_shot(at)
+	elif _shot == "flak":
+		_aim_part(soldiers[9].model.ragdoll.bodies[_part if _part != "" else "Chest"].global_position, at)
 	if _shot.begins_with("soldier") or _shot == "assassinate_soldier":
 		_soldier_shot(at)
 	if _review_cam and _shot in COMPARE_SHOTS:
@@ -1568,6 +1585,7 @@ func _setup_allo_shot() -> void:
 	var her := {
 		"stomp": fwd * 2.6, "bite": fwd * 4.2, "roar": fwd * 9.0, "roar_at": fwd * 7.0, "idle": fwd * 14.0,
 		"headbutt": fwd * 2.2 + left * 2.2, "tail": -fwd * 4.5 + left * 1.5, "dead": fwd * 8.0, "end": fwd * 8.0,
+		"hop": fwd * 4.5 + left * 6.0, "aim": fwd * 1.5 - left * 9.0,
 	}
 	player.global_position = a.global_position + her.get(_shot.trim_prefix("allo_"), fwd * 8.0)
 	player.rotation.y = PI * 0.5
@@ -1578,11 +1596,16 @@ func _setup_allo_shot() -> void:
 	_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_review_cam.fov = 55.0
 	add_child(_review_cam)
-	_review_cam.current = not _player_cam
+	_review_cam.current = not _player_cam and _shot != "allo_aim"
+	if _shot == "allo_aim":
+		_still_target(a)  # parado: só a mira
 
 
 func _allo_shot(at: Callable) -> void:
 	var a := allosaurus
+	if _shot == "allo_aim":
+		_aim_part(a.model.ragdoll.bodies[_part if _part != "" else "Head"].global_position, at)
+		return
 	if at.call(0.15):
 		match _shot:
 			"allo_roar": a.start_roar()
@@ -1591,6 +1614,7 @@ func _allo_shot(at: Callable) -> void:
 			"allo_tail": a.start_tail()
 			"allo_stomp": a.start_stomp()
 			"allo_bite": a.start_bite()
+			"allo_hop": a.start_stalk()
 			"allo_dead", "allo_end": a.take_hit(9999, Vector3.FORWARD, a.global_position + Vector3.UP * 2.5)
 	if _shot == "allo_end" and at.call(0.2):
 		_end_t = 0.3  # na revisão a tela de fim não espera o corpo cair
@@ -1606,6 +1630,25 @@ func _allo_shot(at: Callable) -> void:
 	var yaw := deg_to_rad(155.0) if is_nan(_yaw) else _yaw
 	_review_cam.global_position = mid + Vector3(sin(yaw), 0.0, cos(yaw)) * dist + Vector3.UP * 2.6
 	_review_cam.look_at(mid + Vector3.UP * 1.6)
+
+
+## Inimigo parado para as capturas de mira: sem processar, mas com o corpo e as partes do ragdoll na física (o raio da
+## mira e o tiro os acham).
+func _still_target(e: Enemy) -> void:
+	e.disable_mode = CollisionObject3D.DISABLE_MODE_KEEP_ACTIVE
+	for c in e.find_children("*", "CollisionObject3D", true, false):
+		(c as CollisionObject3D).disable_mode = CollisionObject3D.DISABLE_MODE_KEEP_ACTIVE
+	e.process_mode = Node.PROCESS_MODE_INHERIT
+	e.process_mode = Node.PROCESS_MODE_DISABLED
+
+
+## Captura com a câmera dela mirando o ponto `p`; um tiro em AIM_SHOT_AT s (a proteção só aparece na mira depois dele:
+## salve com --at um pouco depois).
+func _aim_part(p: Vector3, at: Callable) -> void:
+	Input.action_press("aim")
+	player.camera_rig.look_at_point(p)
+	if at.call(AIM_SHOT_AT):
+		player.fire()
 
 
 func _save_and_quit() -> void:

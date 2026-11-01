@@ -39,7 +39,11 @@ if (imp.status !== 0) {
   process.exit(1);
 }
 // passo fixo de 1/60 s: o tempo de jogo é o mesmo, mas sem esperar o relógio (minutos -> segundos)
-const r = spawnSync(godot, ['--headless', '--fixed-fps', '60', '--path', '.', '--script', 'res://tests/run_tests.gd'], opts);
+// nomes depois do comando = só essas partes da suíte (ex.: `node tools/run_godot_tests.mjs raptor ai`)
+const only = process.argv.slice(2);
+const args = ['--headless', '--fixed-fps', '60', '--path', '.', '--script', 'res://tests/run_tests.gd'];
+if (only.length) args.push('--', `--only=${only.join(',')}`);
+const r = spawnSync(godot, args, opts);
 if (r.error) {
   console.error(`não foi possível rodar o Godot: ${r.error.message}`);
   process.exit(1);

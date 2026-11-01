@@ -27,6 +27,10 @@ const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anter
 const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
 const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "engage", "hit"]
+const VEST_PARTS := ["Spine", "Chest", ""]  # o colete cobre o tronco ("" = tiro na cápsula: o meio do corpo)
+const VEST_MULT := 0.5  # colete comum: tiro no tronco tira metade (braços, pernas e cabeça sem proteção)
+const FLAK_MULT := 0.12  # Flak Jacket: o tronco quase não sente, só a cabeça (ou braço/perna) resolve
+const FLAK_TEXT := "FLAK JACKET"
 ## Guardas do galpão/pátio. Cada ronda tem um ponto cego (`BLIND_SPOTS`): corpo ali fica atrás das paredes de caixas
 ## (`Level.DIVIDERS`) ou além de `Enemy.CORPSE_SIGHT` dos sentinelas, do sniper e das outras rondas, então matá-la ali em
 ## silêncio não alerta ninguém (ai_tests `test_blind_spot_kills`). Fora dele outra ronda acha o corpo quando passa:
@@ -40,8 +44,8 @@ const COMBAT := ["alert", "engage", "hit"]
 ## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
 ##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
 ## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
-## - 9, 10: porta norte (portão da sala dos clones), sentinelas nos cantos da plataforma de carga
-## - 11: ronda em T da porta norte, desce até a fileira de caixas do meio
+## - 9, 10: porta norte (portão da sala dos clones), sentinelas nos cantos da plataforma de carga, de Flak Jacket ("flak")
+## - 11: ronda em T da porta norte, desce até a fileira de caixas do meio (colete comum)
 const GUARDS := [
 	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
 	{"route": [Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0), Vector3(10.5, 0, -9.0), Vector3(11.4, 0, 1.4)]},
@@ -52,8 +56,8 @@ const GUARDS := [
 	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
 	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true},
 	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
-	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": []},
-	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": []},
+	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true},
+	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true},
 	{"route": [Vector3(2.4, 0, -9.4), Vector3(2.4, 0, -0.2), Vector3(0.2, 0, -0.2), Vector3(4.2, 0, -0.2), Vector3(2.4, 0, -0.2)]},
 ]
 ## Índice em GUARDS de cada ronda -> pontos da rota onde o corpo fica fora da vista de todos (testes).
@@ -76,6 +80,7 @@ var _strafe_t := 0.0
 var shots_fired := 0
 var engage_dist := ENGAGE_DIST
 var keep_dist := KEEP_DIST
+var flak := false  # Flak Jacket no lugar do colete comum (antes de entrar na árvore)
 
 
 func _ready() -> void:
@@ -106,12 +111,16 @@ func _ready() -> void:
 		drop_is_weapon = true
 		drop_amount = 15
 	head_mult = 10.0  # tiro na cabeça mata na hora (até chumbo de escopeta de longe)
+	armor_parts = VEST_PARTS
+	armor = FLAK_MULT if flak else VEST_MULT
+	armor_name = FLAK_TEXT if flak else ""
 	can_stealth = true
 	arrival_dist = 0.7
 	# gente procura com calma: só os 2 mais perto saem quando um dá o alarme, andando, e vasculham mais pontos
 	alarm_responders = 2
 	alarm_walks = true
 	search_sweeps = 3
+	shouts = true
 	engage_dist = ENGAGE_DIST + rng.randf_range(-1.0, 1.0)
 	keep_dist = KEEP_DIST + rng.randf_range(-0.4, 0.4)
 	_enemy_ready()
@@ -443,7 +452,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 		die(dir, at, head)
 		return
 	if not in_combat() and _has_target():
-		_raise_alarm()  # levou tiro sem tê-la notado: já sabe onde ela está e avisa os outros
+		_alarm_from(target.global_position)  # levou tiro sem tê-la notado: sabe onde ela está e grita um instante depois
 	model.hit(dir)
 	_enter("hit", "Idle", 0.05)
 	model.set_aim(true)

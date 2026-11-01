@@ -11,6 +11,7 @@ func run(runner: SceneTree) -> void:
 	await test_soldier_shoots_and_misses()
 	await test_soldier_presses_fire()
 	await test_soldier_dies()
+	await test_vest_and_flak()
 	await test_soldier_backs_off()
 	await test_shared_alarm()
 	await test_soldier_loses_target()
@@ -260,6 +261,68 @@ func test_soldier_dies() -> void:
 	s.reset()
 	await t._frames(3)
 	check(not s.dead and s.health == Soldier.MAX_HEALTH and s.collision_layer == 2 and not s.model.is_ragdoll(), "reset: de pé e vivo")
+
+
+## Colete: o tiro de verdade no tronco tira VEST_MULT do dano (braço, perna e cabeça sem desconto). Os 2 sentinelas da
+## porta da sala dos clones têm Flak Jacket: o tronco quase não sente e a mira escreve FLAK JACKET; a ronda de lá não.
+func test_vest_and_flak() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -6))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	await t._frames(5)
+	var stats := p.weapon_stats("pistol")
+	var shot := func(who: Soldier, bone: String) -> int:
+		var pt: Vector3 = who.model.ragdoll.bodies[bone].global_position
+		var dir := -who.global_basis.z  # de frente para ele
+		var hits := {}
+		p._pellet_hit({"collider": who, "position": pt - dir * 0.3, "normal": -dir}, dir, stats, hits)
+		return hits[who].damage if hits.has(who) else 0
+	var full := int(stats.damage)
+	check(shot.call(s, "Chest") == roundi(full * Soldier.VEST_MULT), "colete: tiro no peito tira metade", str(shot.call(s, "Chest")))
+	check(shot.call(s, "UpperLeg_L") == full, "colete: perna sem desconto", str(shot.call(s, "UpperLeg_L")))
+	check(s.armor_tag("Chest") == "", "colete comum: a mira não escreve nada")
+	var f := Soldier.new()
+	f.flak = true
+	f.target = p
+	f.position = Vector3(3, 0, 0)
+	f.rotation.y = PI
+	pr[2].add_child(f)
+	await t._frames(5)
+	check(shot.call(f, "Chest") == roundi(full * Soldier.FLAK_MULT), "Flak Jacket: o peito quase não sente", str(shot.call(f, "Chest")))
+	check(f.armor_tag("Chest") == Soldier.FLAK_TEXT and f.armor_tag("Head") == "", "Flak Jacket: a mira escreve FLAK JACKET no tronco")
+	# a mira de verdade: mirando o peito não entrega nada; o tiro bate no Flak Jacket e a linha leva FLAK JACKET; na
+	# cabeça, HEADSHOT
+	var cross := Crosshair.new()
+	cross.player = p
+	cross.ui_scale = 2.0
+	pr[2].add_child(cross)
+	Input.action_press("aim")
+	await t._frames(30)
+	for bone in ["Chest", "Head"]:
+		for k in 20:
+			p.camera_rig.look_at_point(f.model.ragdoll.bodies[bone].global_position)
+			await t._frames(1)
+		cross.update(0.016, true)
+		if bone == "Chest":
+			check(cross.tag == "", "mira no peito do Flak Jacket, sem atirar: nada escrito", cross.tag)
+			var hp := f.health
+			p.fire()
+			await t._frames(2)
+			cross.update(0.016, true)
+			check(hp - f.health == roundi(full * Soldier.FLAK_MULT) and cross.tag == Soldier.FLAK_TEXT,
+				"atirou no peito: FLAK JACKET na mira e quase nenhum dano", "%s dano=%d" % [cross.tag, hp - f.health])
+			cross.update(Crosshair.ARMOR_TIME + 0.1, true)
+			check(cross.tag == "", "o nome da proteção some depois de ARMOR_TIME", cross.tag)
+		else:
+			check(cross.tag == Crosshair.HEAD_TEXT, "mira na cabeça do Flak Jacket: HEADSHOT", cross.tag)
+	Input.action_release("aim")
+	f.take_headshot(full * int(f.head_mult), Vector3.BACK, f.global_position + Vector3.UP * 1.6)
+	check(f.dead, "Flak Jacket: o tiro na cabeça mata igual")
+	var flak := []
+	for i in Soldier.GUARDS.size():
+		if Soldier.GUARDS[i].get("flak", false):
+			flak.append(i)
+	check(flak == [9, 10], "Flak Jacket só nos 2 sentinelas da porta da sala dos clones (a ronda não)", str(flak))
 
 
 func test_soldier_backs_off() -> void:

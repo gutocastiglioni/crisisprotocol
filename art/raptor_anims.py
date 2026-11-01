@@ -96,13 +96,17 @@ def _foot(spec):
 STANCE = {"L": (BALL[0] + 0.08, GROUND), "R": (BALL[0] - 0.12, GROUND)}
 FEET_TOGETHER = {"L": (BALL[0] + 0.02, GROUND), "R": (BALL[0] - 0.06, GROUND)}
 
+# Braços: o antebraço fica para a frente e um pouco para baixo, a mão pendurada com as garras à frente (Dino Crisis).
+# O antebraço em pé é a soma Arm + Forearm (em repouso ele aponta ~23° para baixo): passando de ~25 ele sobe acima da
+# horizontal e vira braço "fazendo muque". As poses abaixo somam por cima destas (merge), então cada uma compensa no
+# Forearm o que põe a mais no Arm.
 ARMS_TUCKED = {
-    "Arm_L": (20, 0, 8), "Forearm_L": (40, 0, 0), "Hand_L": (-20, 0, 0),
-    "Arm_R": (20, 0, 8), "Forearm_R": (40, 0, 0), "Hand_R": (-20, 0, 0),
+    "Arm_L": (25, 0, 8), "Forearm_L": (-15, 0, 0), "Hand_L": (-20, 0, 0),
+    "Arm_R": (25, 0, 8), "Forearm_R": (-15, 0, 0), "Hand_R": (-20, 0, 0),
 }
 ARMS_OUT = {
-    "Arm_L": (60, 0, 35), "Forearm_L": (10, 0, 0), "Hand_L": (-10, 0, 0),
-    "Arm_R": (60, 0, 35), "Forearm_R": (10, 0, 0), "Hand_R": (-10, 0, 0),
+    "Arm_L": (50, 0, 35), "Forearm_L": (-30, 0, 0), "Hand_L": (-15, 0, 0),
+    "Arm_R": (50, 0, 35), "Forearm_R": (-30, 0, 0), "Hand_R": (-15, 0, 0),
 }
 IDLE = merge(ARMS_TUCKED, {
     "loc": (0, 0, -0.03),
@@ -271,11 +275,12 @@ def study_keys():
 
 CROUCH = merge(ARMS_TUCKED, {
     "loc": (0, 0.02, -0.22), "Hips": (-10, 0, 0), "Neck1": (-15, 0, 0), "Head": (10, 0, 0),
-    "Tail1": (8, 0, 0), "Jaw": (-15, 0, 0), "Arm_L": (30, 0, 7), "Arm_R": (30, 0, 7),
+    "Tail1": (8, 0, 0), "Jaw": (-15, 0, 0), "Arm_L": (15, 0, 7), "Arm_R": (15, 0, 7),
+    "Forearm_L": (-15, 0, 0), "Forearm_R": (-15, 0, 0),
 })
 POUNCE = merge(ARMS_OUT, {
     "Hips": (10, 0, 0), "Neck1": (-10, 0, 0), "Jaw": (-45, 0, 0), "Tail1": (-5, 0, 0),
-    "Arm_L": (10, 0, -10), "Arm_R": (10, 0, -10),
+    "Arm_L": (10, 0, -10), "Arm_R": (10, 0, -10), "Forearm_L": (-10, 0, 0), "Forearm_R": (-10, 0, 0),
     "Thigh_L": (55, 0, 6), "Shin_L": (-40, 0, 0), "Meta_L": (60, 0, 0), "Toe_L": (-30, 0, 0),
     "Thigh_R": (50, 0, 6), "Shin_R": (-35, 0, 0), "Meta_R": (55, 0, 0), "Toe_R": (-30, 0, 0),
 })
@@ -288,7 +293,7 @@ PUSH = merge(ARMS_OUT, {
 LUNGE = merge(ARMS_TUCKED, {
     "loc": (0, 0.18, -0.08), "Hips": (-4, 0, 0), "Chest": (-4, 0, 0),
     "Neck1": (-24, 0, 0), "Neck2": (-6, 0, 0), "Head": (20, 0, 0), "Jaw": (-42, 0, 0),
-    "Arm_L": (60, 0, 15), "Arm_R": (60, 0, 15),
+    "Arm_L": (50, 0, 15), "Arm_R": (50, 0, 15), "Forearm_L": (-45, 0, 0), "Forearm_R": (-45, 0, 0),  # garras à frente
 })
 
 
@@ -349,14 +354,17 @@ def anim_speed(g):
 
 def actions():
     """nome -> lista de (frame, pose)."""
-    walk_up = merge(ARMS_TUCKED, {"Neck1": (-16, 0, 0), "Neck2": (-2, 0, 0), "Head": (15, 0, 0), "Tail1": (2, 0, 0)})
+    # os ciclos balançam os braços para cima e para baixo (arm/arm_swing): a base fica mais baixa para o alto do
+    # balanço não passar da horizontal
+    walk_up = merge(ARMS_TUCKED, {"Neck1": (-16, 0, 0), "Neck2": (-2, 0, 0), "Head": (15, 0, 0), "Tail1": (2, 0, 0),
+                                  "Forearm_L": (-5, 0, 0), "Forearm_R": (-5, 0, 0)})
     stalk_up = merge(ARMS_TUCKED, {
         "Neck1": (-26, 0, 0), "Neck2": (-6, 0, 0), "Head": (26, 0, 0), "Jaw": (-6, 0, 0), "Tail1": (8, 0, 0), "Tail2": (-2, 0, 0),
-        "Arm_L": (15, 0, -4), "Arm_R": (15, 0, -4), "Forearm_L": (25, 0, 0), "Forearm_R": (25, 0, 0),
+        "Arm_L": (5, 0, -4), "Arm_R": (5, 0, -4), "Forearm_L": (-5, 0, 0), "Forearm_R": (-5, 0, 0),
     })
     run_up = merge(ARMS_TUCKED, {
         "Neck1": (-20, 0, 0), "Neck2": (-5, 0, 0), "Head": (18, 0, 0), "Jaw": (-10, 0, 0),
-        "Tail1": (6, 0, 0), "Arm_L": (40, 0, 8), "Arm_R": (40, 0, 8), "Forearm_L": (60, 0, 0), "Forearm_R": (60, 0, 0),
+        "Tail1": (6, 0, 0), "Arm_L": (20, 0, 8), "Arm_R": (20, 0, 8), "Forearm_L": (-30, 0, 0), "Forearm_R": (-30, 0, 0),
     })
     return {
         "Idle": idle_arms(idle_keys(), ARMS_TUCKED, amp=0.8),

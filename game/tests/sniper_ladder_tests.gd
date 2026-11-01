@@ -380,16 +380,21 @@ func test_sniper_catwalk_patrol_and_lateral_look() -> void:
 	var max_x := -99.0
 	var looked_lateral := false
 	var looked_at_wall := false
+	var looked_down := false
 	
 	for i in 650:
 		await t._frames(1)
 		min_x = minf(min_x, sniper.global_position.x)
 		max_x = maxf(max_x, sniper.global_position.x)
 		
-		# Ao andar ao longo da passarela (+X ou -X), a cabeça deve olhar para o galpão (-Z / lateral)
-		if sniper.state == "patrol" and absf(sniper.velocity.x) > 0.1:
-			if absf(sniper.head_yaw) > 0.1:
+		# Ao andar ao longo da passarela (+X ou -X), a cabeça deve olhar para o galpão (-Z / lateral), nunca para a parede
+		if sniper.state == "patrol" and absf(sniper.velocity.x) > 0.1 and absf(sniper.head_yaw) > 0.3:
+			var look := sniper.rotation.y + sniper.head_yaw
+			if -cos(look) < -0.2:
 				looked_lateral = true
+			else:
+				looked_at_wall = true
+			looked_down = looked_down or sniper.head_pitch <= Sniper.DOWN_AT
 		
 		# O sniper NUNCA deve olhar diretamente para a parede de trás (+Z, rotation.y ~ PI)
 		if absf(sniper.rotation.y) > PI * 0.55:
@@ -398,6 +403,7 @@ func test_sniper_catwalk_patrol_and_lateral_look() -> void:
 	check(max_x - min_x > 2.0, "sniper anda ao longo da passarela (delta_x=%.2f > 2.0m)" % (max_x - min_x))
 	check(looked_lateral, "sniper olha para a lateral (galpão abaixo) enquanto patrulha")
 	check(not looked_at_wall, "sniper nunca fica olhando para a parede atrás dele (+Z)")
+	check(looked_down, "na ronda o sniper também olha para baixo (as caixas do labirinto)")
 
 
 func test_rear_crates_and_ladder_discovery() -> void:

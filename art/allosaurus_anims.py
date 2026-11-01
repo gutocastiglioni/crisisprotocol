@@ -1,7 +1,7 @@
 """Animações do alossauro em keyframes (30 fps), mesma convenção de ângulos de `raptor_anims.py` (ver o cabeçalho de lá).
 Parado, andar, correr, rugido (o de quando a vê, cabeça para cima), rugido na batalha (abaixado, voltado para ela),
 farejar, pisada, mordida (bote baixo até a altura de uma pessoa), sacudir a presa, arremesso, cabeçada e rabada (dos dois
-lados) e reação a tiro. A morte é ragdoll (Godot). Os quadros que o jogo usa estão nas constantes abaixo.
+lados), pulinho esgueirado de lado (dos dois lados) e reação a tiro. A morte é ragdoll (Godot). Os quadros que o jogo usa estão nas constantes abaixo.
 
 O IK das pernas e o ciclo de passos são os do raptor: `base` é uma cópia de `raptor_anims` carregada com as medidas do
 alossauro no lugar de `raptor_spec` (mesmos nomes de ossos), então `ground`/`leg_ik`/`gait` plantam os pés dele.
@@ -61,6 +61,7 @@ ROAR_PEAK = 20
 ROAR_AT_PEAK = 16  # rugido na batalha, abaixado e voltado para ela
 HEAD_HIT = 12  # cabeçada: a cabeça passa pelo lado
 TAIL_HIT = 16  # rabada: a cauda passa por trás
+HOP_UP, HOP_DOWN = 9, 19  # pulinho: os pés saem do chão / tocam de novo (o jogo o leva de lado entre os dois)
 # bicho pesado: rola mais sobre a perna de apoio, a cabeça balança menos, a cauda pesa
 WALK = dict(frames=48, step=1, stride=1.4, duty=0.62, lift=0.21, height=-0.07, bob=0.05, sway=6.0, roll=6.0, yaw=6.0,
             push=16.0, low=0.08, surge=0.03, nod=2.0, tail_bob=2.5, arm=7.0, shift=0.09, wave=4.0, thrust=2.5,
@@ -204,6 +205,26 @@ def study_keys():
             (90, ground(IDLE))]
 
 
+def hop_keys():
+    """Pulinho esgueirado para a esquerda dele (o jogo leva o corpo de lado e o vira para ela entre HOP_UP e
+    HOP_DOWN): agacha baixo carregando a perna direita, empurra inclinando para a esquerda, os pés saem do chão
+    encolhidos, pousa agachado e volta. Cabeça baixa e na frente da virada, cauda para o outro lado."""
+    low = {"Neck1": (-12, 0, 6), "Neck2": (-4, 0, 6), "Head": (10, 0, 4), "Jaw": (-6, 0, 0),
+           "Arm_L": (35, 0, 6), "Arm_R": (35, 0, 6), "Forearm_L": (-10, 0, 0), "Forearm_R": (-10, 0, 0)}
+    tail = lambda z, x=0: {f"Tail{i + 1}": (x, 0, z * (0.8 + 0.15 * i)) for i in range(3)}
+    crouch = merge(IDLE, low, tail(-4, 1), {"loc": (0.10, 0.02, -0.24), "Hips": (-5, 3, 0), "Chest": (-4, 0, 0)})
+    push = merge(IDLE, low, tail(6, -3), {"loc": (-0.12, 0.04, -0.04), "Hips": (-3, -8, 4), "Spine": (0, 0, 4),
+                                          "Neck1": (-10, 0, 12), "Neck2": (-4, 0, 10)})
+    air = merge(IDLE, low, tail(10, -4), {"loc": (-0.08, 0.04, 0.36), "Hips": (-2, -6, 6), "Spine": (0, 0, 5),
+                                          "Neck1": (-8, 0, 14), "Neck2": (-2, 0, 10), "Jaw": (-14, 0, 0)})
+    land = merge(IDLE, low, tail(4, 1), {"loc": (-0.04, 0.02, -0.28), "Hips": (-6, -3, 2), "Chest": (-5, 0, 0)})
+    tucked = {"L": (BALL[0] + 0.30, GROUND + 0.55), "R": (BALL[0] + 0.05, GROUND + 0.42)}
+    return [
+        (0, ground(IDLE)), (5, ground(crouch)), (HOP_UP, ground(push)), (14, ground(air, tucked)),
+        (HOP_DOWN, ground(merge(land, {"loc": (-0.06, 0.02, -0.06)}))), (23, ground(land)), (34, ground(IDLE)),
+    ]
+
+
 def actions():
     """nome -> lista de (frame, pose)."""
     walk_up = merge(ARMS, {"Neck1": (-6, 0, 0), "Head": (5, 0, 0), "Tail1": (2, 0, 0)})
@@ -228,6 +249,8 @@ def actions():
         "HeadbuttR": [(f, mirror(p)) for f, p in headbutt_keys()],
         "TailWhip": tail_whip_keys(),  # cauda varre para a esquerda dele
         "TailWhipR": [(f, mirror(p)) for f, p in tail_whip_keys()],
+        "HopL": hop_keys(),  # pulinho para a esquerda dele
+        "HopR": [(f, mirror(p)) for f, p in hop_keys()],
     }
 
 

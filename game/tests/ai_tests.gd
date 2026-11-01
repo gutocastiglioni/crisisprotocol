@@ -24,6 +24,7 @@ func run(runner: SceneTree) -> void:
 	await test_yard_nav()
 	await test_main_scene_patrols()
 	await test_blind_spot_kills()
+	await test_shout_earshot()
 	await test_doors_seal_rooms()
 	await test_unreachable_hunt_gives_up()
 	await test_sniper_forgets()
@@ -518,6 +519,71 @@ func test_blind_spot_kills() -> void:
 		check(noticed, "morte %s é notada" % c[2])
 		main.queue_free()
 		await t.process_frame
+
+
+## Gente avisa gritando (`Enemy.shouts`): ferido sem tê-la notado grita `SHOUT_DELAY` depois (morto antes, nada) e quem acha
+## um corpo grita na hora; o grito só chega a quem está perto com linha livre, não à sala toda.
+func test_shout_earshot() -> void:
+	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto do vão do sul (5); as rondas
+	# dependem de onde estão na hora do grito
+	var far := [2, 3, 4, 5]
+	# ronda 6 morta no alto do corredor: o sentinela 9 ouve o corpo cair e vai lá; achando o corpo, grita
+	var main: Node = await _main_scene()
+	var v: Soldier = main.soldiers[6]
+	v.global_position = Vector3(-1.5, 0, -6.0)
+	v.route.clear()
+	v.reset_physics_interpolation()
+	await t._frames(5)
+	v.take_headshot(34, Vector3.FORWARD, v.global_position + Vector3.UP * 1.6)
+	var finder: Soldier = main.soldiers[9]
+	var heard := {}  # quem se alertou -> distância até o 9 na hora
+	for i in 60 * 12:
+		await t._frames(1)
+		for e: Enemy in t.get_nodes_in_group("enemies"):
+			if e.alert_t > 0.0 and not heard.has(e):
+				heard[e] = Vector2(e.global_position.x - finder.global_position.x, e.global_position.z - finder.global_position.z).length()
+	var names := func(list: Array) -> String:
+		return str(list.map(func(e: Enemy) -> String: return "%s %d" % [e.get_script().get_global_name(), main.soldiers.find(e) if e is Soldier else -1]))
+	check(heard.has(finder), "quem acha o corpo de perto se alerta", names.call(heard.keys()))
+	check(heard.has(main.soldiers[10]), "o grito dele chega ao sentinela ao lado")
+	var leaked: Array = heard.keys().filter(func(e: Enemy) -> bool:
+		return e != finder and (not e is Soldier or main.soldiers.find(e) in far or heard[e] > Enemy.SHOUT_RANGE))
+	check(leaked.is_empty(), "o grito não chega a quem está longe ou atrás das caixas (nem ao sniper)", names.call(leaked))
+	main.queue_free()
+	await t.process_frame
+	# ferido e morto logo em seguida (no ponto cego do 6): ninguém fica sabendo
+	main = await _main_scene()
+	v = main.soldiers[6]
+	v.global_position = Soldier.BLIND_SPOTS[6][0]
+	v.route.clear()
+	v.reset_physics_interpolation()
+	await t._frames(5)
+	v.take_hit(17, Vector3.FORWARD, v.global_position + Vector3.UP * 1.2)
+	await t._frames(roundi(60 * Enemy.SHOUT_DELAY * 0.6))
+	v.take_headshot(34, Vector3.FORWARD, v.global_position + Vector3.UP * 1.6)
+	var told := false
+	for i in 60 * 12:
+		await t._frames(1)
+		told = told or t.get_nodes_in_group("enemies").any(func(e: Enemy) -> bool: return e != v and e.alert_t > 0.0)
+	check(not told, "ferido e morto antes de gritar: ninguém fica sabendo")
+	main.queue_free()
+	await t.process_frame
+	# ferido e vivo: grita depois de SHOUT_DELAY, o vizinho vem e os de longe não
+	main = await _main_scene()
+	var w: Soldier = main.soldiers[9]
+	await t._frames(5)
+	w.take_hit(5, Vector3.FORWARD, w.global_position + Vector3.UP * 1.2)
+	await t._frames(roundi(60 * Enemy.SHOUT_DELAY * 0.6))
+	var early: bool = main.soldiers[10].alert_t > 0.0
+	await t._frames(roundi(60 * Enemy.SHOUT_DELAY))
+	check(not early and main.soldiers[10].alert_t > 0.0, "ferido grita depois de SHOUT_DELAY e o vizinho ouve",
+		"antes=%s depois=%.1f" % [early, main.soldiers[10].alert_t])
+	# a ala norte (0, 3, 4, 7) tem linha livre até ele a menos de SHOUT_RANGE: ouve; o canto da M16 (1, 2) e o de posto atrás
+	# das caixas do sul (5) não
+	var far_told: Array = [1, 2, 5].filter(func(i: int) -> bool: return main.soldiers[i].alert_t > 0.0)
+	check(far_told.is_empty(), "grito do ferido não chega à sala toda", str(far_told))
+	main.queue_free()
+	await t.process_frame
 
 
 func _main_scene() -> Node:

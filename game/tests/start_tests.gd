@@ -13,10 +13,12 @@ func run(runner: SceneTree) -> void:
 	await test_roof_and_hatch()
 	await test_fall_damage()
 	await test_sniper_ladder_window()
+	await test_sniper_looks_down_at_maze()
 	await test_roof_unnoticed()
 	await test_sniper_knocks_off_ladder()
 	await test_clone_lab_and_cutscene()
 	await test_sniper_patrol_in_level()
+	await test_sniper_spots_standing_in_maze()
 	await test_blood_smell()
 
 
@@ -374,6 +376,39 @@ func test_sniper_ladder_window() -> void:
 	p.moves.cancel()
 
 
+## Com a cabeça baixa (Sniper.LOOK_DOWN) o sniper do mezanino enxerga as caixas do labirinto: em pé num corredor à vista
+## ele a vê, agachada as pilhas a tapam; de cabeça erguida, ou no chão fora do labirinto, o ponto cego segue valendo.
+func test_sniper_looks_down_at_maze() -> void:
+	var w := await _level_world()
+	Level.build(w)
+	w.add_child(Catwalk.new())
+	var cell := Level.maze_cell(3, 1)
+	t.check(_open(3, 1) and Level.in_maze(cell) and not Level.in_maze(Vector3(cell.x, 0.0, 4.0)), "corredor da frente do labirinto conta como labirinto")
+	var p: Player = t._spawn_player(w, cell)
+	var s := Sniper.new()
+	s.target = p
+	s.position = Vector3(-1.5, Catwalk.FLOOR_Y, 11.7)
+	w.add_child(s)
+	await t._frames(5)
+	s.process_mode = Node.PROCESS_MODE_DISABLED  # a cabeça fica onde o teste põe
+	p.process_mode = Node.PROCESS_MODE_DISABLED
+	s.rotation.y = 0.0
+	s.head_yaw = 0.0
+	p.global_position = cell
+	p.stealth.update(0.016)
+	s.head_pitch = -0.15
+	t.check(not s._sees_target(), "cabeça erguida: em pé no labirinto ela fica no ponto cego")
+	s.head_pitch = Sniper.LOOK_DOWN
+	t.check(s._sees_target(), "olhando para baixo: em pé no corredor ele a vê")
+	p.crouching = true
+	p.stealth.update(0.016)
+	t.check(not s._sees_target(), "olhando para baixo: agachada as pilhas a tapam")
+	p.crouching = false
+	p.global_position = Vector3(cell.x, 0.0, 4.0)
+	p.stealth.update(0.016)
+	t.check(not s._sees_target(), "fora do labirinto, no início da sala: ponto cego mesmo olhando para baixo")
+
+
 ## No telhado ela está fora do alcance de todos: passos, tiro e vista não atravessam a laje (nem alertados).
 func test_roof_unnoticed() -> void:
 	var w := await _level_world()
@@ -541,6 +576,36 @@ func test_sniper_patrol_in_level() -> void:
 	t.check(min_x < -2.8 and max_x > -0.2 and not corner, "sniper faz a ronda do mezanino sem ir para a quina", "x %.2f..%.2f quina=%s" % [min_x, max_x, corner])
 	main.queue_free()
 	await t._frames(2)
+
+
+## Na fase de verdade, na ronda dele: parada em pé num corredor do labirinto à vista do mezanino, o sniper olha para
+## baixo e a vê; agachada no mesmo lugar, não. Os outros inimigos ficam fora de cena (só o sniper pode avistá-la).
+func test_sniper_spots_standing_in_maze() -> void:
+	for crouched in [false, true]:
+		var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+		t.get_root().add_child(main)
+		await t._frames(5)
+		for n in t.get_nodes_in_group("enemies"):
+			if n != main.sniper:
+				(n as Enemy).lurking = true
+		var s: Sniper = main.sniper
+		var p: Player = main.player
+		p.global_position = Level.maze_cell(3, 1)
+		p.velocity = Vector3.ZERO
+		p.crouching = crouched
+		var looked_down := false
+		var spotted := -1.0
+		for i in 60 * 40:
+			await t.physics_frame
+			looked_down = looked_down or s.head_pitch <= Sniper.DOWN_AT
+			if spotted < 0.0 and (s.in_combat() or s.alert_t > 0.0):
+				spotted = i / 60.0
+		if crouched:
+			t.check(spotted < 0.0 and looked_down, "agachada no labirinto: o sniper olha para baixo e não a vê", "visto em %.1f s" % spotted)
+		else:
+			t.check(spotted >= 0.0 and looked_down, "em pé no labirinto: na ronda o sniper olha para baixo e a vê", "visto em %.1f s" % spotted)
+		main.queue_free()
+		await t._frames(2)
 
 
 ## Na beira do telhado do lado do pátio (Roof.near_yard), uma vez só: o jogo para com a mensagem do cheiro de sangue

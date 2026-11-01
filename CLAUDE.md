@@ -64,7 +64,11 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Regerar arte: `python tools/make_textures.py && python tools/make_sounds.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_guerrilla_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py && blender --background --factory-startup --python art/build_guerrilla.py`
   (Blender em `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`)
 - Prévia no Blender: `blender --background art/heroine.blend --python art/preview.py -- <pasta> turntable|anims|Acao:f1,f2` (ou `art/raptor.blend`)
-- Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 240 s)
+- Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 240 s).
+  Só algumas partes: `node tools/run_godot_tests.mjs raptor ai` (nome = arquivo `*_tests.gd` sem o sufixo; `core` = os
+  testes de dentro do `run_tests.gd`; tabela `SUITES` no `run_tests.gd`).
+- CI (`.github/workflows/ci.yml`, a cada push na main e PR): só segredos no histórico (gitleaks) e esta suíte no Godot 4.7.2
+  do Linux. Nada de etapa de web/backend (RLS, DAST, responsividade, semgrep/osv): não se aplicam ao jogo.
 - Rodar o jogo: `godot --path game` (F2 alterna o visual PS1/PS2; `-- --gfx=ps2` já começa no PS2; F3 alterna o perfil SOBREVIVENCIA/ARCADE e reinicia; `-- --mode=arcade` já começa no arcade)
 - Captura do jogo: `godot --path game -- --capture=out.png --shot=idle|aim|run|crouch|roll|ragdoll|dummy [--yaw=graus] [--at=segundos]`
   Rosto: `--shot=face [--yaw=graus]`. Visual: `--gfx=ps1|ps2`.
@@ -87,9 +91,21 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Golpes: `--shot=hit_crouch|stagger|getup|getup_fwd` (câmera de revisão de lado; getup = desaba de costas e levanta girando,
   getup_fwd = arremessada pelas costas, levanta de bruços; `--at` escolhe o quadro).
   HUD: `--shot=danger|danger_roll` (no galpão na mira dos guardas da porta do pátio; danger_roll rola em 2,6 s; `--at` escolhe o quadro).
-  Alossauro: `--shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end [--playercam]`; pedreira: `--shot=arena`.
+  Alossauro: `--shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end|allo_hop [--playercam]`; pedreira: `--shot=arena`.
+  Mira nas proteções: `--shot=allo_aim --part=Head|Chest|Tail2|...` (de lado para ele) e `--shot=flak --part=Chest|Head` (sentinela da
+  porta da sala dos clones); ela atira em 2 s e a proteção aparece na mira por 1 s: `--at=2.3`.
   Depois de regerar um .glb/.png, `godot --headless --path game --import` (rodar o jogo não reimporta sozinho).
   (a primeira execução depois de editar scripts reimporta o projeto e pode sair com a cena errada: rode de novo).
+
+## Verificação e revisão (vale por cima da regra global e da skill `fullstack-feature`)
+- A suíte inteira roda sozinha no hook (`.claude/hooks/stop-check.mjs`) no fim de todo turno que mudou código, `.gd`,
+  `.gdshader` ou `.tscn` incluídos. Não rodar a suíte inteira na mão antes de encerrar (o hook repete); enquanto
+  desenvolve, rodar só as partes mexidas (ver Comandos).
+- Neste projeto NÃO chamar os agentes `e2e-qa`, `security-reviewer` nem `ui-verifier`: não há backend, rede, contas nem
+  dados pessoais, e a suíte do Godot já prova o comportamento. "Pronto" = suíte do hook passando + capturas `--shot` da
+  mudança olhadas por mim. O `security-reviewer` volta a valer se o jogo ganhar rede, salvamento online, contas ou loja.
+- Capturas: só as `--shot` que mostram a mudança, na janela padrão 1280x720. A matriz de telas abaixo só para mudança de
+  HUD, telas de inspeção ou pausa.
 
 ## Verificação visual
 - Neste projeto NÃO testar nem capturar tela de celular em pé (retrato: 360/375/430 x ~800): gasta token e tempo à toa.
@@ -156,7 +172,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   mais aberto (`ALERT_FOV_BONUS`, nunca nas costas) e alcance `ALERT_SIGHT * visibility()` (agachada/capim ainda esconde). Em combate só
   sabe onde ela está com linha livre (`_combat_sees`, `COMBAT_SENSE`): parede/caixa corta o rastro; sem vê-la por `LOSE_TIME` (3 s) →
   `hunt` → `search` → esquece (`alert_t`/`aware` = 0) e volta à rota.
-  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS` (índice = número no comentário dele): porta do pátio 2 sentinelas (3, 4), 2 de posto (`"hold"`, 5, 7) e a ronda em T 0 (tronco pelo vão da parede de caixas do sul, barra na frente dela); baú da M16 o sentinela 2 e a ronda 1 (frente do canto da M16, desce pela parede leste); porta norte (portão da sala dos clones) 2 sentinelas (9, 10) e a ronda em T 11 (até a fileira de caixas do meio); no meio a ronda 6 (do vão leste das caixas, desce por um corredor entre duas paredes de caixas e sai bem na frente da rota do 8: tem que ser eliminada no corredor) e a ronda 8 (da quina perto da coluna, atravessa na frente do labirinto até o canto da M16). Cada ronda tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas de `Level.DIVIDERS`): morta ali em silêncio, ninguém nota, nem as outras rondas passando; `Soldier.RISK_SPOTS` são pontas que só a ronda 8 vê de passagem; os verticais 6 e 11 se veem na descida. Morte só é notada com linha livre: o barulho do corpo caindo (`Enemy.hear_death`, 6 m) e `on_nearby_kill` não atravessam caixa/parede, e corpo caído só é visto até `Enemy.CORPSE_SIGHT` (7 m); o tiro segue sendo ouvido como sempre (`Player.make_noise`). Caixas baixas (`Level.LOW_CRATE_H` 1,5 m) escondem ela agachada inteira (cabeça a ~1,3 m) e ainda dão para escalar. Testes: `ai_tests.test_blind_spot_kills` (uma ronda morta por vez, as outras andando). Os de posto ficam dentro do canto cercado pelas paredes de caixas `Level.DIVIDERS` (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`) os de posto têm `Enemy.hold_post`: barulho/vulto só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`alert_t` > 0); depois da busca voltam ao posto; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
+  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS` (índice = número no comentário dele): porta do pátio 2 sentinelas (3, 4), 2 de posto (`"hold"`, 5, 7) e a ronda em T 0 (tronco pelo vão da parede de caixas do sul, barra na frente dela); baú da M16 o sentinela 2 e a ronda 1 (frente do canto da M16, desce pela parede leste); porta norte (portão da sala dos clones) 2 sentinelas de Flak Jacket (9, 10) e a ronda em T 11 (até a fileira de caixas do meio); no meio a ronda 6 (do vão leste das caixas, desce por um corredor entre duas paredes de caixas e sai bem na frente da rota do 8: tem que ser eliminada no corredor) e a ronda 8 (da quina perto da coluna, atravessa na frente do labirinto até o canto da M16). Cada ronda tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas de `Level.DIVIDERS`): morta ali em silêncio, ninguém nota, nem as outras rondas passando; `Soldier.RISK_SPOTS` são pontas que só a ronda 8 vê de passagem; os verticais 6 e 11 se veem na descida. Morte só é notada com linha livre: o barulho do corpo caindo (`Enemy.hear_death`, 6 m) e `on_nearby_kill` não atravessam caixa/parede, e corpo caído só é visto até `Enemy.CORPSE_SIGHT` (7 m); o tiro segue sendo ouvido como sempre (`Player.make_noise`). Gente (`Enemy.shouts`: soldado e sniper) avisa gritando (`_alarm_from`): ferido sem tê-la notado grita `SHOUT_DELAY` (1 s) depois (morto antes disso = só o `hear_death`) e quem acha um corpo a 2,2 m grita com o lugar do corpo (não o dela); o grito só chega a `SHOUT_RANGE` (12 m) com linha livre ou `SHOUT_MUFFLED` (4 m) atrás de caixa/parede (`broadcast_alarm(at, true)`). Raptor/alossauro seguem chamando a sala toda; vê-la (`spot`) também segue avisando a sala toda. Teste: `ai_tests.test_shout_earshot`. Caixas baixas (`Level.LOW_CRATE_H` 1,5 m) escondem ela agachada inteira (cabeça a ~1,3 m) e ainda dão para escalar. Testes: `ai_tests.test_blind_spot_kills` (uma ronda morta por vez, as outras andando). Os de posto ficam dentro do canto cercado pelas paredes de caixas `Level.DIVIDERS` (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`) os de posto têm `Enemy.hold_post`: barulho/vulto só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`alert_t` > 0); depois da busca voltam ao posto; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
   tiros instantâneos com descanso de 0,3–0,7 s, chance de acerto cai com distância/agachada/correndo e a cada tiro da rajada (`BURST_DECAY`),
   rolar esquiva; ela some atrás de algo = `SUPPRESS_TIME` de fogo de supressão onde ela estava, que não acerta; avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
   Corpo do guerrilheiro = mesmas animações e mecânica de passo da heroína: `adapt_anims` não mexe em pose nenhuma (a corrida
@@ -243,6 +259,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   em todo corredor do labirinto e no nicho da escada do mezanino (passam debaixo das mãos-francesas do mezanino, `Catwalk.BRACE_Y` acima da cabeça); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
   Na escada, entrando/saindo pelo topo e nos `Hatch.HIDDEN_RUNGS` degraus abaixo do alto do ciclo (`Ladder.hidden_top`, `PlayerMoves.hidden_on_ladder`) fica escondida de todos, mesmo alertados; abaixo, o sniper a vê se estiver olhando para o canto: o tiro
   derruba da escada (`PlayerMoves.knock_off_ladder`) e a queda sem controle mata (`Player.KNOCKED_*`).
+  Na ronda o sniper do mezanino alterna entre o galpão e as caixas lá embaixo (`Sniper.LOOK_DOWN`; desconfiado de algo no
+  labirinto segue de cabeça baixa): de cabeça baixa o ponto cego não vale no labirinto (`Level.in_maze`) e ele vê quem está
+  em pé num corredor à vista; agachada entre as pilhas, não.
 - Teto da sala dos clones (`Roof.LAB_Y`, 1,5 m acima da laje: sobe escalando a parede do fundo do galpão; mureta nos três lados
   de fora; `Roof.has` conta ele como telhado) com a caixa de paraquedas (`SupplyDrop`, no fundo, em `SupplyDrop.POS`): caixa
   oliva torta, lona murcha e cordas; E na frente = o mesmo `PlayerMoves.start_pickup` do baú (ajoelha em `kneel_transform`,
@@ -280,6 +299,12 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   vê → ruge (`ROAR_RANGE`: `Player.daze(3 s)`, não fere; volta a rugir com `ROAR_COOLDOWN`) → persegue andando (`stalk`) e escolhe:
   pisada (perto: o pé que desce fere e arremessa, o tremor só empurra), mordida (à frente: `Player.grab`, sacode e arremessa para a
   esquerda dele com `release`) ou investida (longe). Rolar esquiva de pisada e mordida. Só reage a tiro depois de `FLINCH_DAMAGE`.
+  Não se deixa rodear: com ela fora da frente (`HOP_ANGLE`, até `HOP_RANGE`, sem ser a rabada) dá um pulinho esgueirado de lado
+  (`start_hop`, animações HopL/HopR; no ar entre `HOP_AIR` é levado `HOP_DIST` de lado e gira até ficar de frente para ela; perto
+  dela, `HOP_NEAR`, pula para o lado contrário) e com ela mirando nele de frente às vezes pula como esquiva (`DODGE_CHANCE`);
+  intervalo `HOP_COOLDOWN`. No ar `airborne` = `FootPlant.grounded` falso (pés seguem a animação).
+  Casco (HARDENED): só as costelas (`RIBS` = partes Spine/Chest do ragdoll) levam o dano cheio; cabeça, pescoço, quadril, pernas e
+  cauda levam `HARDENED_MULT` (sem headshot, `head_mult` 1); a granada não passa pelo casco.
   Morte em ragdoll → sinal `killed` → tela de fim do `main` (FIM, tempo, tiros; R reinicia). Atordoada: estado "dazed" da
   heroína (animação Dazed), aviso "ATORDOADA" no HUD; golpe, mordida ou reinício acabam com ela.
 - Tela 16:9: resolução interna `Gfx.RES` 854x480 (PS2) / 427x240 (PS1), janela padrão 1280x720 (as capturas saem em 16:9);
@@ -293,7 +318,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   dinâmico: `AREA_R` m na distância do que está sob ela pela lente da câmera (perto = maior, até `LOOSE_MAX`) + cone do
   próximo tiro (`Player.aim_spread`: arma, tiros seguidos, andando); focada no mesmo inimigo com tiro livre fecha em
   `FOCUS_TIME` até `FOCUS_HALF` (`focus_t`), saiu dele abre; na cabeça de quem tem headshot (`Player.body_part`) uma linha
-  sai do canto de cima até "HEADSHOT". Corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
+  sai do canto de cima até "HEADSHOT"; tiro que bateu numa proteção com nome (`Player.armor_hit`) põe esse nome na mesma linha
+  por `ARMOR_TIME` (FLAK JACKET, HARDENED; só depois do disparo, mirar não entrega). Corre para o tamanho (`SMOOTH`); verde, vermelha no alvo, cinza bloqueada.
   Furtividade no radar: fundo e moldura pulsam na cor do maior `alert_level` (mais rápido quanto pior) e embaixo dele um olho +
   VISÍVEL/INVISÍVEL (`Radar.INVISIBLE_AT` da `visibility()`, telhado ou alto da escada; nunca com alguém a vendo, `Enemy.has_eyes_on`)
   e o estado (DESCONFIADOS / BUSCA ATIVA / ALERTA!); o olho fecha escondida, olha para os lados na busca e fica vermelho no alerta.
@@ -373,3 +399,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Headshot: tiro que passa pela parte "Head" do ragdoll (as partes acompanham a animação; a cápsula é atravessada por
   `Player.body_part`) multiplica o dano por `head_mult` do alvo e chama `take_headshot` (HUD "HEADSHOT"). Soldado ×10 e `Soldier.take_headshot` mata sempre (qualquer arma/distância); a cabeça conta também por proximidade do raio (`HEAD_HIT_RADIUS`),
   alvo ×4; raptor `head_mult = 1` = sem headshot (cabeçudo).
+- Proteção por parte (`Enemy.armor_parts/armor/armor_name`, `armor_mult(part)`/`armor_tag(part)`): o tiro (`Player._pellet_hit`, parte
+  do ragdoll achada por `body_part`, até `part_probe` m dentro da cápsula) fora da cabeça multiplica o dano pela proteção. Guerrilheiro e
+  sniper de colete (`Soldier.VEST_PARTS` = tronco, `VEST_MULT` 0,5); os 2 sentinelas da porta da sala dos clones (`"flak"` em
+  `Soldier.GUARDS`) de Flak Jacket (`FLAK_MULT`, a mira escreve FLAK JACKET); alossauro, ver Alossauro. `take_hit` direto (granada,
+  testes) não passa pela proteção.

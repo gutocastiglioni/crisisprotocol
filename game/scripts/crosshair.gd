@@ -8,7 +8,9 @@ extends Control
 ## a arma, os tiros seguidos e andando). Focada num inimigo (o mesmo, com o tiro livre) ela vai fechando em FOCUS_TIME até
 ## FOCUS_HALF; saiu dele ou ele trocou, abre de novo. O tamanho corre para o novo valor (SMOOTH), sem pular.
 ## Na cabeça de quem tem headshot (`Player.body_part` = "Head", `Player._has_headshot`) sai do canto de cima uma linha
-## até a palavra HEADSHOT.
+## até a palavra HEADSHOT. Quando um tiro dela bate numa proteção com nome (`Player.armor_hit` <- `Enemy.armor_tag`:
+## FLAK JACKET no tronco dos sentinelas da sala dos clones, HARDENED no casco do alossauro), a mesma linha leva esse nome
+## por ARMOR_TIME (só depois do disparo: mirar não entrega a proteção).
 ## Cor: verde sem alvo, vermelha sobre um inimigo vivo, cinza se o tiro bate antes num obstáculo.
 ## Camada sem escala do HUD (ancorada no centro da tela); `ui_scale` = altura da resolução interna / 240.
 
@@ -30,6 +32,7 @@ const ARM_IN := 0.15  # o braço vertical entra no retângulo, cruzando o tracin
 # linha do HEADSHOT (unidades de 240): diagonal do canto de cima à direita, depois reta sob a palavra
 const HEAD_RISE := 9.0
 const HEAD_TEXT := "HEADSHOT"
+const ARMOR_TIME := 1.0  # s com o nome da proteção depois do tiro que bateu nela
 const FREE := UiStyle.ACTION
 const ON_TARGET := UiStyle.DANGER
 const BLOCKED := UiStyle.MUTED
@@ -40,6 +43,9 @@ var half := 0.0  # meia altura agora (pixels da resolução interna)
 var goal := 0.0  # meia altura para onde corre
 var color := FREE
 var head := false  # mirando a cabeça de quem tem headshot
+var tag := ""  # escrito na ponta da linha: HEADSHOT, a proteção em que o último tiro bateu ou nada
+var armor_t := 0.0  # s que o nome da proteção ainda fica
+var _armor_tag := ""
 var focus_t := 0.0  # s focada no mesmo inimigo
 var _focus_on: Node = null
 
@@ -48,6 +54,11 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	visible = false
+
+
+func _on_armor_hit(_who: Node, armor: String) -> void:
+	_armor_tag = armor
+	armor_t = ARMOR_TIME
 
 
 ## Distância focal da câmera em pixels da tela (a lente com KEEP_HEIGHT mede o fov na altura).
@@ -69,14 +80,18 @@ static func spread_size(spread: float, f: float) -> float:
 func update(delta: float, on: bool) -> void:
 	var was := visible
 	visible = on and player != null
+	if player != null and not player.armor_hit.is_connected(_on_armor_hit):
+		player.armor_hit.connect(_on_armor_hit)
+	armor_t = maxf(armor_t - delta, 0.0)
 	if not visible:
 		_focus_on = null
 		focus_t = 0.0
+		armor_t = 0.0
 		return
 	var info: Dictionary = player.aim_target_info()
 	var target: Node = info.target if info.has_target and not info.blocked else null
-	head = target != null and Player._has_headshot(target) \
-		and player.body_part(target, info.target_pos, player.camera_rig.aim_ray()[1]) == "Head"
+	head = target != null and Player._has_headshot(target) 		and player.body_part(target, info.target_pos, player.camera_rig.aim_ray()[1]) == "Head"
+	tag = HEAD_TEXT if head else (_armor_tag if armor_t > 0.0 else "")
 	color = (BLOCKED if info.blocked else ON_TARGET) if info.has_target else FREE
 	if target != null and target == _focus_on:
 		focus_t += delta
@@ -123,10 +138,10 @@ func _draw() -> void:
 	var font := get_theme_default_font()
 	var fs := int(UiStyle.S * ui_scale)
 	var text_at := Vector2.ZERO
-	if head:
+	if tag != "":
 		# do canto de cima à direita sobe uma diagonal e corre uma reta sob a palavra
 		var rise := roundf(HEAD_RISE * ui_scale)
-		var tw := font.get_string_size(HEAD_TEXT, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var tw := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var knee := Vector2(w + rise, -h - rise)
 		segs.append([Vector2(w, -h), knee])
 		segs.append([knee, knee + Vector2(tw + 2.0 * line, 0)])
@@ -137,6 +152,6 @@ func _draw() -> void:
 		var col := Color(0, 0, 0, 0.45) if pass_i == 0 else color
 		for sg: Array in segs:
 			draw_line(o + sg[0], o + sg[1], col, line)
-	if head:
-		draw_string_outline(font, text_at, HEAD_TEXT, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiStyle.OUTLINE * int(ui_scale), Color.BLACK)
-		draw_string(font, text_at, HEAD_TEXT, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)
+	if tag != "":
+		draw_string_outline(font, text_at, tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiStyle.OUTLINE * int(ui_scale), Color.BLACK)
+		draw_string(font, text_at, tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)

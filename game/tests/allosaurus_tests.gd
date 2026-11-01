@@ -4,7 +4,7 @@ extends RefCounted
 
 const EXPECTED_ANIMS := [
 	"Idle", "Walk", "Run", "Roar", "RoarAt", "Study", "Stomp", "Bite", "Shake", "Throw", "Hit",
-	"Headbutt", "HeadbuttR", "TailWhip", "TailWhipR",
+	"Headbutt", "HeadbuttR", "TailWhip", "TailWhipR", "HopL", "HopR",
 ]
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -23,6 +23,9 @@ func run(runner: SceneTree) -> void:
 	await test_roll_dodges_stomp()
 	await test_bite_grab_throw()
 	await test_flinch_needs_damage()
+	await test_hardened()
+	await test_hop_faces_her()
+	await test_hop_dodges_aim()
 	await test_death_and_reset()
 	await test_arena()
 	await test_end_screen()
@@ -229,9 +232,92 @@ func test_flinch_needs_damage() -> void:
 	a.start_stalk()
 	a.take_hit(Player.DAMAGE, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
 	check(a.state != "hit", "um tiro não faz o alossauro se encolher", a.state)
-	for i in 4:
+	for i in ceili(float(Allosaurus.FLINCH_DAMAGE) / Player.DAMAGE) - 1:
 		a.take_hit(Player.DAMAGE, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
 	check(a.state == "hit", "dano acumulado faz reagir (Hit)", a.state)
+
+
+## Casco (HARDENED): o tiro de verdade (Player._pellet_hit, a parte achada pelo ragdoll que acompanha a animação) tira
+## o dano cheio nas costelas e quase nada na cabeça, no pescoço, nas pernas e na cauda; a mira escreve HARDENED nelas.
+func test_hardened() -> void:
+	var pr := await _pair(Vector3(8, 0, 2))
+	var p: Player = pr[0]
+	var a: Allosaurus = pr[1]
+	await t._frames(5)
+	var stats := p.weapon_stats("pistol")
+	var shot := func(bone: String) -> Dictionary:
+		var pt: Vector3 = a.model.ragdoll.bodies[bone].global_position
+		var side := a.global_basis.x  # de lado, de fora para dentro
+		var hits := {}
+		p._pellet_hit({"collider": a, "position": pt + side * 1.0, "normal": side}, -side, stats, hits)
+		var part := p.body_part(a, pt + side * 1.0, -side)
+		return {"damage": hits[a].damage if hits.has(a) else 0, "part": part}
+	var full := int(stats.damage)
+	for bone in ["Spine", "Chest"]:
+		var r: Dictionary = shot.call(bone)
+		check(r.part in Allosaurus.RIBS and r.damage >= full * 0.9, "costelas (%s): dano cheio" % bone, str(r))
+		check(a.armor_tag(r.part) == "", "costelas: o tiro não marca casco", r.part)
+	for bone in ["Head", "Neck1", "Thigh_L", "Shin_R", "Tail1", "Tail2", "Tail4"]:
+		var r: Dictionary = shot.call(bone)
+		check(not r.part in Allosaurus.RIBS and r.damage <= maxi(1, roundi(full * Allosaurus.HARDENED_MULT)),
+			"casco (%s): dano ridículo" % bone, str(r))
+		check(a.armor_tag(r.part) == Allosaurus.HARDENED_TEXT, "casco (%s): o tiro marca HARDENED" % bone, r.part)
+	check(not Player._has_headshot(a), "cabeça de casco: sem headshot")
+	# a granada não passa pelo casco: dano cheio chamado direto
+	var hp := a.health
+	a.take_hit(60, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
+	check(hp - a.health == 60, "explosão/golpe direto: sem desconto do casco", str(hp - a.health))
+
+
+## Ela fora da frente dele (sem estar atrás): pulinho de lado que termina de frente para ela; no ar os pés soltam.
+func test_hop_faces_her() -> void:
+	# alossauro olhando para +Z; ela à esquerda dele (+X), ~56° fora da frente, a 7 m
+	var pr := await _pair(Vector3(6, 0, 4))
+	var p: Player = pr[0]
+	var a: Allosaurus = pr[1]
+	var start := a.global_position
+	a.start_stalk()
+	var hopped := await _until(func() -> bool: return a.state == "hop", 10)
+	check(hopped and a.model.current == "HopL", "ela do lado: pulinho para o lado dela", "%s %s" % [a.state, a.model.current])
+	var air := await _until(func() -> bool: return a.airborne, 30)
+	check(air and not a.model.feet.grounded, "no ar: pés soltos da animação (FootPlant)")
+	await _until(func() -> bool: return a.state != "hop", 90)
+	var to := a._to_target()
+	var off := absf(angle_difference(a.rotation.y, atan2(-to.x, -to.z)))
+	check(rad_to_deg(off) < 15.0, "depois do pulinho está de frente para ela", "%.0f°" % rad_to_deg(off))
+	var moved := Enemy._flat(a.global_position - start).length()
+	check(moved > Allosaurus.HOP_DIST * 0.7 and moved < Allosaurus.HOP_DIST * 1.6, "pulinho leva ~2 m de lado", "%.2f m" % moved)
+	check(not a.airborne and a.model.feet.grounded, "pousou: pés presos de novo")
+	check(a._hop_cd > 0.0 and a.state != "hop", "não emenda outro pulinho na hora")
+	p.global_position = a.global_position + Vector3(0, 0, 9)
+
+
+## Ela de frente mirando nele: de vez em quando o pulinho vira esquiva (sai da linha de tiro e continua de frente).
+func test_hop_dodges_aim() -> void:
+	var pr := await _pair(Vector3(0, 0, 12), true)
+	var p: Player = pr[0]
+	var a: Allosaurus = pr[1]
+	var spot := a.global_position
+	p.rotation.y = 0.0  # ela olhando para -Z, para ele
+	p.aiming = true
+	check(a._aimed_at(), "ela de frente com a arma apontada = mirando nele")
+	Input.action_press("aim")
+	a.start_stalk()
+	var seen := {"aimed": true}
+	var dodged := await _until(func() -> bool:
+		if a.state == "hop":
+			return true
+		# segura os dois no lugar (ele não chega à distância da mordida nem escolhe golpe; ela não gira com a câmera)
+		a.global_position = spot
+		a._t = 0.0
+		p.camera_rig.look_at_point(spot + Vector3.UP * 2.0)
+		seen.aimed = a._aimed_at()
+		return false, 360)
+	Input.action_release("aim")
+	check(dodged, "mirando nele: pulinho de esquiva", "%s mirando=%s" % [a.state, seen.aimed])
+	p.aiming = false
+	p.rotation.y = PI
+	check(not a._aimed_at(), "de costas para ele: não está mirando nele")
 
 
 func test_death_and_reset() -> void:

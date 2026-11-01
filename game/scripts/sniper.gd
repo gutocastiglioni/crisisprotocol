@@ -27,6 +27,11 @@ const STAGGER_TIME := 0.4
 const COMBAT := ["alert", "aim_lock", "cooldown", "hit"]
 const SEES_GRACE := 0.3  # sem vê-la por mais que isto, a mira não avança nem dispara
 const BLIND_SPOT_Z := 0.0  # metade da sala (z > 0 = início da sala no chão, protegido pelo mezanino)
+## Na ronda do mezanino ele também olha para baixo, para as caixas do labirinto (Level.MAZE): com a cabeça baixa
+## (head_pitch <= DOWN_AT) o ponto cego não vale lá dentro para ela em pé e a vista é a de sempre (as pilhas tapam parte
+## dos corredores); agachada entre as pilhas ele não a vê (de alguns pontos a linha passava raspando a quina de uma pilha).
+const LOOK_DOWN := -0.55
+const DOWN_AT := -0.35
 ## Caindo do posto (`falls`): ainda em pé ele cambaleia para a frente (StaggerFwd) até a barriga bater na barra da cerca
 ## (`ledge`); aí amolece com o embalo, o tronco passa por cima da barra (dobra na cintura) e a gravidade leva o corpo.
 const STAGGER_SPEED := 0.9  # m/s dos passos cambaleando até a cerca
@@ -101,6 +106,8 @@ func _ready() -> void:
 	investigate_speed = Player.RUN_SPEED * JOG_SCALE
 	hunt_speed = Player.RUN_SPEED
 	head_mult = 10.0  # tiro na cabeça é fatal
+	armor_parts = Soldier.VEST_PARTS  # o mesmo colete do guerrilheiro
+	armor = Soldier.VEST_MULT
 	can_stealth = true
 	drop_kind = "sniper"
 	drop_is_weapon = true
@@ -108,6 +115,7 @@ func _ready() -> void:
 	drop_chance = 1.0
 	arrival_dist = 0.5
 	search_sweeps = 0
+	shouts = true
 	_enemy_ready()
 
 
@@ -164,12 +172,16 @@ func _physics_process(delta: float) -> void:
 	else:
 		_hide_laser()
 		if state == "patrol":
+			# andando pela passarela a cabeça vira para o galpão (> 0 = esquerda: indo para +X o galpão fica à esquerda)
+			# e alterna entre o galpão ao longe e as caixas lá embaixo
+			_vigil_t -= delta
+			if _vigil_t <= 0.0:
+				_vigil_t = rng.randf_range(1.5, 2.8)
+				_vigil_target_pitch = LOOK_DOWN if _vigil_target_pitch > DOWN_AT and not perch.has_area() else -0.15
 			if velocity.x > 0.05:
-				_vigil_target_yaw = -0.65
-				_vigil_target_pitch = -0.15
-			elif velocity.x < -0.05:
 				_vigil_target_yaw = 0.65
-				_vigil_target_pitch = -0.15
+			elif velocity.x < -0.05:
+				_vigil_target_yaw = -0.65
 			head_yaw = lerpf(head_yaw, _vigil_target_yaw, 1.0 - exp(-3.5 * delta))
 			head_pitch = lerpf(head_pitch, _vigil_target_pitch, 1.0 - exp(-3.5 * delta))
 			if model:
@@ -186,14 +198,16 @@ func _physics_process(delta: float) -> void:
 					_vigil_target_yaw = rng.randf_range(0.45, 0.85)
 				else:
 					_vigil_target_yaw = rng.randf_range(-0.85, -0.45)
-				_vigil_target_pitch = rng.randf_range(-0.12, -0.22)
+				_vigil_target_pitch = LOOK_DOWN if not perch.has_area() and rng.randf() < 0.35 else rng.randf_range(-0.12, -0.22)
 			head_yaw = lerpf(head_yaw, _vigil_target_yaw, 1.0 - exp(-3.5 * delta))
 			head_pitch = lerpf(head_pitch, _vigil_target_pitch, 1.0 - exp(-3.5 * delta))
 			if model:
 				model.set_head_look(head_yaw, head_pitch)
 		else:
+			# desconfiado ou procurando algo nas caixas lá embaixo: segue de cabeça baixa para o lugar
+			var down := not perch.has_area() and Level.in_maze(_stimulus) and _stimulus.y < floor_y - 0.4
 			head_yaw = lerpf(head_yaw, 0.0, 1.0 - exp(-5.0 * delta))
-			head_pitch = lerpf(head_pitch, 0.0, 1.0 - exp(-5.0 * delta))
+			head_pitch = lerpf(head_pitch, LOOK_DOWN if down else 0.0, 1.0 - exp(-5.0 * delta))
 			if model:
 				model.set_head_look(head_yaw, head_pitch)
 	EnemyCrowd.apply_separation(self)
@@ -235,9 +249,11 @@ func _sees_target() -> bool:
 		return false
 	# Ponto cego para baixo: se a heroína estiver no chão no início da sala (z > BLIND_SPOT_Z),
 	# a estrutura do mezanino e o ângulo para baixo bloqueiam a visão do sniper.
-	# Ele só a enxerga quando ela avança da metade da sala para a frente (z <= BLIND_SPOT_Z)
-	# ou se ele já foi alertado (tiro, explosão ou alarme).
-	if not perch.has_area() and alert_t <= 0.0 and target.global_position.y < floor_y - 0.4 and target.global_position.z > BLIND_SPOT_Z:
+	# Ele só a enxerga quando ela avança da metade da sala para a frente (z <= BLIND_SPOT_Z),
+	# se ele já foi alertado (tiro, explosão ou alarme) ou, nas caixas do labirinto, se ele está olhando para baixo.
+	var below := target.global_position.y < floor_y - 0.4 and target.global_position.z > BLIND_SPOT_Z
+	var looking_down := head_pitch <= DOWN_AT and Level.in_maze(target.global_position) and not target.crouching
+	if not perch.has_area() and alert_t <= 0.0 and below and not looking_down:
 		return false
 	return super._sees_target()
 
@@ -500,7 +516,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 		die(dir, at, head)
 		return
 	if not in_combat() and _has_target():
-		_raise_alarm()
+		_alarm_from(target.global_position)
 	if model:
 		model.hit(dir)
 		model.set_aim(true)

@@ -1,5 +1,5 @@
 {
-  "$comment": "Comandos deste projeto. Hook (lista \"hook\") roda a cada turno com código alterado; o CI roda todos. Edite à vontade.",
+  "$comment": "Comandos deste projeto. Hook (lista \"hook\") roda a cada turno com código alterado; o CI (.github/workflows/ci.yml) roda o \"unit\" no Godot do Linux. Edite à vontade.",
   "stack": [
     "godot-4",
     "blender-python"

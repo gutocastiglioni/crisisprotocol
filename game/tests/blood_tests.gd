@@ -223,8 +223,8 @@ func test_headshot_soldier() -> void:
 	heads.clear()
 	p.fire()
 	await t._frames(3)
-	t.check(heads.is_empty() and not s2.dead and s2.health == Soldier.MAX_HEALTH - Player.DAMAGE,
-		"tiro no peito: dano normal, sem headshot", "vida=%d %s" % [s2.health, str(heads)])
+	t.check(heads.is_empty() and not s2.dead and s2.health == Soldier.MAX_HEALTH - roundi(Player.DAMAGE * Soldier.VEST_MULT),
+		"tiro no peito: dano do colete, sem headshot", "vida=%d %s" % [s2.health, str(heads)])
 	# tiro na cabeça de humano é letal mesmo com dano mínimo (longe, queda de dano): vida cheia, 1 de dano
 	var s3 := Soldier.new()
 	s3.position = Vector3(-2.5, 0, -5)

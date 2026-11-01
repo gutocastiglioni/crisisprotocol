@@ -10,16 +10,16 @@ extends Enemy
 signal killed
 signal attacked(kind: String)
 
-const STUDY_DIST := 4.5
-const RUN_SPEED := 7.0
+const STUDY_DIST := 3.8
+const RUN_SPEED := 8.4
 const RUN_ANIM_SPEED := 4.2  # m/s que a animação Run representa em velocidade 1 (passada 1 m em 0,24 s de apoio)
 const WALK_ANIM_SPEED := 1.071  # idem Walk (passada 0,93 m em 0,868 s de apoio): sem patinar
-const STALK_SPEED := 0.75  # rodeando a presa, baixo e devagar
+const STALK_SPEED := 1.1  # rodeando a presa, baixo e devagar
 const STALK_ANIM_SPEED := 0.635  # idem Stalk (passada 0,8 m em 1,26 s de apoio)
 const CLAW_REACH := 0.5  # garra a esta distância do corpo dela = acertou
 const LEAP_UP := 5.0
-const LEAP_MAX_SPEED := 10.0
-const LEAP_PREP := 0.32
+const LEAP_MAX_SPEED := 12.0
+const LEAP_PREP := 0.24
 const BITE_REACH := 2.1
 const BITE_SNAP := 0.4  # quadro 12 da animação Bite
 const TAIL_REACH := 2.9
@@ -31,7 +31,9 @@ const DOWN_TIME := 3.0  # tempo caído no chão após abate furtivo antes de lev
 const COUNTER_REACH := 2.8  # alcance do contra-ataque ao levantar
 const MAX_HEALTH := 170
 const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7, "counter": 18}
-const BITE_CHANCE := 0.6  # perto e de frente: morde ou recua
+const BITE_CHANCE := 0.8  # perto e de frente: morde ou recua
+const STUDY_TIME := Vector2(0.9, 1.6)  # rodeando antes de atacar
+const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
 const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover", "hit"]
 
 var model: RaptorModel
@@ -68,7 +70,7 @@ func _ready() -> void:
 	add_child(model)
 	patrol_speed = 1.4
 	investigate_speed = RUN_ANIM_SPEED * JOG_SCALE  # trote (2,4 m/s era o andar acelerado a 2,2x)
-	hunt_speed = 4.2
+	hunt_speed = 5.6
 	head_mult = 1.0  # cabeçudo: tiro na cabeça vale como no corpo (sem headshot)
 	can_stealth = true
 	_enemy_ready()
@@ -166,7 +168,7 @@ func start_study() -> void:
 		return
 	_study_dist = STUDY_DIST + rng.randf_range(-0.5, 0.5)
 	_enter("study", "Walk", 0.25)
-	_dur = rng.randf_range(1.1, 2.4)
+	_dur = rng.randf_range(STUDY_TIME.x, STUDY_TIME.y)
 	_circle = 1.0 if rng.randf() < 0.5 else -1.0
 
 
@@ -295,7 +297,7 @@ func end_ambush(delay := 0.0) -> void:
 
 func _recover(time := 0.8) -> void:
 	_enter("recover", "Idle", 0.25)
-	_dur = time
+	_dur = time * RECOVER_SCALE
 
 
 ## Decide o ataque depois de estudar a presa (distância e lado em que ela está).
