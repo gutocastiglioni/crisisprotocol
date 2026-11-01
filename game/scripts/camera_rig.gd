@@ -113,16 +113,19 @@ func _process(delta: float) -> void:
 	else:
 		if target.get("model") != null and not target.model.visible and not target.get("dead"):
 			target.model.visible = true
+		# esgueirando pela quina (PlayerLean): a câmera passa para o lado da quina, para ver o que está depois dela
+		var lean: float = target.call("lean_side") if target.has_method("lean_side") else 0.0
 		if shoulder:
 			var portrait := vp.y > vp.x
 			var side: float = (SHOULDER.side_aim if aiming else SHOULDER.side) * (PORTRAIT_SIDE if portrait else 1.0)
 			var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov
 			spring.spring_length = lerpf(spring.spring_length, SHOULDER.length_aim if aiming else SHOULDER.length, k)
-			spring.position.x = lerpf(spring.position.x, side, k)
+			spring.position.x = lerpf(spring.position.x, lerpf(side, signf(lean) * PlayerLean.CAM_SIDE, absf(lean)), k)
 			camera.fov = lerpf(camera.fov, maxf(fov, PORTRAIT_FOV) if portrait else fov, k)
 		else:
+			var side := 0.62 if aiming else 0.0
 			spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
-			spring.position.x = lerpf(spring.position.x, 0.62 if aiming else 0.0, k)
+			spring.position.x = lerpf(spring.position.x, lerpf(side, signf(lean) * PlayerLean.CAM_SIDE, absf(lean)), k)
 			camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
 	_shake_t = maxf(0.0, _shake_t - delta)
 	var amp := _shake if _shake_t > 0.0 else 0.0

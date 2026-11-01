@@ -87,7 +87,7 @@ func show_weapon(k: String, body: HeroineModel) -> void:
 	else:
 		var src := body.find_child("Pistol", true, false) as MeshInstance3D if body else null
 		var mi := MeshInstance3D.new()
-		mi.mesh = src.mesh if src else null
+		mi.mesh = _unskinned(src.mesh) if src else null
 		gun = mi
 	for mi in _meshes(gun):
 		var m := ShaderMaterial.new()
@@ -125,6 +125,21 @@ func _fit(holder: Node3D) -> void:
 	k = minf(k, _cam.size * 0.9 / maxf(box.size.y, 0.01))  # arma alta (M79) não sai por cima/baixo
 	holder.scale = Vector3.ONE * k
 	holder.position = -box.get_center() * k
+
+
+## Cópia da malha sem ossos/pesos. A pistola do corpo tem pele: depois que o esqueleto dela anima, o Godot recorta essa
+## malha pela caixa da pose animada, e no ícone (sem esqueleto, noutro mundo) ela ficava fora da caixa e sumia ao remontar
+## (morrer/reiniciar, trocar de arma e voltar).
+static func _unskinned(src: Mesh) -> ArrayMesh:
+	if src == null:
+		return null
+	var out := ArrayMesh.new()
+	for i in src.get_surface_count():
+		var arr := src.surface_get_arrays(i)
+		arr[Mesh.ARRAY_BONES] = null
+		arr[Mesh.ARRAY_WEIGHTS] = null
+		out.add_surface_from_arrays(src.surface_get_primitive_type(i), arr)
+	return out
 
 
 static func _meshes(root: Node) -> Array[MeshInstance3D]:

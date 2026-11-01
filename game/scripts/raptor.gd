@@ -34,7 +34,7 @@ const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7, "counter": 18}
 const BITE_CHANCE := 0.8  # perto e de frente: morde ou recua
 const STUDY_TIME := Vector2(0.9, 1.6)  # rodeando antes de atacar
 const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
-const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover", "hit"]
+const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover"]
 
 var model: RaptorModel
 var health := MAX_HEALTH
@@ -145,9 +145,9 @@ func _combat_state(delta: float) -> void:
 				start_counter()
 		"counter":
 			_counter(delta)
-		"recover", "hit":
+		"recover":
 			_stop(delta)
-			if state == "recover" and _t > 0.3 and _behind_close():
+			if _t > 0.3 and _behind_close():
 				start_tail()
 			elif _has_target():
 				_face(_to_target(), delta, 3.0)
@@ -531,16 +531,11 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 	if health == 0:
 		die(dir, at)
 		return
-	if not state in COMBAT and _has_target():
-		# levou tiro sem ter notado ninguém: já sabe onde ela está e avisa os outros
-		_raise_alarm()
-	if state == "hold":
-		# tiro faz soltar a presa
-		_release(-global_basis.z * 3.0 + Vector3.UP * 1.5)
-	if state in ["leap", "tail", "charge", "down", "counter"]:
-		return
-	_enter("hit", "Hit", 0.05)
-	_dur = 0.45
+	Sfx.play(model, "raptor_hurt", model.mouth_position(), 0.0, model.voice_pitch)
+	# o tiro não interrompe o que ele está fazendo (golpe, mordida, investida): só quem não tinha notado ninguém reage
+	if not state in COMBAT and not state in ["down", "counter"] and _has_target():
+		_raise_alarm()  # já sabe onde ela está e avisa os outros
+		start_study()
 
 
 ## Golpe crítico disponível quando o raptor está caído no chão ("down") a até CRIT_RANGE, de qualquer direção.

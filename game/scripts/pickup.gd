@@ -27,7 +27,6 @@ const COLORS := {
 ## onde ficam: galpão (as armas dos baús já trazem a munição delas), pátio da mata (na beira da estrada, longe das árvores)
 ## e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de munição dela) ou "health".
 const LAYOUT := [
-	{"pos": Vector3(10.4, 0, 10.4), "kind": "pistol", "amount": 6},  # no meio de um corredor do labirinto (Level.MAZE)
 	{"pos": Vector3(-11.5, 0, 3.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-18.0, 0, -3.4), "kind": "shotgun", "amount": 3},
 	{"pos": Vector3(-39.0, 0, -8.2), "kind": "pistol", "amount": 8},

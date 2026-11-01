@@ -523,6 +523,12 @@ func hidden_on_ladder() -> bool:
 	return mode == "ladder" and _ladder_y > _ladder_top_y() - _ladder.hidden_top
 
 
+## Numa escada (a do alçapão, do telhado ao labirinto, ou a do mezanino), entrando, subindo/descendo ou saindo: dali
+## do alto a câmera gira por cima do galpão inteiro, então o radar não avista ninguém (Radar.LADDER_HOLD).
+func on_ladder() -> bool:
+	return _ladder != null and is_instance_valid(_ladder) and mode in ["ladder", "ladder_mount", "ladder_in", "ladder_out"]
+
+
 ## Alto do ciclo da escada: daqui a saída pelo topo (heroine_moves.json "ladder") leva até de pé no piso de cima.
 func _ladder_top_y() -> float:
 	return _ladder.height - float(Moves.data().ladder.rise)

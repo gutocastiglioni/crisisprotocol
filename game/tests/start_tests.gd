@@ -96,8 +96,8 @@ func test_maze_layout() -> void:
 	var niche := _reach(Vector2i(lad.x, 0))
 	t.check(spur == lad and not reach.has(spur), "de dentro do labirinto não se chega à escada do mezanino", str(spur))
 	t.check(niche.has(spur) and not niche.has(start), "a escada do mezanino só se alcança pela fresta da frente (do galpão)", str(niche.keys()))
-	var pistol: Vector3 = Pickup.LAYOUT[0].pos
-	t.check(reach.has(_cell_of(pistol)), "a munição do galpão fica num corredor do labirinto")
+	for e in Pickup.LAYOUT:
+		t.check(not Level.in_maze(e.pos), "nenhum item no labirinto (embaixo da escada do alçapão)", str(e.pos))
 	# corredores livres, pilhas altas demais para pendurar e subir (labirinto não se pula por cima)
 	var space := w.get_world_3d().direct_space_state
 	var grab_top: float = Moves.data().hang.top + PlayerMoves.GRAB_MAX

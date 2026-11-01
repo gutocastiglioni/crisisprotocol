@@ -254,7 +254,7 @@ func test_headshot_raptor() -> void:
 	await t._frames(3)
 	var expect := Raptor.MAX_HEALTH - Player.DAMAGE
 	t.check(heads.is_empty() and r.health == expect, "raptor cabeçudo: tiro na cabeça vale como no corpo, sem headshot", "vida=%d (esperado %d) %s" % [r.health, expect, str(heads)])
-	t.check(not r.dead and r.state == "hit", "raptor leva o tiro e reage", r.state)
+	t.check(not r.dead and r.state != "hit", "raptor leva o tiro sem se encolher", r.state)
 	t.check(r.wound() > 0.1, "raptor ferido (vai deixar rastro)", str(r.wound()))
 	Input.action_release("aim")
 

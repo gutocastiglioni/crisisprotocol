@@ -20,7 +20,7 @@ const counterFile = join(tmpdir(), `claude-stop-check-${input.session_id || 'def
 
 /** Executa um comando no projeto e devolve sucesso + o fim da saída. */
 function run(cmd) {
-  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 240_000 });
+  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 420_000 }); // a suíte do Godot passa de 240 s; o hook todo tem 600 s (settings.json)
   return { ok: r.status === 0, stdout: r.stdout || '', out: `${r.stdout || ''}${r.stderr || ''}`.trimEnd().slice(-2500) };
 }
 

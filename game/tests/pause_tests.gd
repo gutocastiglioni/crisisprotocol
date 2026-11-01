@@ -113,6 +113,7 @@ func test_pause_menu() -> void:
 	t.check(p.global_position.distance_to(Roof.START) < 0.3 and p.health == Player.MAX_HEALTH,
 		"REINICIAR = jogo do começo", "%s vida %d" % [p.global_position, p.health])
 
+	await test_fullscreen(menu)
 	await _start_button()
 	await _tap("move_forward")
 	await _tap("interact")
@@ -130,14 +131,14 @@ func test_pause_menu() -> void:
 	await t._frames(3)
 	t.check(not main.inspect.busy and not t.paused, "mensagem fechada")
 	# fechar a tela com o X (ou pular/atirar) não chega nela: nada de esquiva/cambalhota ao voltar ao jogo
-	for a in ["roll", "jump", "shoot"]:
+	for a in ["crouch", "jump", "shoot"]:
 		main.inspect.show_message("TESTE")
 		await t._frames(int((Inspect.MIN_SHOW + 0.2) * 60.0))
 		Input.action_press(a)
 		var seen := {"busy": false}
 		for i in 12:
 			await t._frames(1)
-			if p.moves.busy() or p.rolling or p.hopping:
+			if p.moves.busy() or p.rolling or p.hopping or p.crouching:
 				seen.busy = true
 		Input.action_release(a)
 		t.check(not main.inspect.busy and not t.paused and not seen.busy, "fechar a mensagem com %s não faz ela agir" % a, p.moves.mode)
@@ -151,6 +152,36 @@ func test_pause_menu() -> void:
 	await test_showroom(main)
 	main.queue_free()
 	await t._frames(2)
+
+
+## TELA CHEIA: confirmar troca SIM/NÃO, grava no arquivo (um de teste, não a config de verdade) e o jogo relê ao abrir.
+func test_fullscreen(menu: PauseMenu) -> void:
+	var real_path := Settings.path
+	var real_full := Settings.fullscreen
+	Settings.path = "user://test_settings.cfg"
+	DirAccess.remove_absolute(Settings.path)
+	Settings.load_file()
+	t.check(not Settings.fullscreen, "sem arquivo de config = janela")
+	await _start_button()
+	for i in PauseMenu.ITEMS.find("TELA CHEIA"):
+		await _tap("move_back")
+	t.check(menu._rows[menu.selected].text == "> TELA CHEIA: NÃO <", "menu mostra TELA CHEIA: NÃO", menu._rows[menu.selected].text)
+	await _tap("interact")
+	t.check(menu.is_open and Settings.fullscreen and menu._rows[menu.selected].text.contains("SIM"),
+		"confirmar liga a tela cheia e o menu segue aberto", menu._rows[menu.selected].text)
+	var cfg := ConfigFile.new()
+	t.check(cfg.load(Settings.path) == OK and cfg.get_value("video", "fullscreen", false) == true, "tela cheia salva no arquivo")
+	Settings.fullscreen = false
+	Settings.load_file()
+	t.check(Settings.fullscreen, "ao abrir de novo o jogo lê SIM do arquivo")
+	await _tap("interact")
+	Settings.load_file()
+	t.check(not Settings.fullscreen and menu._rows[menu.selected].text.contains("NÃO"), "confirmar de novo desliga e salva NÃO")
+	menu.close()
+	await t._frames(3)
+	DirAccess.remove_absolute(Settings.path)
+	Settings.path = real_path
+	Settings.fullscreen = real_full
 
 
 func _key(code: Key) -> void:

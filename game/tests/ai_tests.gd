@@ -25,6 +25,7 @@ func run(runner: SceneTree) -> void:
 	await test_main_scene_patrols()
 	await test_blind_spot_kills()
 	await test_shout_earshot()
+	await test_post_keeps_half()
 	await test_doors_seal_rooms()
 	await test_unreachable_hunt_gives_up()
 	await test_sniper_forgets()
@@ -267,7 +268,7 @@ func test_damage_while_unaware_alarms() -> void:
 	await t._frames(2)
 	check(a.state == "idle" and b.state == "idle", "ninguém a percebeu ainda")
 	a.take_hit(10, Vector3.BACK, a.global_position + Vector3.UP)
-	check(a.alert_t > 0.0 and a.state == "hit", "levou tiro sem ver: alertado", a.state)
+	check(a.alert_t > 0.0 and a.state == "study", "levou tiro sem ver: alertado, vai para cima dela", a.state)
 	for i in 120:
 		await t._frames(1)
 		if b.state == "hunt":
@@ -465,10 +466,17 @@ func test_main_scene_patrols() -> void:
 ## o sniper do mezanino, nem as outras rondas passando. Fora dele é achada: no canto que o guarda de posto 5 vigia,
 ## na descida do 6 (o outro vertical, o 11, e a porta norte) e no fim do 6, bem na frente da rota do 8.
 func test_blind_spot_kills() -> void:
-	# furtivo: uma ronda morta por vez, e as outras andam uma volta inteira depois (passam por perto do corpo);
-	# com barulho: todas na mesma cena, menos o 6 (o corredor dele abre para a rota do 8: o corpo caindo é ouvido pelo vão)
-	var runs: Array = Soldier.BLIND_SPOTS.keys().map(func(gi: int) -> Array: return [true, [gi]])
+	# furtivo: as rondas que podem achar o corpo de uma seguem andando uma volta inteira depois da morte (quem acha o corpo
+	# de quem: 6 e 11 se veem, o 8 passa perto do 1, do 6 e do 11; o 0 não passa perto de ninguém); então morrem juntas só
+	# as que não acham uma à outra: 0 com 6, 1 com 11, e o 8 sozinho. Com barulho: todas na mesma cena, menos o 6 (o
+	# corredor dele abre para a rota do 8: o corpo caindo é ouvido pelo vão)
+	var runs: Array = [[true, [0, 6]], [true, [1, 11]], [true, [8]]]
 	runs.append([false, Soldier.BLIND_SPOTS.keys().filter(func(gi: int) -> bool: return gi != 6)])
+	var covered := {}
+	for run: Array in runs.slice(0, 3):
+		for gi: int in run[1]:
+			covered[gi] = true
+	check(covered.size() == Soldier.BLIND_SPOTS.size(), "toda ronda com ponto cego é morta numa das cenas", str(covered.keys()))
 	for run: Array in runs:
 		var silent: bool = run[0]
 		var main: Node = await _main_scene()
@@ -494,7 +502,7 @@ func test_blind_spot_kills() -> void:
 					alerted = "%s %d em %s (%s)" % [e.get_script().get_global_name(), main.soldiers.find(e), e.global_position.snapped(Vector3.ONE * 0.1), e.state]
 			if left.is_empty() and i - killed_at.values().max() > 60 * (45 if silent else 20):
 				break
-		var how := ("furtivo, ronda %d" % run[1][0]) if silent else "todas, corpo caindo com barulho"
+		var how := ("furtivo, rondas %s" % str(run[1])) if silent else "todas, corpo caindo com barulho"
 		check(left.is_empty(), "ronda chega ao ponto cego (%s)" % how, "faltou " + str(left))
 		check(alerted == "", "morte das rondas no ponto cego não alerta ninguém (%s)" % how, alerted)
 		main.queue_free()
@@ -521,10 +529,57 @@ func test_blind_spot_kills() -> void:
 		await t.process_frame
 
 
+## Fixos do portão (`Enemy.post`): o corpo da ronda morta no meio deles tira só metade do posto (ao menos 1 vai ver); os
+## outros olham e ficam. Ninguém fica desconfiando do mesmo corpo sem parar (cada um conhece o corpo que já foi ver,
+## `_known_dead`) e, com ela vista (vermelho), o posto libera todos.
+func test_post_keeps_half() -> void:
+	for spot: Vector3 in [Vector3(-8.5, 0, -8.4), Vector3(-7.2, 0, -5.4)]:
+		var main: Node = await _main_scene()
+		var post: Array = main.soldiers.filter(func(s: Soldier) -> bool: return s.post == "patio")
+		var v: Soldier = main.soldiers[0]
+		v.global_position = spot
+		v.route.clear()
+		v.reset_physics_interpolation()
+		await t._frames(5)
+		v.assassinate(Vector3.FORWARD)
+		var left := {}
+		var max_away := 0
+		var late_doubts := 0  # "?" depois que a busca acabou (o pisca de antes: desconfia, volta, desconfia)
+		var was := {}
+		for i in 60 * 70:
+			await t._frames(1)
+			var away := 0
+			for s: Soldier in post:
+				if s._left_post():
+					away += 1
+					left[s] = true
+				if i > 60 * 50 and s.state == "suspicious" and was.get(s, "") != "suspicious":
+					late_doubts += 1
+				was[s] = s.state
+			max_away = maxi(max_away, away)
+		var where := "corpo em %s" % spot
+		check(post.size() == 4, "o posto do portão do pátio tem os 4 fixos", str(post.size()))
+		check(not left.is_empty(), "alguém do posto vai ver o corpo (%s)" % where)
+		check(max_away <= 2, "no máximo metade do posto sai sem ela ter sido vista (%s)" % where, str(max_away))
+		check(late_doubts == 0, "depois da busca ninguém fica desconfiando do mesmo corpo (%s)" % where, str(late_doubts))
+		if spot == Vector3(-8.5, 0, -8.4):
+			main.reset_all()
+			await t._frames(3)
+			check(not v.has_meta("reported"), "reiniciar esquece o alarme do corpo da outra vez")
+			# vista de verdade: o alarme de quem a viu libera o posto todo (e o de posto sai do lugar)
+			main.player.global_position = Vector3(-8.5, 0, -8.4)
+			post[0].spot()
+			await t._frames(2)
+			check(post.all(func(s: Soldier) -> bool: return s.identified and not s._post_full() and not s._holds_post()),
+				"com ela vista o posto inteiro pode sair")
+		main.queue_free()
+		await t.process_frame
+
+
 ## Gente avisa gritando (`Enemy.shouts`): ferido sem tê-la notado grita `SHOUT_DELAY` depois (morto antes, nada) e quem acha
 ## um corpo grita na hora; o grito só chega a quem está perto com linha livre, não à sala toda.
 func test_shout_earshot() -> void:
-	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto atrás da caixa baixa (5); as rondas
+	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto colado na parede do sul (5); as rondas
 	# dependem de onde estão na hora do grito
 	var far := [2, 3, 4, 5]
 	# ronda 6 morta no alto do corredor: o sentinela 9 ouve o corpo cair e vai lá; achando o corpo, grita

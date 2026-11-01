@@ -19,11 +19,14 @@ func run(runner: SceneTree) -> void:
 func test_glyphs() -> void:
 	t.check(UiStyle.glyph("interact", false) == {"text": "E"}, "teclado: pegar = E", str(UiStyle.glyph("interact", false)))
 	t.check(UiStyle.glyph("interact", true) == {"shape": "triangle"}, "controle: pegar = triângulo", str(UiStyle.glyph("interact", true)))
-	t.check(UiStyle.glyph("shoot", false) == {"text": "MOUSE E"} and UiStyle.glyph("shoot", true) == {"text": "R1"},
-		"atirar = MOUSE E / R1", "%s %s" % [UiStyle.glyph("shoot", false), UiStyle.glyph("shoot", true)])
+	t.check(UiStyle.glyph("shoot", false) == {"text": "MOUSE E"} and UiStyle.glyph("shoot", true) == {"text": "R2"},
+		"atirar = MOUSE E / R2", "%s %s" % [UiStyle.glyph("shoot", false), UiStyle.glyph("shoot", true)])
+	t.check(UiStyle.glyph("lean", false) == {"text": "V"} and UiStyle.glyph("lean", true) == {"text": "R3"},
+		"esgueirar = V / R3", "%s %s" % [UiStyle.glyph("lean", false), UiStyle.glyph("lean", true)])
 	t.check(UiStyle.glyph("pause", false) == {"text": "ESC"} and UiStyle.glyph("pause", true) == {"text": "START"}, "pausa = ESC / START")
-	t.check(UiStyle.glyph("crouch", true) == {"shape": "circle"} and UiStyle.glyph("zoom_in", true) == {"shape": "cross"},
-		"agachar = bola, aumentar zoom = X do controle")
+	t.check(UiStyle.glyph("crouch", true) == {"shape": "cross"} and UiStyle.glyph("roll", true) == {"shape": "circle"}
+		and UiStyle.glyph("zoom_in", true) == {"shape": "cross"},
+		"agachar = X, esquiva = bola, aumentar zoom = X do controle")
 	t.check(UiStyle.glyph("reset", true) == {"text": "R"}, "sem botão no controle: mostra a tecla (R)", str(UiStyle.glyph("reset", true)))
 
 
@@ -86,6 +89,10 @@ func test_inspect_box() -> void:
 	ins._keypad_text("DIGITE O CÓDIGO")
 	ins._layout_box(area)
 	t.check(ins._ok.visible and ins._ok.text() == "ESCOLHER  CONFIRMAR  SAIR" and ins._body.text == "", "teclado: botões no pé da caixa", ins._ok.text())
+	t.check(Inspect.OK_ITEMS[0].get("pad_action") == "crouch" and UiStyle.glyph(Inspect.OK_ITEMS[0].pad_action, true) == {"shape": "cross"},
+		"controle: botão OK da caixa mostra X (cross)")
+	t.check(Inspect.KEYPAD_ITEMS[1].get("pad_action") == "crouch" and Inspect.KEYPAD_ITEMS[2].get("pad_action") == "roll",
+		"controle: teclado mostra X para confirmar e bola para sair")
 	t.check(ins._title.get_theme_font_size("font_size") == UiStyle.M, "título da caixa no tamanho M")
 	ins.queue_free()
 	await t.process_frame

@@ -126,6 +126,7 @@ var _shot_cd := 0.0
 var _hip_aim_t := 0.0
 var _lock_t := 0.0  # depois do tiro: o movimento fica preso/lento por um instante (coice)
 var _roll_cd := 0.0
+var _respawn_t := 0.0  # logo depois de renascer: o aperto que recomeçou não agacha (RESPAWN_ROLL_GRACE)
 var _say_cd := 0.0
 var _bloom := 0.0  # dispersão extra de tiros seguidos (graus)
 var _spawn: Transform3D
@@ -144,6 +145,7 @@ var _knock := Vector3.ZERO
 var _stun := 0.0
 var _daze := 0.0  # > 0: atordoada pelo rugido do alossauro (sem controle, mãos nos ouvidos)
 var stealth: PlayerStealth
+var lean: PlayerLean  # esgueirar pela quina (R3 / V)
 var _trail := Blood.Trail.new()
 
 
@@ -167,6 +169,7 @@ func _ready() -> void:
 	camera_rig.spring.add_excluded_object(get_rid())
 	moves = PlayerMoves.new(self)
 	stealth = PlayerStealth.new(self)
+	lean = PlayerLean.new(self)
 	model.shell_ejected.connect(func(at: Vector3, vel: Vector3) -> void: Fx.casing(get_parent(), at, vel, "shell"))
 	_spawn = global_transform
 
@@ -175,6 +178,8 @@ func _physics_process(delta: float) -> void:
 	stealth.update(delta)
 	if not dead and not grabbed:
 		_trail.update(self, delta, 1.0 - health / 100.0)
+	if grabbed or dead or cutscene or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
+		lean.cancel()
 	if grabbed:
 		_held(delta)
 		return
@@ -204,6 +209,7 @@ func _physics_process(delta: float) -> void:
 	_hip_aim_t -= delta
 	_lock_t -= delta
 	_roll_cd -= delta
+	_respawn_t -= delta
 	_say_cd -= delta
 	_bloom = maxf(0.0, _bloom - BLOOM_DECAY * delta)
 	if moves.busy():
@@ -234,6 +240,9 @@ func _physics_process(delta: float) -> void:
 	_air_t = 0.0 if is_on_floor() else _air_t + delta
 	var grounded := _air_t < COYOTE and not _jumping
 	aiming = (Input.is_action_pressed("aim") or _hip_aim_t > 0.0) and grounded
+	var leaning := lean.update(delta, wish) if grounded and not is_sniper_zoomed() else false
+	if not leaning and not grounded:
+		lean.cancel()
 
 	if grounded:
 		if is_sniper_zoomed():
@@ -241,7 +250,7 @@ func _physics_process(delta: float) -> void:
 				zoom_in()
 			elif Input.is_action_just_pressed("zoom_out"):
 				zoom_out()
-		elif Input.is_action_just_pressed("crouch"):
+		elif Input.is_action_just_pressed("crouch") and _respawn_t <= 0.0:
 			crouching = not crouching
 		if not is_sniper_zoomed() and Input.is_action_just_pressed("roll") and _roll_cd <= 0.0:
 			make_noise(7.0, 0.7)
@@ -305,6 +314,10 @@ func _physics_process(delta: float) -> void:
 		# no ar: mantém o embalo, pouco controle
 		hv = Vector3(velocity.x, 0.0, velocity.z).lerp(wish * Moves.speed("walk"), AIR_CONTROL * delta * wish.length())
 		model.set_state("jump" if _jumping and velocity.y > -1.0 else "fall")
+	elif leaning:
+		if aiming:
+			_aim_at(delta)
+		hv = lean.locomotion(delta)
 	elif aiming:
 		_aim_at(delta)
 		hv = _aim_locomotion(wish)
@@ -351,6 +364,16 @@ func _physics_process(delta: float) -> void:
 ## O quanto ela aparece para os inimigos (0..1): multiplica o alcance da visão deles (ver PlayerStealth).
 func visibility() -> float:
 	return stealth.visibility
+
+
+## Para onde os inimigos olham e miram: o peito; esgueirada pela quina, a cabeça que ficou de fora (PlayerLean).
+func sight_point() -> Vector3:
+	return lean.sight_point()
+
+
+## Desvio da câmera para o lado da quina em que ela se esgueira (-1..1), lido pela CameraRig.
+func lean_side() -> float:
+	return lean.cam_side()
 
 
 ## Inimigo ao alcance para abate furtivo ou golpe crítico (sem mirar), ou null.
@@ -701,8 +724,7 @@ func fire() -> void:
 		var back: float = {"m16": 0.58, "pistol_sd": 0.27}.get(model.gun(), 0.12)  # o silenciador põe o cano 15 cm à frente
 		var port: Vector3 = muzzle - ray[1] * back + right * 0.03
 		Fx.casing(parent, port, right * randf_range(1.4, 2.0) + Vector3.UP * randf_range(1.0, 1.6) - ray[1] * 0.3)
-	var exclude: Array[RID] = [get_rid()]
-	exclude.append_array(model.ragdoll.body_rids())
+	var exclude := _shot_exclude()
 	var space := get_world_3d().direct_space_state
 	var cone := aim_spread(stats)
 	_bloom = minf(_bloom + float(stats.bloom), float(stats.max_spread))
@@ -809,6 +831,24 @@ static func _has_headshot(who: Object) -> bool:
 	return mult != null and float(mult) > 1.0
 
 
+## O que o tiro e a mira dela atravessam: ela mesma, o ragdoll dela e quem não está ao alcance dela: inimigo fora de
+## cena (`Enemy.lurking`: invisível, mas as partes do ragdoll seguem a animação) e, de cima do telhado, todo inimigo
+## (lá ninguém a percebe, `Enemy._target_hidden`; ela também não alcança ninguém).
+func _shot_exclude() -> Array[RID]:
+	var out: Array[RID] = [get_rid()]
+	if model and model.ragdoll:
+		out.append_array(model.ragdoll.body_rids())
+	var on_roof := Roof.has(global_position)
+	for e: Node in get_tree().get_nodes_in_group("enemies"):
+		if not (on_roof or e.get("lurking")):
+			continue
+		out.append((e as CollisionObject3D).get_rid())
+		var m: Variant = e.get("model")
+		if m != null and m.get("ragdoll") != null:
+			out.append_array(m.ragdoll.body_rids())
+	return out
+
+
 ## Verifica se um colisor representa um alvo vivo que pode levar tiro.
 func is_alive_target(col: Object) -> bool:
 	if col == null:
@@ -837,9 +877,7 @@ func aim_target_info() -> Dictionary:
 	if space == null:
 		return info
 	var ray := camera_rig.aim_ray()
-	var exclude: Array[RID] = [get_rid()]
-	if model and model.ragdoll:
-		exclude.append_array(model.ragdoll.body_rids())
+	var exclude := _shot_exclude()
 	var range_dist := float(weapon_stats(weapon()).range)
 
 	# 1. Raio da câmera procurando o que está sob a retícula
@@ -1265,6 +1303,7 @@ const RESPAWN_ROLL_GRACE := 0.1  # s sem rolar logo depois de renascer
 
 func respawn() -> void:
 	moves.cancel()
+	lean.cancel()
 	model.stop_ragdoll()
 	dead = false
 	crouching = false
@@ -1276,9 +1315,10 @@ func respawn() -> void:
 	_bloom = 0.0
 	_shot_cd = 0.0
 	_hip_aim_t = 0.0
-	# o mesmo aperto que recomeçou (Espaço na tela de Game Over) ainda conta como "acabou de apertar" no quadro de física
-	# seguinte: um instante de espera e ela não sai rolando ao renascer
+	# o mesmo aperto que recomeçou (X do controle na tela de Game Over) ainda conta como "acabou de apertar" no quadro de
+	# física seguinte: um instante de espera e ela não sai rolando nem agachada ao renascer
 	_roll_cd = RESPAWN_ROLL_GRACE
+	_respawn_t = RESPAWN_ROLL_GRACE
 	_lock_t = 0.0
 	grabbed = false
 	grabber = null

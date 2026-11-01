@@ -87,6 +87,7 @@ var atlas: Texture2D = ATLAS
 
 var skeleton: Skeleton3D
 var aim_pitch: AimPitch
+var lean_tilt: LeanTilt
 var head_look: HeadLook
 var anim_player: AnimationPlayer
 var tree: AnimationTree
@@ -139,6 +140,8 @@ func _ready() -> void:
 	aim_pitch = AimPitch.new()
 	aim_pitch.influence = 0.0
 	skeleton.add_child(aim_pitch)
+	lean_tilt = LeanTilt.new()
+	skeleton.add_child(lean_tilt)
 	head_look = HeadLook.new()
 	skeleton.add_child(head_look)
 	_setup_braid()
@@ -467,6 +470,11 @@ func set_aim(on: bool) -> void:
 ## Altura da mira (radianos, > 0 = para cima): o tronco inclina e a arma aponta para o ponto mirado.
 func set_aim_pitch(rad: float) -> void:
 	aim_pitch.pitch = rad
+
+
+## Esgueirando pela quina (PlayerLean): inclinação do tronco para o lado (radianos, > 0 = direita).
+func set_lean(rad: float) -> void:
+	lean_tilt.roll = rad
 
 
 func is_aimed() -> bool:

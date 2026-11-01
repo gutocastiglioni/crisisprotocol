@@ -23,8 +23,7 @@ const DAMAGE := 38
 const FIRE_RANGE := 35.0
 const AIM_LOCK_TIME := 1.25  # tempo de mira com laser vermelho antes do disparo
 const COOLDOWN_TIME := 2.2   # intervalo de recarga do ferrolho entre disparos
-const STAGGER_TIME := 0.4
-const COMBAT := ["alert", "aim_lock", "cooldown", "hit"]
+const COMBAT := ["alert", "aim_lock", "cooldown"]
 const SEES_GRACE := 0.3  # sem vê-la por mais que isto, a mira não avança nem dispara
 const BLIND_SPOT_Z := 0.0  # metade da sala (z > 0 = início da sala no chão, protegido pelo mezanino)
 ## Na ronda do mezanino ele também olha para baixo, para as caixas do labirinto (Level.MAZE): com a cabeça baixa
@@ -157,11 +156,6 @@ func _physics_process(delta: float) -> void:
 				_aim_lock_process(delta)
 			"cooldown":
 				_cooldown_process(delta)
-			"hit":
-				_stop(delta)
-				_hide_laser()
-				if _t >= STAGGER_TIME:
-					start_aim_lock()
 			"dead":
 				_stop(delta)
 				_hide_laser()
@@ -429,7 +423,7 @@ func _update_laser(_to: Vector3) -> void:
 	if not model or not laser_mesh:
 		return
 	var muzzle: Vector3 = model.muzzle_position()
-	var chest: Vector3 = target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	var chest: Vector3 = target.sight_point()
 	
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var block: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
@@ -470,7 +464,7 @@ func _fire_sniper() -> void:
 	
 	var parent: Node = get_parent()
 	var muzzle: Vector3 = model.muzzle_position() if model else global_position + Vector3.UP * 1.3
-	var chest: Vector3 = target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	var chest: Vector3 = target.sight_point()
 	var dir: Vector3 = (chest - muzzle).normalized()
 	
 	Fx.muzzle_flash(parent, muzzle, WEAPON, dir)
@@ -511,16 +505,15 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 	if dead:
 		return
 	health -= amount
-	_hide_laser()
 	if health <= 0:
 		die(dir, at, head)
 		return
-	if not in_combat() and _has_target():
-		_alarm_from(target.global_position)
 	if model:
-		model.hit(dir)
-		model.set_aim(true)
-	_enter("hit", "Idle", 0.05)
+		model.hit(dir)  # tranco aditivo: o tiro não interrompe a mira nem o ferrolho
+	if not in_combat():
+		if _has_target():
+			_alarm_from(target.global_position)
+		start_alert()
 
 
 func take_headshot(amount: int, dir: Vector3, at: Vector3) -> void:

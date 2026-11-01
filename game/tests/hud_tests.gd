@@ -16,6 +16,7 @@ func run(runner: SceneTree) -> void:
 	await test_mode_switch_hud()
 	await test_all_weapons()
 	await test_radar_all_enemies()
+	await test_radar_ladders()
 	await test_threat_special_cases()
 	await test_stealth_status()
 	await test_crosshair()
@@ -354,6 +355,15 @@ func test_all_weapons() -> void:
 	p.model.set_weapon("m79")
 	main._process(0.016)
 	t.check(icon.kind == "m79" and icon.texture != null, "arma: M79", icon.kind)
+	# de volta à pistola comum (reiniciar depois do silenciador/outra arma): cópia sem ossos da malha do corpo, senão o
+	# Godot a recorta pela caixa da pose animada dela e o ícone fica vazio
+	await t._frames(5)
+	p.model.set_weapon("pistol")
+	main._process(0.016)
+	var body_mi := p.model.find_child("Pistol", true, false) as MeshInstance3D
+	var icon_mi: MeshInstance3D = WeaponIcon._meshes(icon._pivot)[0]
+	var fmt := (icon_mi.mesh as ArrayMesh).surface_get_format(0) if icon_mi.mesh is ArrayMesh else Mesh.ARRAY_FORMAT_BONES
+	t.check(icon.kind == "pistol" and icon_mi.mesh != body_mi.mesh and fmt & Mesh.ARRAY_FORMAT_BONES == 0, "arma: pistola remontada sem a pele do corpo (não some)", str(fmt))
 	main.queue_free()
 	await t._frames(2)
 
@@ -415,6 +425,50 @@ func test_radar_all_enemies() -> void:
 	main.reset_all()
 	await t._frames(2)
 	t.check(radar.seen.is_empty(), "R: radar esquece todos", str(radar.seen.size()))
+	main.queue_free()
+	await t._frames(2)
+
+
+## Descendo uma escada (alçapão, mezanino) a câmera fica no alto do galpão e, girando, veria todo mundo: o radar não
+## avista ninguém na escada nem logo depois de descer (Radar.LADDER_HOLD); fora dela volta a avistar.
+func test_radar_ladders() -> void:
+	if t._world:
+		t._world.queue_free()
+		t._world = null
+		await t._frames(2)
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	t.get_root().add_child(main)
+	await t._frames(5)
+	var p: Player = main.player
+	var radar: Radar = main.radar
+	for e in main.get_tree().get_nodes_in_group("enemies"):
+		e.process_mode = Node.PROCESS_MODE_DISABLED  # parados: não a veem nem atiram
+	main.hatch.open(0.01)
+	for ladder: Ladder in [main.hatch.ladder, main.catwalk.ladder]:
+		var name := "alçapão" if ladder == main.hatch.ladder else "mezanino"
+		radar.reset()
+		p.moves.start_ladder(ladder, true)
+		Input.action_press("move_back")
+		var frames := 0
+		var peak := 0
+		while p.moves.mode != "" and frames < 600:
+			p.camera_rig.yaw += 0.12  # girando a câmera lá do alto para varrer o galpão
+			await t._frames(1)
+			frames += 1
+			peak = maxi(peak, radar.seen.size())
+		Input.action_release("move_back")
+		t.check(p.moves.mode == "" and frames < 600, "radar: desceu a escada do %s até o chão" % name, "%s %d" % [p.moves.mode, frames])
+		t.check(peak == 0, "radar: descendo a escada do %s ninguém é avistado" % name, str(peak))
+	# logo depois de descer a câmera ainda vem do alto; passada a espera, no meio do galpão volta a avistar
+	p.global_position = Vector3(1.0, 0, -6.0)
+	p.reset_physics_interpolation()
+	var waited := 0
+	while radar.seen.is_empty() and waited < int(Radar.LADDER_HOLD * 60.0) + 60:
+		p.camera_rig.yaw += 0.12
+		await t._frames(1)
+		waited += 1
+	t.check(waited >= int(Radar.LADDER_HOLD * 60.0 * 0.9), "radar: logo depois de descer ainda ninguém", str(waited))
+	t.check(not radar.seen.is_empty(), "radar: fora da escada volta a avistar", str(radar.seen.size()))
 	main.queue_free()
 	await t._frames(2)
 

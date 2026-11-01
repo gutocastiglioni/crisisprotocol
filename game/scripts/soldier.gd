@@ -5,7 +5,7 @@ extends Enemy
 ## combate ("engage"): mira nela, atira em rajadas longas de tiro instantâneo com descanso curto (acerta menos de longe,
 ## se ela está agachada ou correndo, e cada tiro da rajada sobe mais que o anterior; rolar esquiva) e se mexe: avança se
 ## está longe, recua se ela chega perto e anda de lado no resto. Ela some atrás de algo: ainda despeja SUPPRESS_TIME de
-## tiros onde ela estava (batem na cobertura). Sem vê-la por LOSE_TIME vai ao último lugar onde a viu. Morre em ragdoll, como os alvos de treino.
+## tiros onde ela estava, só com linha livre até lá (na caixa/parede em que ela se esconde ele não atira). Sem vê-la por LOSE_TIME vai ao último lugar onde a viu. Morre em ragdoll, como os alvos de treino.
 
 signal killed
 signal fired
@@ -24,12 +24,11 @@ const BURST_SHOTS := [4, 7]
 const SHOT_GAP := 0.1
 const REST_TIME := [0.3, 0.7]
 const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anterior vezes isto (o cano sobe)
-const LOCK_TIME := 0.6  # mirando nela à vista por este tempo antes de o tiro poder acertar: o sensor de perigo sobe antes (aviso)
+const LOCK_TIME := 0.6  # mirando nela à vista por este tempo antes do primeiro acerto: o sensor de perigo sobe antes (aviso)
 const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
-const STAGGER_TIME := 0.4
 ## Guarda de pistola (`weapon` "pistol", o do painel): tiros soltos mais espaçados e mais fortes, alcance menor.
 const PISTOL := {"damage": 9, "burst": [1, 3], "gap": 0.4, "range": 16.0}
-const COMBAT := ["alert", "engage", "hit"]
+const COMBAT := ["alert", "engage"]
 const VEST_PARTS := ["Spine", "Chest", ""]  # o colete cobre o tronco ("" = tiro na cápsula: o meio do corpo)
 const VEST_MULT := 0.5  # colete comum: tiro no tronco tira metade (braços, pernas e cabeça sem proteção)
 const FLAK_MULT := 0.12  # Flak Jacket: o tronco quase não sente, só a cabeça (ou braço/perna) resolve
@@ -42,8 +41,10 @@ const FLAK_TEXT := "FLAK JACKET"
 ## - 1: ronda na ala leste/fundo, na frente do canto da M16 e descendo pela parede leste (a ponta de baixo é o ponto cego)
 ## - 2: sentinela à direita do baú da M16 no canto superior direito
 ## - 3, 4: sentinelas guardando a porta do pátio
+## Os fixos de um portão dividem o posto ("post" = `Enemy.post`): corpo, grito ou barulho tiram no máximo metade dele
+## (3, 4, 5, 7 = "patio": até 2; 9, 10 = "norte": 1); com ela vista (vermelho) saem todos.
 ## - 5, 7: de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
-##   raptors, atrás das paredes de caixas: atrás da caixa baixa olhando para leste e no canto do fundo
+##   raptors, atrás das paredes de caixas: colado na parede do sul olhando para leste e no canto do fundo
 ## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
 ##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
 ## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
@@ -56,16 +57,16 @@ const GUARDS := [
 	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
 	{"route": [Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0), Vector3(10.5, 0, -9.0), Vector3(11.4, 0, 1.4)]},
 	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
-	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": []},
-	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": []},
-	# atrás da caixa baixa (-9,6; -5,2) olhando para a ala leste: não vigia o vão da parede do sul de frente (quem sai do
-	# labirinto passa agachada); só vê o vão virando a cabeça, e quem passa correndo/em pé pode ser pego
-	{"pos": Vector3(-9.4, 0, -6.3), "rot_y": -PI * 0.5, "route": [], "hold": true},
+	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": [], "post": "patio"},
+	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": [], "post": "patio"},
+	# colado atrás da parede de caixas do sul, a oeste do vão, olhando para a ala leste: vê o canto (o tronco do 0) e o vão de
+	# lado, mas as caixas tapam a vista dele para fora, para a saída do labirinto
+	{"pos": Vector3(-10.6, 0, -1.6), "rot_y": -PI * 0.5, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
-	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true},
+	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
-	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true},
-	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true},
+	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
+	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
 	{"route": [Vector3(2.4, 0, -9.4), Vector3(2.4, 0, -0.2), Vector3(0.2, 0, -0.2), Vector3(4.2, 0, -0.2), Vector3(2.4, 0, -0.2)]},
 	{"pos": Vector3(-12.06, 0, 9.25), "rot_y": PI * 0.5, "route": [], "weapon": "pistol", "console": true},
 ]
@@ -83,7 +84,7 @@ var _shape: CollisionShape3D
 var _burst := 0
 var _burst_i := 0  # tiros já dados na rajada
 var _shot_t := 0.0
-var _lock_t := 0.0  # tempo mirando nela à vista (`LOCK_TIME`); some de vista, zera
+var _lock_t := 0.0  # tempo mirando nela à vista (`LOCK_TIME`); travou, vale até ele esquecê-la (sumir/esquivar não zera)
 var _rest := 0.0
 var _strafe := 1.0
 var _strafe_t := 0.0
@@ -151,6 +152,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_tick(delta)
+	if alert_t <= 0.0 and not in_combat():
+		_lock_t = 0.0  # esqueceu dela: a próxima luta começa com o aviso de novo
 	if not _calm_state(delta):
 		head_yaw = 0.0
 		head_pitch = 0.0
@@ -165,11 +168,6 @@ func _physics_process(delta: float) -> void:
 					start_engage()
 			"engage":
 				_engage(delta)
-			"hit":
-				_stop(delta)
-				_update_pitch(delta)
-				if _t >= STAGGER_TIME:
-					start_engage()
 			"dead":
 				_stop(delta)
 	else:
@@ -298,9 +296,7 @@ func _engage(delta: float) -> void:
 	var to := _to_target()
 	var dist := to.length()
 	var sees := _lost_t < 0.4
-	if not sees:
-		_lock_t = 0.0
-	elif model.is_aimed() and not target.is_dodging():
+	if sees and model.is_aimed() and not target.is_dodging():
 		_lock_t += delta
 	_face(to if sees else _last_known - global_position, delta, turn_rate)
 	_update_pitch(delta)
@@ -380,7 +376,10 @@ func _engage(delta: float) -> void:
 		_burst = rng.randi_range(burst_shots[0], burst_shots[1])
 		_burst_i = 0
 	if _shot_t <= 0.0:
-		_fire(sees)
+		var aim := _aim_point(sees)
+		if not _clear_shot(aim):
+			return  # caixa/parede no meio: sabe que ela está do outro lado, mas não gasta bala na cobertura
+		_fire(sees, aim)
 		_burst -= 1
 		_burst_i += 1
 		_shot_t = shot_gap
@@ -420,7 +419,7 @@ func _hit_chance(dist: float, nth: int) -> float:
 
 ## Sensor de perigo: chance de pelo menos um tiro da rajada (a de agora ou a próxima) acertá-la. Sem vê-la a supressão
 ## não acerta; fora do alcance, nada; ainda erguendo a arma, um pouco menos. Não espera o `LOCK_TIME`: sobe durante ele,
-## como aviso, e o acerto vem depois.
+## como aviso, e o primeiro acerto vem depois.
 func _threat() -> float:
 	if _lost_t >= 0.4:
 		return 0.05
@@ -437,21 +436,32 @@ func _threat() -> float:
 
 ## Distância do cano ao peito dela (a mesma do sorteio do tiro).
 func muzzle_dist() -> float:
-	var chest := target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
+	var chest := target.sight_point()
 	return model.muzzle_position().distance_to(chest)
 
 
+## Para onde vai o tiro: o peito dela ou, na supressão, um ponto sorteado em volta do último lugar onde a viu.
+func _aim_point(at_her: bool) -> Vector3:
+	if at_her:
+		return target.sight_point()
+	return _last_known + Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.6, 1.3), rng.randf_range(-0.4, 0.4))
+
+
+## Nada do cenário entre o cano e `aim`: só assim ele aperta o gatilho (não atira na caixa em que ela se esconde).
+func _clear_shot(aim: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(model.muzzle_position(), aim, 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
 ## Um tiro nela: acerta com a chance de `_hit_chance`, só depois de `LOCK_TIME` mirando nela (antes passa raspando: o
-## sensor de perigo avisa antes do primeiro acerto). Sem linha livre o tiro bate na parede. `at_her` = false:
+## sensor de perigo avisa antes do primeiro acerto; dali em diante, enquanto ele estiver alertado, acerta sem espera). Sem linha livre o tiro bate na parede. `at_her` = false:
 ## supressão, atira no último lugar onde a viu (não acerta; bate na cobertura ou passa).
-func _fire(at_her := true) -> void:
+func _fire(at_her := true, aim := Vector3.INF) -> void:
 	shots_fired += 1
 	model.shoot()
 	var parent := get_parent()
 	var muzzle := model.muzzle_position()
-	var chest := target.global_position + Vector3.UP * (0.8 if target.crouching else 1.2)
-	if not at_her:
-		chest = _last_known + Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.6, 1.3), rng.randf_range(-0.4, 0.4))
+	var chest := aim if aim != Vector3.INF else _aim_point(at_her)
 	var dir := (chest - muzzle).normalized()
 	Fx.muzzle_flash(parent, muzzle, weapon, dir)
 	var space := get_world_3d().direct_space_state
@@ -487,11 +497,11 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, head := false) -> void:
 	if health <= 0:
 		die(dir, at, head)
 		return
-	if not in_combat() and _has_target():
-		_alarm_from(target.global_position)  # levou tiro sem tê-la notado: sabe onde ela está e grita um instante depois
-	model.hit(dir)
-	_enter("hit", "Idle", 0.05)
-	model.set_aim(true)
+	model.hit(dir)  # tranco aditivo: o tiro não interrompe o que ele está fazendo
+	if not in_combat():
+		if _has_target():
+			_alarm_from(target.global_position)  # levou tiro sem tê-la notado: sabe onde ela está e grita um instante depois
+		start_alert()
 
 
 ## Tiro na cabeça de um humano é letal, qualquer arma e distância (a queda de dano com o alcance não salva ninguém).

@@ -22,7 +22,7 @@ func run(runner: SceneTree) -> void:
 	await test_stomp()
 	await test_roll_dodges_stomp()
 	await test_bite_grab_throw()
-	await test_flinch_needs_damage()
+	await test_shot_never_interrupts()
 	await test_hardened()
 	await test_hop_faces_her()
 	await test_hop_dodges_aim()
@@ -226,15 +226,13 @@ func test_bite_grab_throw() -> void:
 	check(up, "levanta depois do arremesso")
 
 
-func test_flinch_needs_damage() -> void:
+func test_shot_never_interrupts() -> void:
 	var pr := await _pair(Vector3(0, 0, 12))
 	var a: Allosaurus = pr[1]
 	a.start_stalk()
-	a.take_hit(Player.DAMAGE, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
-	check(a.state != "hit", "um tiro não faz o alossauro se encolher", a.state)
-	for i in ceili(float(Allosaurus.FLINCH_DAMAGE) / Player.DAMAGE) - 1:
+	for i in ceili(float(Allosaurus.GROWL_DAMAGE) / Player.DAMAGE) + 1:
 		a.take_hit(Player.DAMAGE, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
-	check(a.state == "hit", "dano acumulado faz reagir (Hit)", a.state)
+	check(not a.dead and a.state == "stalk", "dano acumulado não faz o alossauro parar", a.state)
 
 
 ## Casco (HARDENED): o tiro de verdade (Player._pellet_hit, a parte achada pelo ragdoll que acompanha a animação) tira
@@ -410,14 +408,16 @@ func test_end_screen() -> void:
 	Input.action_release("interact")
 	await t._frames(2)
 	check(not main.game_over and not main._end.visible and not p.dead and p.health == 100 and p.shots_fired == 0, "apertar E (interact) na tela de Game Over recomeça a partida")
-	# Morrer de novo e recomeçar com Espaço (roll)
+	# Morrer de novo e recomeçar com o X do controle (agachar, RESTART_ACTIONS)
 	p.take_hit(999, Vector3.BACK, p.global_position + Vector3.UP * 1.2)
 	await t._frames(int((main.GAME_OVER_DELAY + 0.3) * 60.0))
 	check(main.game_over and main._end.visible, "segunda morte mostra Game Over novamente")
-	Input.action_press("roll")
+	Input.action_press("crouch")
 	await t._frames(2)
-	Input.action_release("roll")
+	Input.action_release("crouch")
 	await t._frames(2)
-	check(not main.game_over and not p.dead and p.health == 100 and not p.rolling, "apertar Espaço (roll) na tela de Game Over recomeça sem sair rolando")
+	check(not main.game_over and not p.dead and p.health == 100 and not p.rolling and not p.crouching,
+		"apertar X (agachar) na tela de Game Over recomeça sem sair agachada nem rolando",
+		"game_over %s, morta %s, vida %d, rolando %s, agachada %s" % [main.game_over, p.dead, p.health, p.rolling, p.crouching])
 	main.queue_free()
 	await t.process_frame

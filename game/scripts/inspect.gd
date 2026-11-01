@@ -15,7 +15,7 @@ const MIN_SHOW := 0.5  # s antes de aceitar o botão (o mesmo E que abriu não f
 const ZOOM_IN := 0.55
 const ZOOM_OUT := 0.35
 const LOCK_FOV := 38.0
-const CONFIRM := ["interact", "shoot", "roll", "jump", "ui_accept"]
+const CONFIRM := ["interact", "crouch", "shoot", "jump", "ui_accept"]
 const TEXT := UiStyle.INK
 const TITLE := UiStyle.ACCENT
 const VIEW := Vector2(256, 120)  # quadro do item (unidades do HUD de 240 de altura): folga para girar sem cortar as pontas
@@ -27,10 +27,11 @@ const CODE_LEN := 4
 const KEYPAD_OK := ["interact", "ui_accept"]
 const KEYPAD_EXIT := ["crouch", "ui_cancel"]
 const WRONG_TIME := 0.9  # s com o "CÓDIGO INCORRETO" antes de zerar
-# botões no pé da caixa (UiStyle.Hint): confirmar; no teclado, escolher/confirmar/sair
-const OK_ITEMS := [{"action": "interact", "text": "OK"}]
-const KEYPAD_ITEMS := [{"keys": ["0-9", "SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"action": "interact", "text": "CONFIRMAR"},
-	{"action": "crouch", "text": "SAIR"}]
+# botões no pé da caixa (UiStyle.Hint): confirmar (E no teclado, X no controle); no teclado numérico, escolher/confirmar/sair
+const OK_ITEMS := [{"action": "interact", "pad_action": "crouch", "text": "OK"}]
+const KEYPAD_ITEMS := [{"keys": ["0-9", "SETAS"], "pad": "dpad", "text": "ESCOLHER"},
+	{"action": "interact", "pad_action": "crouch", "text": "CONFIRMAR"},
+	{"action": "crouch", "pad_action": "roll", "text": "SAIR"}]
 const VISOR_OK := Color(0.6, 1.0, 1.0)  # visor do teclado com o código aceito (cor do aparelho, não do texto)
 # caixa de texto embaixo: título no alto, botões no pé e o texto centralizado no meio, crescendo para cima se precisar
 const BOX_MARGIN := 8.0  # da caixa até a borda da tela
@@ -200,7 +201,7 @@ func _open() -> void:
 ## volta dois passos de física depois (como o `PauseMenu.close`).
 func _close() -> void:
 	_hide_all()
-	for a in CONFIRM + KEYPAD_OK + KEYPAD_EXIT:
+	for a in CONFIRM + KEYPAD_OK + KEYPAD_EXIT + ["roll", "crouch"]:
 		if InputMap.has_action(a):
 			Input.action_release(a)
 	for i in 2:
@@ -243,6 +244,8 @@ func _wait_confirm() -> void:
 			if auto_close >= 0.0 and _elapsed >= MIN_SHOW + auto_close:
 				return
 			for a in CONFIRM:
+				if a == "interact" and Input.is_joy_button_pressed(0, JOY_BUTTON_Y):
+					continue
 				if InputMap.has_action(a) and Input.is_action_just_pressed(a):
 					return
 
@@ -369,7 +372,8 @@ func _enter_code(code: String) -> bool:
 			for i in CODE_LEN:
 				_digits[i] = int(auto_code[i]) if i < auto_code.length() else 0
 			submit = true
-		if _just(KEYPAD_EXIT):
+		var pad_x := _just(["crouch"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_A)
+		if (_just(KEYPAD_EXIT) and not pad_x) or _just(["roll"]):
 			_typing = false
 			return false
 		# analógico/WASD/setas ou o direcional do controle (ui_*), como diz o botão no pé da caixa
@@ -383,7 +387,7 @@ func _enter_code(code: String) -> bool:
 			Sfx.ui(self, "keypad_beep")
 		if step != 0 or turn != 0:
 			_show_code(UiStyle.ACTION)
-		if _just(KEYPAD_OK):
+		if (_just(KEYPAD_OK) and not Input.is_joy_button_pressed(0, JOY_BUTTON_Y)) or pad_x:
 			submit = true
 		if not submit:
 			continue

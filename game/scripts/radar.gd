@@ -3,7 +3,8 @@ extends Control
 ## Radar do HUD (canto de cima à direita, unidades de 320x240 ampliadas com ele): quadrado centrado nela e girado com
 ## a câmera (para cima = para onde a câmera olha), com o contorno das salas (galpão, sala dos clones, pátio, pedreira)
 ## e as portas (verde aberta, amarela fechada, vermelha trancada). Inimigo só aparece depois que ela o avista uma vez
-## (`spot`: na tela, a até SPOT_RANGE m, com nada do cenário no meio); daí em diante o radar o rastreia onde estiver,
+## (`spot`: na tela, a até SPOT_RANGE m, com nada do cenário no meio; nunca numa escada (alçapão, mezanino), de onde a
+## câmera giraria por cima do galpão inteiro); daí em diante o radar o rastreia onde estiver,
 ## com a cor do alerta dele (Enemy.alert_level). Fora do alcance fica preso na borda, apagado. Morto some; R esquece todos.
 ## Furtividade junto: o fundo e a moldura pulsam na cor do maior alerta dos inimigos (verde calmo, amarelo desconfiados,
 ## laranja busca ativa, vermelho alerta; mais rápido quanto pior) e embaixo vem um olho + VISIVEL/INVISIVEL e o estado.
@@ -21,6 +22,7 @@ const FONT_SIZE := UiStyle.S
 const RANGE := 22.0  # m do centro até a borda
 const SPOT_RANGE := 32.0
 const RESET_HOLD := 0.3  # s depois do R sem avistar: a câmera ainda está voltando de onde estava
+const LADDER_HOLD := 1.0  # s depois de sair da escada sem avistar: a câmera ainda desce do alto do galpão
 const BG := Color(0.0, 0.07, 0.03, 0.62)
 const FRAME := Color(0.35, 0.85, 0.45, 0.9)
 const WALL := Color(0.35, 0.8, 0.45, 0.55)
@@ -50,6 +52,8 @@ func _init() -> void:
 func update(delta: float) -> void:
 	_t += delta
 	_hold = maxf(_hold - delta, 0.0)
+	if player != null and player.moves.on_ladder():
+		_hold = LADDER_HOLD
 	if _hold <= 0.0:
 		_spot_new()
 	_update_stealth()

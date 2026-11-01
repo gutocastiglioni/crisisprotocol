@@ -12,6 +12,7 @@ func run(runner: SceneTree) -> void:
 	await test_m79_key_tag()
 	await test_towers_and_hidden_snipers()
 	await test_last_sniper_falls_with_card()
+	await test_no_shot_from_roof_or_offstage()
 
 
 func _main() -> Node:
@@ -119,6 +120,60 @@ func test_towers_and_hidden_snipers() -> void:
 	await t._frames(3)
 	t.check(snipers.all(func(s: Sniper) -> bool: return s.lurking and not s.visible and s.global_position.distance_to(main.towers[snipers.find(s)].post()) < 0.01),
 		"R: de volta para fora de cena, no posto")
+	main.queue_free()
+	await t._frames(2)
+
+
+## Sniper fora de cena (invisível, mas o ragdoll segue a animação) não vira alvo nem leva tiro; do telhado (onde
+## ninguém a percebe) ela também não alcança ninguém, nem com eles em cena. Da estrada, sim.
+func test_no_shot_from_roof_or_offstage() -> void:
+	var main: Node = await _main()
+	var p: Player = main.player
+	var s: Sniper = main.tower_snipers[0]
+	main.smelled = true  # o aviso do cheiro na beira oeste pausaria o jogo
+	var aim_at := func(at: Vector3) -> Dictionary:
+		p.global_position = at
+		p.reset_physics_interpolation()
+		p.camera_rig._snapped = false  # a câmera vai direto para ela (senão vem deslizando de onde estava)
+		await t._frames(5)
+		var best := {}
+		for i in 20:  # ele se mexe: mira no peito de novo a cada quadro e guarda o que a mira pegou
+			p.camera_rig.look_at_point(s.model.ragdoll.bodies["Chest"].global_position)
+			await t._frames(1)
+			best = p.aim_target_info()
+			if best.target == s:
+				break
+		return best
+	Input.action_press("aim")
+	var roof_edge := Vector3(-Roof.EDGE + 1.0, Roof.Y, clampf(s.global_position.z, -Roof.EDGE + 1.0, Roof.EDGE - 1.0))
+	t.check(Roof.has(roof_edge), "ponto de teste na beira oeste do telhado")
+	var info: Dictionary = await aim_at.call(roof_edge)
+	t.check(info.target != s, "sniper fora de cena: a mira não acusa nada", str(info))
+	# sem a regra do telhado (ela fora da laje, mas a câmera no mesmo lugar) a mira pega o ragdoll dele: a linha está livre
+	var ray: Array = p.camera_rig.aim_ray()
+	var space := t.get_root().get_world_3d().direct_space_state
+	var own: Array[RID] = [p.get_rid()]
+	own.append_array(p.model.ragdoll.body_rids())
+	var bare := space.intersect_ray(PhysicsRayQueryParameters3D.create(ray[0], ray[0] + ray[1] * 80.0, Player.SHOT_MASK, own))
+	t.check(bare and bare.collider is PhysicalBone3D and Ragdoll.owner_of(bare.collider) == s,
+		"do telhado a linha até o sniper está livre (o teste mira de verdade)", str(bare.get("collider")))
+	var hp := s.health
+	p.fire()
+	await t._frames(2)
+	t.check(s.health == hp and not s.dead, "sniper fora de cena não leva tiro", "vida=%d" % s.health)
+	_kill_yard_raptors(main)
+	await t._frames(3)
+	t.check(not s.lurking, "com os raptors mortos ele aparece")
+	info = await aim_at.call(roof_edge)
+	t.check(info.target != s, "do telhado a mira não pega o sniper em cena", str(info))
+	await t._frames(int(Player.SHOT_COOLDOWN * 60) + 5)
+	p.fire()
+	await t._frames(2)
+	t.check(s.health == hp and not s.dead, "do telhado o tiro não chega nele", "vida=%d" % s.health)
+	# da estrada, a uns 10 m da torre: mira e tiro valem
+	info = await aim_at.call(Vector3(main.towers[0].global_position.x + 10.0, 0, s.global_position.z))
+	t.check(info.target == s, "da estrada a mira pega o sniper", str(info))
+	Input.action_release("aim")
 	main.queue_free()
 	await t._frames(2)
 

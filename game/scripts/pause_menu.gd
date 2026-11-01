@@ -1,22 +1,23 @@
 class_name PauseMenu
 extends Node
 ## Menu de pausa (ESC / START): árvore pausada (este nó roda mesmo assim), fundo escurecido e a lista
-## CONTINUAR / REINICIAR / SHOWROOM / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por cima; voltar dele
-## devolve o menu). Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
+## CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por cima; voltar
+## dele devolve o menu; TELA CHEIA troca SIM/NÃO na hora e salva em `Settings` para o jogo já abrir assim).
+## Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
 ## ESC / START / bola volta ao jogo; o mouse também escolhe e clica. Quem abre é o `main` (não abre com o jogo já pausado
 ## por uma tela de inspeção nem no game over). Captura e testes: `on_shown` é chamado quando o menu aparece.
 
 signal restart
 signal quit
 
-const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "SAIR DO JOGO"]
+const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "TELA CHEIA", "SAIR DO JOGO"]
 const UP := ["move_forward", "ui_up"]
 const DOWN := ["move_back", "ui_down"]
-const CONFIRM := ["interact", "roll", "ui_accept"]
+const CONFIRM := ["interact", "crouch", "ui_accept"]
 const BACK := ["crouch"]  # bola; ESC / START chegam como "pause" (_unhandled_input)
 const TEXT := UiStyle.INK
 const PICK := UiStyle.ACCENT
-const HINT_ITEMS := [{"keys": ["SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"action": "interact", "text": "CONFIRMAR"},
+const HINT_ITEMS := [{"keys": ["SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"action": "interact", "pad_action": "crouch", "text": "CONFIRMAR"},
 	{"action": "pause", "text": "VOLTAR"}]
 const ROW := 14.0  # altura de cada opção (unidades do HUD de 320x240)
 
@@ -46,7 +47,7 @@ func _ready() -> void:
 	layer.add_child(_hint)
 	_hint.set_items(HINT_ITEMS)
 	for i in ITEMS.size():
-		var l := _label(ITEMS[i], TEXT)
+		var l := _label(_item_text(i), TEXT)
 		l.mouse_filter = Control.MOUSE_FILTER_STOP
 		l.mouse_entered.connect(_select.bind(i))
 		l.gui_input.connect(_on_row_input.bind(i))
@@ -96,7 +97,7 @@ func close() -> void:
 		return
 	is_open = false
 	_set_visible(false)
-	for a in CONFIRM + BACK + ["pause"]:
+	for a in CONFIRM + BACK + ["crouch", "roll", "pause"]:
 		if InputMap.has_action(a):
 			Input.action_release(a)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -111,8 +112,15 @@ func _select(i: int, beep := true) -> void:
 		Sfx.ui(self, "keypad_beep")
 	selected = i
 	for k in _rows.size():
-		_rows[k].text = ("> %s <" if k == selected else "%s") % ITEMS[k]
+		_rows[k].text = ("> %s <" if k == selected else "%s") % _item_text(k)
 		_rows[k].add_theme_color_override("font_color", PICK if k == selected else TEXT)
+
+
+## Texto da opção; a tela cheia mostra o estado atual.
+func _item_text(i: int) -> String:
+	if ITEMS[i] == "TELA CHEIA":
+		return "TELA CHEIA: %s" % ("SIM" if Settings.fullscreen else "NÃO")
+	return ITEMS[i]
 
 
 func _on_row_input(e: InputEvent, i: int) -> void:
@@ -134,6 +142,9 @@ func _choose() -> void:
 		"SHOWROOM":
 			_set_visible(false)
 			showroom.open()
+		"TELA CHEIA":
+			Settings.set_fullscreen(not Settings.fullscreen)
+			_select(selected, false)
 		"SAIR DO JOGO":
 			quit.emit()
 
@@ -163,9 +174,12 @@ func _process(_delta: float) -> void:
 	var step := int(_just(DOWN)) - int(_just(UP))
 	if step != 0:
 		_select(posmod(selected + step, ITEMS.size()))
-	if _just(CONFIRM):
+	var pad_x := _just(["crouch"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_A)
+	var pad_o := _just(["roll"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_B)
+	var pad_y := _just(["interact"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_Y)
+	if pad_x or (_just(CONFIRM) and not pad_o and not pad_y):
 		_choose()
-	elif _just(BACK):
+	elif pad_o or (_just(BACK) and not pad_x):
 		close()
 
 

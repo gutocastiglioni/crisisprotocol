@@ -44,7 +44,8 @@ const BACK := ["crouch"]  # ESC / START chegam como "pause" (_input)
 const HINT_ROWS := [
 	[{"keys": ["SETAS"], "pad": "dpad", "text": "ANIMAÇÃO"}, {"keys": ["A", "D"], "text": "GIRAR"},
 		{"keys": ["RODA", "Z", "X"], "pad_action": "aim", "text": "ZOOM"}],
-	[{"action": "switch_weapon", "text": "BICHO"}, {"action": "jump", "text": "MODO"}, {"action": "roll", "text": "VELOCIDADE"},
+	[{"action": "switch_weapon", "text": "BICHO"}, {"action": "jump", "text": "MODO"},
+		{"action": "roll", "pad_action": "crouch", "text": "VELOCIDADE"},
 		{"action": "pause", "text": "VOLTAR"}],
 ]
 
@@ -305,10 +306,12 @@ func _process(delta: float) -> void:
 	if _just(["jump"]):
 		Sfx.ui(self, "keypad_beep")
 		set_mode(mode + 1)
-	if _just(["roll"]):
+	var pad_x := _just(["crouch"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_A)
+	var pad_o := _just(["roll"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_B)
+	if pad_x or (_just(["roll"]) and not pad_o):
 		Sfx.ui(self, "keypad_beep")
 		set_speed(speed_i + 1)
-	if _just(BACK):
+	if pad_o or (_just(BACK) and not pad_x):
 		close()
 		return
 	yaw -= (Input.get_axis("move_left", "move_right") + Input.get_axis("look_left", "look_right")) * 2.0 * delta

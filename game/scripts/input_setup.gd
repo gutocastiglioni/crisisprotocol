@@ -14,6 +14,7 @@ const KEYS := {
 	"interact": [KEY_E],
 	"switch_weapon": [KEY_Q, KEY_TAB],
 	"crouch": [KEY_C, KEY_CTRL],
+	"lean": [KEY_V],
 	"reset": [KEY_R],
 	"pause": [KEY_ESCAPE],
 	"zoom_in": [KEY_X, KEY_SPACE],
@@ -32,15 +33,15 @@ const MOUSE := {
 }
 # posições do controle de PlayStation: A = X, B = bola, X = quadrado, Y = triângulo, BACK = Select
 const JOY_BUTTONS := {
-	"roll": JOY_BUTTON_A,
+	"roll": JOY_BUTTON_B,
 	"zoom_in": JOY_BUTTON_A,
 	"zoom_out": JOY_BUTTON_B,
-	"crouch": JOY_BUTTON_B,
+	"crouch": JOY_BUTTON_A,
 	"jump": JOY_BUTTON_X,
 	"interact": JOY_BUTTON_Y,
 	"switch_weapon": JOY_BUTTON_BACK,
 	"aim": JOY_BUTTON_LEFT_SHOULDER,
-	"shoot": JOY_BUTTON_RIGHT_SHOULDER,
+	"lean": JOY_BUTTON_RIGHT_STICK,  # esgueirar pela quina (R3); atirar fica no R2
 	"pause": JOY_BUTTON_START,  # menu de pausa (reiniciar fica lá dentro; no teclado R segue reiniciando)
 	"sprint": JOY_BUTTON_LEFT_STICK,
 }

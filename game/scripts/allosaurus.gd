@@ -8,8 +8,8 @@ extends Enemy
 ## ruge na cara dela: atordoa só quem está na frente, até ROAR_AT_RANGE) ou investida (longe). Não deixa que ela o
 ## rodeie: com ela fora da frente (HOP_ANGLE) dá um pulinho esgueirado de lado (HopL/HopR) virando para ela; com ela
 ## mirando nele de frente, de vez em quando o pulinho é uma esquiva para um lado (DODGE_CHANCE). Rolar na hora certa
-## esquiva dos golpes (não do rugido). Grande demais para se encolher a cada tiro: só reage (Hit) depois de juntar
-## FLINCH_DAMAGE. Casco duro (HARDENED, jeito Syphon Filter): o tiro só machuca de verdade nas costelas (RIBS); cabeça,
+## esquiva dos golpes (não do rugido). O tiro nunca interrompe o que ele está fazendo; a cada GROWL_DAMAGE
+## juntado só rosna de dor. Casco duro (HARDENED, jeito Syphon Filter): o tiro só machuca de verdade nas costelas (RIBS); cabeça,
 ## pescoço, pernas e cauda levam HARDENED_MULT do dano e a mira escreve HARDENED nelas. A granada não passa pelo casco.
 ## Morre em ragdoll (sinal `killed`: fim do jogo).
 
@@ -22,7 +22,7 @@ const WALK_SPEED := 2.2
 const RUN_SPEED := 7.0  # mais rápido que ela correndo (4,4): tem que rolar ou se esconder
 const STALK_DIST := 6.0
 const MAX_HEALTH := 900
-const FLINCH_DAMAGE := 200
+const GROWL_DAMAGE := 200
 const ROAR_RANGE := 18.0
 const ROAR_PEAK := 0.667  # quadro 20 do Roar
 const ROAR_COOLDOWN := 14.0
@@ -61,7 +61,7 @@ const HARDENED_MULT := 0.05
 const HARDENED_TEXT := "HARDENED"
 const STALK_TIME := Vector2(0.7, 1.5)  # andando atrás dela antes de escolher o golpe
 const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
-const COMBAT := ["roar", "roar_at", "stalk", "charge", "stomp", "bite", "hold", "throw", "headbutt", "tail", "recover", "hit",
+const COMBAT := ["roar", "roar_at", "stalk", "charge", "stomp", "bite", "hold", "throw", "headbutt", "tail", "recover",
 	"hop"]
 
 var model: AllosaurusModel
@@ -71,7 +71,7 @@ var last_hit_at := Vector3.ZERO
 var _done := false
 var _dazed_done := false
 var _roar_cd := 0.0
-var _flinch := 0
+var _hurt := 0
 var _ticks := 0
 var _spin := 0.0
 var _side := 1.0  # para onde o golpe varre: 1 = esquerda dele
@@ -182,11 +182,11 @@ func _combat_state(delta: float) -> void:
 			_hold(delta)
 		"throw":
 			_throw(delta)
-		"recover", "hit":
+		"recover":
 			_stop(delta)
 			if _has_target():
 				_face(_to_target(), delta, 1.5)
-			if state == "recover" and _t >= _dur * 0.5 and _try_hop(delta):
+			if _t >= _dur * 0.5 and _try_hop(delta):
 				return
 			if _t >= _dur:
 				start_stalk()
@@ -574,11 +574,10 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 		_raise_alarm()
 		start_roar()
 		return
-	_flinch += amount
-	if _flinch >= FLINCH_DAMAGE and state in ["stalk", "recover", "charge"]:
-		_flinch = 0
-		_enter("hit", "Hit", 0.05)
-		_dur = 0.5
+	_hurt += amount
+	if _hurt >= GROWL_DAMAGE:
+		_hurt = 0
+		Sfx.play(model, "raptor_hurt", model.mouth_position(), 0.0, model.voice_pitch)
 
 
 func wound() -> float:
@@ -605,7 +604,7 @@ func reset() -> void:
 	model.stop_ragdoll()
 	_reset_enemy()
 	health = MAX_HEALTH
-	_flinch = 0
+	_hurt = 0
 	_roar_cd = 0.0
 	_hop_cd = 0.0
 	airborne = false

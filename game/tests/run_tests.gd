@@ -15,6 +15,7 @@ const EXPECTED_ANIMS := ["Idle", "Walk", "Run", "AimIdle", "Shoot", "StrafeL", "
 const SUITES := [
 	["moves", "movimentos novos e fuzil", preload("res://tests/moves_tests.gd")],
 	["hurt", "golpes e levantar", preload("res://tests/hurt_tests.gd")],
+	["lean", "esgueirar pela quina (R3 / V)", preload("res://tests/lean_tests.gd")],
 	["weapons", "escopeta, buracos de bala e disparos", preload("res://tests/weapons_tests.gd")],
 	["key", "container trancado, chave e M79", preload("res://tests/key_tests.gd")],
 	["blood", "sangue e tiro na cabeça", preload("res://tests/blood_tests.gd")],
@@ -571,18 +572,20 @@ func test_gamepad() -> void:
 	await _frames(int(Player.SHOT_COOLDOWN * 60) + 2)
 	_joy_button(JOY_BUTTON_LEFT_SHOULDER, true)
 	_joy_button(JOY_BUTTON_RIGHT_SHOULDER, true)
+	_joy_button(JOY_BUTTON_RIGHT_STICK, true)
 	await _frames(3)
-	check(p.aiming and p.shots_fired == shots + 2, "LB = mirar, RB = atirar")
+	check(p.aiming and p.shots_fired == shots + 1 and Input.is_action_pressed("lean"), "LB = mirar, R3 = esgueirar, RB não atira")
+	_joy_button(JOY_BUTTON_RIGHT_STICK, false)
 	_joy_button(JOY_BUTTON_RIGHT_SHOULDER, false)
 	_joy_button(JOY_BUTTON_LEFT_SHOULDER, false)
 	await _frames(40)
-	_joy_button(JOY_BUTTON_A, true)
-	await _frames(2)
-	_joy_button(JOY_BUTTON_A, false)
-	check(p.rolling, "botão A = rolar")
-	await _frames(int(Moves.data().roll.frames * 2) + 6)
 	_joy_button(JOY_BUTTON_B, true)
 	await _frames(2)
 	_joy_button(JOY_BUTTON_B, false)
+	check(p.rolling, "botão B (bola/O) = rolar")
+	await _frames(int(Moves.data().roll.frames * 2) + 6)
+	_joy_button(JOY_BUTTON_A, true)
+	await _frames(2)
+	_joy_button(JOY_BUTTON_A, false)
 	await _frames(3)
-	check(p.crouching, "botão B = agachar")
+	check(p.crouching, "botão A (X) = agachar")

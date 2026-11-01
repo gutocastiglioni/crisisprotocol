@@ -29,7 +29,7 @@ func run(runner: SceneTree) -> void:
 	await test_bite_grab_shake()
 	await test_struggle()
 	await test_roll_dodges_bite()
-	await test_shot_releases_hold()
+	await test_shot_keeps_hold()
 	await test_player_dies_in_hold()
 	await test_shot_and_death()
 	await test_respawn_while_grabbed()
@@ -374,14 +374,18 @@ func test_roll_dodges_bite() -> void:
 	check(not p.grabbed and p.health == 100, "rolar esquiva da mordida", "vida=%d" % p.health)
 
 
-func test_shot_releases_hold() -> void:
+func test_shot_keeps_hold() -> void:
 	var pr := await _pair(Vector3(0, 0, 1.6))
 	var p: Player = pr[0]
 	var r: Raptor = pr[1]
 	await _grab(p, r)
 	r.take_hit(Player.DAMAGE, Vector3.BACK, r.global_position + Vector3.UP)
 	await t._frames(2)
-	check(not p.grabbed and r.state == "hit", "tiro faz o raptor soltar", r.state)
+	check(p.grabbed and r.state == "hold", "tiro não faz o raptor soltar a presa", r.state)
+	r.start_charge()
+	var dur := r._dur
+	r.take_hit(Player.DAMAGE, Vector3.BACK, r.global_position + Vector3.UP)
+	check(r.state == "charge" and r._dur == dur, "tiro não interrompe a investida", r.state)
 
 
 func test_player_dies_in_hold() -> void:

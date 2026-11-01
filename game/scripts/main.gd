@@ -64,10 +64,10 @@ const AIM_SHOT_AT := 2.0  # capturas allo_aim / flak: quando ela atira
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
 const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparece (dá tempo de ver o corpo cair)
-const RESTART_ACTIONS := ["reset", "interact", "roll", "jump", "shoot", "ui_accept"]
+const RESTART_ACTIONS := ["reset", "interact", "crouch", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando)\nESPAÇO esquiva  C agachar  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO esquiva (O)  C agachar (X)  V esgueirar na quina (R3)  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -226,6 +226,7 @@ func _ready() -> void:
 		var sd := Soldier.new()
 		sd.target = player
 		sd.hold_post = g.get("hold", false)
+		sd.post = g.get("post", "")
 		sd.flak = g.get("flak", false)
 		sd.weapon = g.get("weapon", Soldier.WEAPON)
 		sd.distracted = g.get("console", false)
@@ -279,6 +280,8 @@ func _ready() -> void:
 	apply_gfx(Gfx.mode)
 	_parse_args()
 	if _capture == "":
+		Settings.load_file()
+		Settings.apply()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_tree().create_timer(10.0).timeout.connect(func() -> void: _hud_help.visible = false)
 
@@ -451,7 +454,7 @@ func show_end() -> void:
 	title.add_theme_color_override("font_color", UiStyle.ACCENT)
 	title.reset_size()
 	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d" % [t / 60, t % 60, player.shots_fired, player.health]
-	_end_hint.set_items([{"action": "reset", "text": "JOGAR DE NOVO"}])
+	_end_hint.set_items([{"action": "reset", "pad_action": "crouch", "text": "JOGAR DE NOVO"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
@@ -470,7 +473,7 @@ func show_game_over() -> void:
 	title.reset_size()
 	_end_stats.text = ("VOCÊ MORREU NA QUEDA" if player.death_cause == "fall" else "VOCÊ MORREU") + "\nTEMPO %02d:%02d   TIROS %d" % [t / 60, t % 60, player.shots_fired]
 	# R no teclado; no controle o triângulo (RESTART_ACTIONS também aceita E, espaço, pular e atirar)
-	_end_hint.set_items([{"action": "reset", "pad_action": "interact", "text": "RECOMEÇAR"}])
+	_end_hint.set_items([{"action": "reset", "pad_action": "crouch", "text": "RECOMEÇAR"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
@@ -812,6 +815,13 @@ func _parse_args() -> void:
 			Input.action_press("move_forward")
 		"crouch":
 			Input.action_press("crouch")
+		"lean", "lean_aim":
+			# atrás da fileira de caixas ao sul da barra do T (beirada leste 0,3 m à direita dela), olhando para o norte
+			if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
+				player.global_position = Vector3(2.1, 0, 2.6)
+				player.rotation.y = 0.0
+				player.camera_rig.yaw = 0.0
+				player.reset_physics_interpolation()
 	if _shot in MOVE_SHOTS:
 		_setup_move_shot()
 	if _shot in KEY_SHOTS:
@@ -946,6 +956,12 @@ func _process(delta: float) -> void:
 		"crouch":
 			if at.call(0.05):
 				Input.action_release("crouch")
+		"lean", "lean_aim":
+			# esgueira depois de parada (a câmera já atrás dela); lean_aim mira junto
+			if _t > 0.5:
+				Input.action_press("lean")
+				if _shot == "lean_aim":
+					Input.action_press("aim")
 		"danger_roll":
 			# a barra no alto (os guardas já atirando): rola (cai depressa) e volta a subir no fim da esquiva
 			if at.call(2.6):

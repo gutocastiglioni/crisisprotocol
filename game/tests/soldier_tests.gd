@@ -12,6 +12,7 @@ func run(runner: SceneTree) -> void:
 	await test_danger_before_hit()
 	await test_soldier_presses_fire()
 	await test_soldier_dies()
+	await test_shot_no_interrupt()
 	await test_vest_and_flak()
 	await test_soldier_backs_off()
 	await test_shared_alarm()
@@ -204,8 +205,8 @@ func test_soldier_shoots_and_misses() -> void:
 	check(p.health == 100, "parede no meio: nenhum tiro chega", str(p.health))
 
 
-## O sensor de perigo avisa antes do acerto: o tiro só pode acertar depois de `Soldier.LOCK_TIME` mirando nela à vista
-## (antes passa raspando). Sumiu atrás de algo, a contagem zera e volta a valer quando ela reaparece.
+## O sensor de perigo avisa antes do primeiro acerto: o tiro só pode acertar depois de `Soldier.LOCK_TIME` mirando nela
+## à vista (antes passa raspando). Travou, vale até ele esquecê-la: esconder-se ou esquivar não traz o aviso de volta.
 func test_danger_before_hit() -> void:
 	var pr := await _spawn_soldier(Vector3(0, 0, 8))
 	var p: Player = pr[0]
@@ -233,20 +234,21 @@ func test_danger_before_hit() -> void:
 	check(hit_at - warn_at >= Soldier.LOCK_TIME - 0.3, "perigo/tiro: o acerto vem depois do aviso, não junto",
 		"aviso=%.2f tiro=%.2f" % [warn_at, hit_at])
 	check(shots_before > 0, "perigo/tiro: antes de travar a mira os tiros passam raspando", str(shots_before))
-	# atrás da parede perde a mira; reapareceu, espera de novo antes de acertar
+	# atrás da parede e esquivando ele continua ciente dela: a mira segue travada
 	_wall(w, Vector3(0, 2, 4))
 	var wall: Node = w.get_child(w.get_child_count() - 1)
 	await t._frames(60)
-	check(s._lock_t == 0.0, "perigo/tiro: sumiu de vista, a mira zera", str(s._lock_t))
+	check(s._lock_t >= Soldier.LOCK_TIME, "perigo/tiro: sumiu atrás da parede, a mira segue travada", str(s._lock_t))
 	wall.queue_free()
-	var hp := p.health
-	var back := -1.0
-	for i in 600:
-		await t._frames(1)
-		if p.health < hp:
-			back = i * dt
-			break
-	check(back >= Soldier.LOCK_TIME, "perigo/tiro: reapareceu, o acerto espera a mira de novo", "%.2f" % back)
+	p.rolling = true
+	await t._frames(30)
+	p.rolling = false
+	check(s._lock_t >= Soldier.LOCK_TIME, "perigo/tiro: esquivar não zera a mira", str(s._lock_t))
+	# esqueceu dela (desistiu da busca): a próxima luta começa com o aviso de novo
+	s.alert_t = 0.0
+	s._resume()
+	await t._frames(2)
+	check(s._lock_t == 0.0, "perigo/tiro: esqueceu dela, o aviso volta a valer", str(s._lock_t))
 
 
 ## Rajadas longas com descanso curto (sem pausas de segundos) e, quando ela some atrás de algo, um pouco de fogo de
@@ -273,7 +275,7 @@ func test_soldier_presses_fire() -> void:
 	check(times.size() >= 15, "atira muito em 6 s", str(times.size()))
 	check(longest < 60, "nunca para mais de 1 s entre rajadas", "%d quadros" % longest)
 	check(not times.is_empty() and times[0] < 45, "primeiro tiro logo depois de vê-la", str(times[0] if times.size() else -1))
-	# ela some atrás de uma parede: ele ainda atira ali um pouco, sem acertar, e depois para
+	# ela some atrás de uma parede: ele sabe que ela está ali, mas não atira na parede
 	var hp := p.health
 	_wall(pr[2], Vector3(0, 2, 4))
 	await t._frames(2)
@@ -281,11 +283,26 @@ func test_soldier_presses_fire() -> void:
 	for i in 150:
 		await t._frames(1)
 		clock[0] = i
+	check(times.is_empty(), "atrás da parede: não atira na cobertura", str(times))
+	check(p.health == hp, "atrás da parede: nenhum tiro chega", str(hp - p.health))
+	# sumiu sem nada no meio (ex.: virou a quina): supressão no lugar vazio onde ela estava, que não a acerta, e depois para
+	var w: Node3D = pr[2]
+	w.get_child(w.get_child_count() - 1).queue_free()
+	s._lost_t = 0.0
+	s._last_known = p.global_position
+	s._burst = 0
+	s._rest = 0.0
+	p.global_position = Vector3(17, 0, -17)  # longe (parada ele vê a ~15 m), fora de vista: o ponto onde estava fica vazio
+	await t._frames(2)
+	times.clear()
+	for i in 150:
+		await t._frames(1)
+		clock[0] = i
 	var early := times.filter(func(f: int) -> bool: return f < 70).size()
 	var late := times.filter(func(f: int) -> bool: return f >= 100).size()
-	check(early > 0, "perdeu de vista: fogo de supressão onde ela estava", str(times))
+	check(early > 0, "perdeu de vista sem cobertura: fogo de supressão onde ela estava", str(times))
 	check(late == 0, "supressão acaba", str(times))
-	check(p.health == hp, "supressão bate na parede, não nela", str(hp - p.health))
+	check(p.health == hp, "supressão não a acerta", str(hp - p.health))
 
 
 func test_soldier_dies() -> void:
@@ -294,7 +311,7 @@ func test_soldier_dies() -> void:
 	var killed := [false]
 	s.killed.connect(func() -> void: killed[0] = true)
 	s.take_hit(34, Vector3.BACK, s.global_position + Vector3.UP)
-	check(not s.dead and s.state == "hit" and s.alert_t > 0.0, "levou um tiro: reage e fica alerta", s.state)
+	check(not s.dead and s.state == "alert" and s.alert_t > 0.0, "levou um tiro sem tê-la visto: fica alerta", s.state)
 	await t._frames(40)
 	s.take_hit(34, Vector3.BACK, s.global_position + Vector3.UP)
 	check(s.dead and s.state == "dead" and killed[0], "morre com a vida zerada")
@@ -311,6 +328,20 @@ func test_soldier_dies() -> void:
 
 ## Colete: o tiro de verdade no tronco tira VEST_MULT do dano (braço, perna e cabeça sem desconto). Os 2 sentinelas da
 ## porta da sala dos clones têm Flak Jacket: o tronco quase não sente e a mira escreve FLAK JACKET; a ronda de lá não.
+## Tiro não interrompe o guarda em combate: segue na rajada, sem parar nem trocar de estado.
+func test_shot_no_interrupt() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -8))
+	var s: Soldier = pr[1]
+	s.spot()
+	s.start_engage()
+	await t._frames(20)
+	var burst: int = s._burst
+	var rest: float = s._rest
+	s.take_hit(10, Vector3.BACK, s.global_position + Vector3.UP)
+	check(not s.dead and s.state == "engage" and s._burst == burst and s._rest == rest, "levou tiro em combate: não para a rajada",
+		"%s burst %d->%d" % [s.state, burst, s._burst])
+
+
 func test_vest_and_flak() -> void:
 	var pr := await _spawn_soldier(Vector3(0, 0, -6))
 	var p: Player = pr[0]
