@@ -1,23 +1,28 @@
 class_name Settings
-## Preferências do jogador guardadas na máquina (`user://settings.cfg`, fora do projeto): por enquanto só a tela cheia,
-## trocada no menu de pausa e usada ao abrir o jogo (`main._ready`; capturas `--capture` ficam sempre na janela).
+## Preferências do jogador guardadas na máquina (`user://settings.cfg`, fora do projeto): a tela cheia e a vibração do
+## controle, trocadas no menu de pausa e usadas ao abrir o jogo (`main._ready`; capturas `--capture` ficam sempre na janela).
 
 const SECTION := "video"
+const INPUT_SECTION := "input"
 
 static var path := "user://settings.cfg"  # os testes trocam para não mexer na config de verdade
 static var fullscreen := false
+static var vibration := true  # `Rumble`
 
 
-## Lê o arquivo (sem arquivo ou com erro = padrão: janela).
+## Lê o arquivo (sem arquivo ou com erro = padrão: janela, com vibração).
 static func load_file() -> void:
 	var cfg := ConfigFile.new()
-	fullscreen = cfg.load(path) == OK and bool(cfg.get_value(SECTION, "fullscreen", false))
+	var ok := cfg.load(path) == OK
+	fullscreen = ok and bool(cfg.get_value(SECTION, "fullscreen", false))
+	vibration = not ok or bool(cfg.get_value(INPUT_SECTION, "vibration", true))
 
 
 static func save_file() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(path)  # mantém o que já existir no arquivo
 	cfg.set_value(SECTION, "fullscreen", fullscreen)
+	cfg.set_value(INPUT_SECTION, "vibration", vibration)
 	var err := cfg.save(path)
 	if err != OK:
 		push_warning("não deu para salvar %s (erro %d)" % [path, err])
@@ -35,4 +40,14 @@ static func apply() -> void:
 static func set_fullscreen(on: bool) -> void:
 	fullscreen = on
 	apply()
+	save_file()
+
+
+## Liga/desliga a vibração e salva; ligar dá um toque para mostrar, desligar para o que estiver vibrando.
+static func set_vibration(on: bool) -> void:
+	vibration = on
+	if on:
+		Rumble.pulse(0.5, 0.5, 0.25)
+	else:
+		Rumble.stop()
 	save_file()

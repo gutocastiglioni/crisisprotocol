@@ -1,6 +1,6 @@
 extends RefCounted
 ## Testes do menu de pausa (PauseMenu): START do controle e ESC abrem o menu em vez de reiniciar; escolher com
-## cima/baixo, CONTINUAR / REINICIAR / SHOWROOM / SAIR DO JOGO, não abre por cima de tela de inspeção nem no game over.
+## cima/baixo, CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO, não abre por cima de tela de inspeção nem no game over.
 ## Showroom: lista de animações do bicho, troca de bicho/modo/velocidade, anda na roda sem patinar, volta ao menu.
 ## Chamado por run_tests.gd (usa check/_frames de lá).
 
@@ -114,6 +114,9 @@ func test_pause_menu() -> void:
 		"REINICIAR = jogo do começo", "%s vida %d" % [p.global_position, p.health])
 
 	await test_fullscreen(menu)
+	await test_vibration(menu, p)
+	main.reset_all()
+	await t._frames(2)
 	await _start_button()
 	await _tap("move_forward")
 	await _tap("interact")
@@ -182,6 +185,66 @@ func test_fullscreen(menu: PauseMenu) -> void:
 	DirAccess.remove_absolute(Settings.path)
 	Settings.path = real_path
 	Settings.fullscreen = real_full
+
+
+## Vibração (`Rumble`): tiro da pistola só no motor fraco, escopeta e dano também no forte, a pausa para tudo; VIBRAÇÃO no
+## menu troca SIM/NÃO, grava no arquivo de teste e, desligada, nada chega aos motores.
+func test_vibration(menu: PauseMenu, p: Player) -> void:
+	var real_path := Settings.path
+	var real_vib := Settings.vibration
+	Settings.path = "user://test_settings.cfg"
+	DirAccess.remove_absolute(Settings.path)
+	Settings.load_file()
+	t.check(Settings.vibration, "sem arquivo de config = com vibração")
+	p.give_weapon("pistol")
+	await t._frames(int(Player.SHOT_COOLDOWN * 60) + 2)
+	Rumble.last = {}
+	p.fire()
+	var pistol := Rumble.last.duplicate()
+	t.check(pistol.get("weak", 0.0) > 0.2 and pistol.get("strong", 1.0) == 0.0, "tiro da pistola: só o motor fraco", str(pistol))
+	p.give_weapon("shotgun")
+	await t._frames(60)
+	Rumble.last = {}
+	p.fire()
+	var shotgun := Rumble.last.duplicate()
+	t.check(shotgun.get("strong", 0.0) > 0.3 and shotgun.get("weak", 0.0) > pistol.get("weak", 0.0), "tiro da escopeta: os dois motores, mais forte",
+		str(shotgun))
+	await t._frames(30)
+	Rumble.last = {}
+	p.take_hit(10, Vector3.FORWARD, p.global_position + Vector3.UP)
+	t.check(Rumble.last.get("strong", 0.0) > 0.3 and Rumble.last.get("time", 0.0) >= 0.2, "levar golpe vibra", str(Rumble.last))
+	await _start_button()
+	t.check(menu.is_open and Rumble._until == 0, "abrir a pausa para a vibração")
+	for i in PauseMenu.ITEMS.find("VIBRAÇÃO"):
+		await _tap("move_back")
+	t.check(menu._rows[menu.selected].text == "> VIBRAÇÃO: SIM <", "menu mostra VIBRAÇÃO: SIM", menu._rows[menu.selected].text)
+	await _tap("interact")
+	t.check(menu.is_open and not Settings.vibration and menu._rows[menu.selected].text.contains("NÃO"),
+		"confirmar desliga a vibração e o menu segue aberto", menu._rows[menu.selected].text)
+	var cfg := ConfigFile.new()
+	t.check(cfg.load(Settings.path) == OK and cfg.get_value("input", "vibration", true) == false, "vibração desligada salva no arquivo")
+	Settings.vibration = true
+	Settings.load_file()
+	t.check(not Settings.vibration, "ao abrir de novo o jogo lê NÃO do arquivo")
+	menu.close()
+	await t._frames(3)
+	Rumble.last = {}
+	p.take_hit(10, Vector3.FORWARD, p.global_position + Vector3.UP)
+	p.camera_rig.shake(0.3, 0.5)
+	t.check(Rumble.last.is_empty(), "desligada: golpe e tremor não vibram", str(Rumble.last))
+	await _start_button()
+	for i in PauseMenu.ITEMS.find("VIBRAÇÃO"):
+		await _tap("move_back")
+	await _tap("interact")
+	Settings.load_file()
+	t.check(Settings.vibration and not Rumble.last.is_empty() and menu._rows[menu.selected].text.contains("SIM"),
+		"confirmar de novo liga, dá um toque e salva SIM", str(Rumble.last))
+	menu.close()
+	await t._frames(3)
+	Rumble.stop()
+	DirAccess.remove_absolute(Settings.path)
+	Settings.path = real_path
+	Settings.vibration = real_vib
 
 
 func _key(code: Key) -> void:

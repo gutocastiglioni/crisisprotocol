@@ -1,8 +1,9 @@
 class_name PauseMenu
 extends Node
 ## Menu de pausa (ESC / START): árvore pausada (este nó roda mesmo assim), fundo escurecido e a lista
-## CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por cima; voltar
-## dele devolve o menu; TELA CHEIA troca SIM/NÃO na hora e salva em `Settings` para o jogo já abrir assim).
+## CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por
+## cima; voltar dele devolve o menu; TELA CHEIA e VIBRAÇÃO trocam SIM/NÃO na hora e salvam em `Settings` para o jogo já abrir
+## assim). Abrir o menu para a vibração do controle (`Rumble.stop`).
 ## Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
 ## ESC / START / bola volta ao jogo; o mouse também escolhe e clica. Quem abre é o `main` (não abre com o jogo já pausado
 ## por uma tela de inspeção nem no game over). Captura e testes: `on_shown` é chamado quando o menu aparece.
@@ -10,7 +11,7 @@ extends Node
 signal restart
 signal quit
 
-const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "TELA CHEIA", "SAIR DO JOGO"]
+const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "TELA CHEIA", "VIBRAÇÃO", "SAIR DO JOGO"]
 const UP := ["move_forward", "ui_up"]
 const DOWN := ["move_back", "ui_down"]
 const CONFIRM := ["interact", "crouch", "ui_accept"]
@@ -81,6 +82,7 @@ func open() -> void:
 	is_open = true
 	_opened_frame = Engine.get_process_frames()
 	get_tree().paused = true
+	Rumble.stop()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_select(0, false)
 	_layout()
@@ -116,10 +118,13 @@ func _select(i: int, beep := true) -> void:
 		_rows[k].add_theme_color_override("font_color", PICK if k == selected else TEXT)
 
 
-## Texto da opção; a tela cheia mostra o estado atual.
+## Texto da opção; tela cheia e vibração mostram o estado atual.
 func _item_text(i: int) -> String:
-	if ITEMS[i] == "TELA CHEIA":
-		return "TELA CHEIA: %s" % ("SIM" if Settings.fullscreen else "NÃO")
+	match ITEMS[i]:
+		"TELA CHEIA":
+			return "TELA CHEIA: %s" % ("SIM" if Settings.fullscreen else "NÃO")
+		"VIBRAÇÃO":
+			return "VIBRAÇÃO: %s" % ("SIM" if Settings.vibration else "NÃO")
 	return ITEMS[i]
 
 
@@ -144,6 +149,9 @@ func _choose() -> void:
 			showroom.open()
 		"TELA CHEIA":
 			Settings.set_fullscreen(not Settings.fullscreen)
+			_select(selected, false)
+		"VIBRAÇÃO":
+			Settings.set_vibration(not Settings.vibration)
 			_select(selected, false)
 		"SAIR DO JOGO":
 			quit.emit()

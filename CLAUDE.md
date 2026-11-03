@@ -332,16 +332,20 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `SPOT_RANGE` m, sem cenário no meio) e daí é rastreado (cor = `alert_level`; fora do alcance, preso na borda); morto some; R esquece.
 - Controles novos: F / quadrado = pular (com borda à frente: escala até MANTLE_MAX ou pula e fica pendurada; pendurada,
   frente/pular sobe e trás/agachar solta), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / O (bola) = cambalhota (survival: pulinho de esquiva), C / X = agachar.
-  Atirar = botão esquerdo do mouse / R2 (o R1 deixou de atirar). V / R3 (segurar) = esgueirar pela quina (`PlayerLean`, `player_lean.gd`; em pé ou
+  Atirar = botão esquerdo do mouse / R2 (o R1 deixou de atirar). V / R3 (um toque liga, outro desliga) = esgueirar pela quina (`PlayerLean`, `player_lean.gd`; em pé ou
   agachada, com e sem mira): com cobertura a até `REACH` à frente da câmera, acha a beirada mais perto dos dois lados (`SCAN`, caminho do
   corpo livre), vira para a frente da câmera, inclina o tronco (`LeanTilt`, modificador depois da AimPitch, até `ANGLE`) e, se precisa,
   dá um passo de lado até a cabeça passar da beirada (`CLEAR`); a câmera vai para o lado da quina (`CAM_SIDE`, ombro esquerdo na quina
-  da esquerda). Soltou, volta ao lugar (andar cancela a volta); rolar/pular/golpe saem na hora. Os inimigos olham e miram em
+  da esquerda). Outro toque, volta ao lugar; empurrar o direcional (`WALK_OUT`) sai da quina e ela anda dali; rolar/pular/golpe saem na hora. Os inimigos olham e miram em
   `Player.sight_point()` (o peito; esgueirada, a cabeça de fora). Captura: `--shot=lean|lean_aim`. Testes: `lean_tests.gd`.
-  ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / SAIR DO JOGO; árvore pausada, não abre por
+  ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO; árvore pausada, não abre por
   cima de tela de inspeção nem no game over; volta ao jogo dois passos de física depois para o botão não chegar nela).
   TELA CHEIA: SIM/NÃO troca na hora e salva em `Settings` (`settings.gd`, `user://settings.cfg`); o `main` aplica ao abrir
   (capturas `--capture` ficam sempre na janela; os testes usam outro arquivo).
+  VIBRAÇÃO (`Settings.vibration`, padrão SIM, mesmo arquivo): vibração do controle (`Rumble`, `rumble.gd`, todos os controles
+  conectados, nos dois perfis). Vem do tremor da câmera (`CameraRig.shake` → `Rumble.shake`: tiro de cada arma, rugido, empurrão,
+  arremesso, presa na boca, explosão, queda, abate furtivo; tremor pequeno = só o motor fraco) e de `Rumble.pulse` direto no
+  `Player.take_hit`/`die`; pedido mais fraco não corta um mais forte; abrir a pausa para tudo; ligar dá um toque.
   START não reinicia mais; R no teclado segue reiniciando. Captura: `--shot=pause`. Testes: `pause_tests.gd`.
   SHOWROOM (item do menu, `Showroom`, `showroom.gd`): palco 3D próprio (SubViewport com mundo à parte numa camada sem escala,
   chão quadriculado, luz com sombra) com o raptor ou o alossauro (`RaptorModel.showroom` = pés presos e inércia sem corpo de

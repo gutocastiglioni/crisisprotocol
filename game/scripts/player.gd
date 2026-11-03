@@ -960,6 +960,7 @@ func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	health = maxi(0, health - amount)
 	health_changed.emit(health)
 	Blood.splash(get_parent(), at, dir, -dir, amount / 20.0)
+	Rumble.pulse(0.7, clampf(0.3 + amount / 40.0, 0.3, 1.0), 0.25)
 	if health == 0:
 		die(dir * 9.0 + Vector3.UP * 2.0, at)
 	else:
@@ -1295,6 +1296,7 @@ func die(impulse: Vector3, at: Variant = null) -> void:
 	_shape.set_deferred("disabled", true)
 	model.start_ragdoll(impulse, at)
 	Blood.pool(model.ragdoll.bodies["Chest"], 1.0)
+	Rumble.pulse(1.0, 1.0, 0.6)
 	died.emit()
 
 

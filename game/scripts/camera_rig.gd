@@ -137,6 +137,7 @@ func _process(delta: float) -> void:
 func shake(strength: float, time: float) -> void:
 	_shake = maxf(strength, _shake if _shake_t > 0.0 else 0.0)
 	_shake_t = maxf(_shake_t, time)
+	Rumble.shake(strength, time)
 
 
 ## Coice do tiro: a mira sobe `up` radianos e a câmera desfaz a maior parte (tiros seguidos sobem a mira). Só no survival.

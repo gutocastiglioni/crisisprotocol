@@ -1,10 +1,11 @@
 class_name PlayerLean
 extends RefCounted
-## Esgueirar pela quina (ação "lean": R3 / V; em pé ou agachada, com e sem mira). Segurando o botão com uma parede/caixa
-## logo à frente da câmera (`REACH`), ela procura a beirada dessa cobertura para os dois lados (`SCAN`) e se esgueira para
+## Esgueirar pela quina (ação "lean": R3 / V; em pé ou agachada, com e sem mira). Liga e desliga com um toque (não precisa
+## segurar): com uma parede/caixa logo à frente da câmera (`REACH`), ela procura a beirada dessa cobertura para os dois lados (`SCAN`) e se esgueira para
 ## a mais perto: vira para a frente da câmera, inclina o tronco (LeanTilt, até `ANGLE`) e, se a beirada está longe para só
 ## inclinar, dá um passo de lado (`step`, até `STEP_MAX`) até a cabeça passar dela por `CLEAR`. A câmera vai para o lado da
-## quina (`cam_side`). Soltou, volta ao lugar de onde saiu (andar cancela a volta). Sem quina por perto, nada acontece.
+## quina (`cam_side`). Outro toque, volta ao lugar de onde saiu; empurrar o direcional (`WALK_OUT`) sai da quina e ela anda dali
+## mesmo, sem voltar. Sem quina por perto, o toque não faz nada.
 ## Os inimigos olham e miram no que ficou de fora (`sight_point`: a cabeça), não no peito escondido atrás da quina.
 
 const HEIGHT := 1.45  # altura dos raios que procuram a quina (perto da cabeça), em pé
@@ -23,6 +24,7 @@ const STEP_MAX := 0.6
 const STEP_SPEED := 2.2
 const TIME := 0.18  # para inclinar e para voltar
 const CAM_SIDE := 0.75  # desvio da câmera para o lado da quina
+const WALK_OUT := 0.5  # direcional empurrado pelo menos isto: sai da quina andando (menos que isto é folga do analógico)
 
 var p: Player
 var side := 0  # lado em que está esgueirada agora (1 = direita, -1 = esquerda, 0 = não está)
@@ -66,20 +68,23 @@ func find() -> Dictionary:
 ## Um passo da física com ela no chão e no controle normal; devolve true se a esgueirada está mandando no movimento
 ## (aí `locomotion` diz a velocidade).
 func update(delta: float, wish: Vector3) -> bool:
-	var held := Input.is_action_pressed("lean")
-	if side == 0 and held and not returning:
+	var tap := Input.is_action_just_pressed("lean")
+	if tap and side != 0:
+		side = 0
+		returning = true
+	elif tap:
 		var q := find()
 		if not q.is_empty():
 			side = q.side
 			_last_side = side
 			step = clampf(float(q.edge) + CLEAR - HEAD_REACH, 0.0, STEP_MAX)
-			_anchor = p.global_position
+			_anchor = p.global_position if not returning else _anchor
 			_forward = -p.camera_rig.yaw_basis().z
-	elif side != 0 and not held:
+			returning = false
+	if wish.length() > WALK_OUT and (side != 0 or returning):
+		# andou: sai da quina e segue dali (sem voltar ao lugar)
 		side = 0
-		returning = true
-	if returning and wish.length() > 0.1:
-		returning = false  # andou: fica onde está
+		returning = false
 	amount = move_toward(amount, 1.0 if side != 0 else 0.0, delta / TIME)
 	p.model.set_lean(ANGLE * amount * _last_side)
 	if returning and amount <= 0.0 and _flat(_anchor - p.global_position).length() < 0.03:
