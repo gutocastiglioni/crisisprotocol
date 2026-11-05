@@ -20,10 +20,11 @@ const PORTRAIT_FOV := 62.0  # tela em pé: campo de visão mínimo (o da largura
 const SHOULDER_AIM_SENS := 0.6  # mirando, o mouse/analógico giram a esta fração
 const RECOIL_RECOVER := 0.4  # radianos por segundo: o quanto do coice a câmera desfaz
 const RECOIL_KEEP := 0.4  # fração de cada coice que fica (tiros seguidos sobem a mira)
+const PITCH := -0.22  # inclinação inicial no arcade (no survival, SHOULDER.pitch)
 
 var target: Node3D
 var yaw := 0.0
-var pitch := -0.22
+var pitch := PITCH
 var spring: SpringArm3D
 var camera: Camera3D
 var _idle_look := 0.0
@@ -61,6 +62,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _look(d: Vector2) -> void:
+	# numa cena (Cutscene) a câmera dela não está na tela: mouse/analógico não a giram por trás
+	if target and target.get("cutscene"):
+		return
 	if target and target.has_method("is_sniper_zoomed") and target.is_sniper_zoomed():
 		var zoom_factor: float = target.call("sniper_zoom")
 		d *= clampf(1.0 / zoom_factor, 0.05, 0.5)
@@ -131,6 +135,16 @@ func _process(delta: float) -> void:
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
 	camera.v_offset = randf_range(-amp, amp)
+
+
+## Enquadramento padrão (fim de cena): atrás dela olhando para `new_yaw`, na inclinação inicial, sem coice; o pivô
+## pula para ela em vez de vir deslizando.
+func reset_view(new_yaw: float) -> void:
+	yaw = new_yaw
+	pitch = SHOULDER.pitch if GameMode.shoulder_cam() else PITCH
+	_recoil = 0.0
+	_idle_look = 0.0
+	_snapped = false
 
 
 ## Treme a câmera por `time` segundos (golpes, mordida).

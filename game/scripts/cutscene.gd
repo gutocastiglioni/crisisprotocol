@@ -6,7 +6,9 @@ extends Node
 ##   2. perto do primeiro clone, a câmera chegando no focinho parado no líquido;
 ##   3. o rosto dela: recua com as mãos para cima (animação Shocked) e a legenda "O QUE...?!";
 ##   4. do alto do fundo da sala, ela pequena no meio das duas fileiras de tubos.
-## Interagir (E) depois de SKIP_AFTER pula o resto. No fim a câmera volta para a dela, olhando para dentro da sala.
+## Cada cena só pode ser pulada depois de vista até o fim uma vez (`Settings.cutscene_seen`, guardado no arquivo de config):
+## da segunda vez em diante (reinício, outra partida) aparece "<glifo> PULAR" na faixa de baixo e interagir (E/X) depois de
+## SKIP_AFTER pula o resto. No fim a câmera volta para a dela, atrás dela, na inclinação inicial (`CameraRig.reset_view`).
 ## O jogo não para (os outros inimigos seguem); a linha do tempo anda no passo da física (testes com passo fixo).
 ##
 ## Emboscada no pátio (`play_ambush`, Corpse.noticed): mesma moldura, outros planos:
@@ -29,6 +31,7 @@ const WIDE_AT := 6.4
 const END_AT := 8.4
 const SKIP_AFTER := 1.0
 const SKIP := ["interact", "ui_accept"]
+const SKIP_ITEMS := [{"action": "interact", "pad_action": "crouch", "text": "PULAR"}]
 const BAR := 0.13  # altura de cada faixa preta (fração da tela)
 const AMB_SUBTITLE := "ELE ESTÁ SEGURANDO ALGUMA COISA..."
 const AMB_APPROACH := 2.2  # ela começa a cena a esta distância de onde para (o corte esconde o salto)
@@ -40,6 +43,7 @@ const AMB_WIDE_AT := 6.0
 const AMB_ROAR_AT := 8.4
 const AMB_END_AT := 10.4
 const AMB_RING := 5.0  # raio da roda dos raptors em volta dela
+const AMB_CIRCLE := 1.0  # sentido da roda: o mesmo para os três (matilha rodeando junta, nenhum na contramão)
 const AMB_STAGGER := 0.9  # s entre um raptor e o próximo sair da roda para atacar
 
 var player: Player
@@ -56,6 +60,8 @@ var _sub: Label
 var _shocked := false
 var _ui_scale := 1.0
 var _skip := false
+var skippable := false  # esta cena já foi vista até o fim uma vez
+var _hint: UiStyle.Hint
 var corpse: Corpse
 var ambushers: Array[Raptor] = []
 var _roarer: Raptor
@@ -83,6 +89,10 @@ func _ready() -> void:
 	_sub.add_theme_color_override("font_color", UiStyle.INK)
 	_sub.add_theme_color_override("font_outline_color", Color.BLACK)
 	layer.add_child(_sub)
+	_hint = UiStyle.Hint.new()
+	_hint.set_items(SKIP_ITEMS)
+	_hint.visible = false
+	layer.add_child(_hint)
 	set_ui_scale(1.0)
 	layer.visible = false
 
@@ -100,6 +110,7 @@ func set_ui_scale(k: float) -> void:
 	_ui_scale = k
 	_sub.add_theme_font_size_override("font_size", int(UiStyle.M * k))
 	_sub.add_theme_constant_override("outline_size", int(UiStyle.OUTLINE * k))
+	_hint.scale = Vector2.ONE * k
 
 
 func play_clones(p: Player, room: CloneLab) -> void:
@@ -137,6 +148,8 @@ func _begin(p: Player, which: String, subtitle: String) -> void:
 	busy = true
 	t = 0.0
 	_skip = false
+	skippable = Settings.cutscene_seen(which)
+	_hint.visible = false
 	_shocked = false
 	p.moves.cancel()
 	p.cutscene = true
@@ -173,7 +186,7 @@ func _physics_process(delta: float) -> void:
 		player.model.play("shocked")
 	_sub.visible = t >= SUB_AT and t < WIDE_AT + 0.6
 	if t >= END_AT:
-		stop()
+		_finish()
 
 
 ## Linha do tempo da emboscada (ver o cabeçalho).
@@ -194,7 +207,7 @@ func _ambush_step(delta: float) -> void:
 	if t >= AMB_EMERGE_AT and not _emerged:
 		_emerged = true
 		for i in ambushers.size():
-			ambushers[i].start_ambush(AMB_RING, 1.0 if i % 2 == 0 else -1.0)
+			ambushers[i].start_ambush(AMB_RING, AMB_CIRCLE)
 	if t >= AMB_LOOK_AT:
 		if not _stood:
 			_stood = true
@@ -212,7 +225,13 @@ func _ambush_step(delta: float) -> void:
 		_roarer.ambush_roar()
 	_sub.visible = t >= AMB_SUB_AT and t < AMB_LOOK_AT
 	if t >= AMB_END_AT:
-		stop()
+		_finish()
+
+
+## Chegou ao fim sem pular: a cena fica vista (da próxima vez dá para pular).
+func _finish() -> void:
+	Settings.mark_cutscene_seen(scene)
+	stop()
 
 
 func _turn_to(p: Vector3, delta: float, rate: float) -> void:
@@ -236,7 +255,7 @@ func _pick_roarer() -> Raptor:
 
 ## Pular: só um aperto de verdade (evento de tecla/botão), não um estado de ação que sobrou de outro lugar.
 func _unhandled_input(event: InputEvent) -> void:
-	if not busy or t <= SKIP_AFTER or event.is_echo():
+	if not busy or not skippable or t <= SKIP_AFTER or event.is_echo():
 		return
 	for a in SKIP:
 		if InputMap.has_action(a) and event.is_action_pressed(a):
@@ -257,6 +276,10 @@ func _process(_delta: float) -> void:
 	_bottom.size = Vector2(vp.x, h)
 	_sub.position = Vector2(0, vp.y - h)
 	_sub.size = Vector2(vp.x, h)
+	# "PULAR" no canto direito da faixa de baixo, só quando já dá para pular
+	_hint.visible = skippable and t > SKIP_AFTER
+	var hs := _hint.size * _hint.scale
+	_hint.position = Vector2(roundf(vp.x - hs.x - h * 0.5), roundf(vp.y - (h + hs.y) * 0.5))
 
 
 ## Câmera do plano de agora (ver o cabeçalho), em movimento lento dentro de cada plano.
@@ -342,13 +365,15 @@ func _ambush_camera() -> void:
 		_cam.look_at(aim.lerp(her + Vector3.UP * 1.2, 0.3))
 
 
-## Acaba a cena (ou pula, ou reinício): controle e câmera de volta para ela, olhando para dentro da sala.
+## Acaba a cena (ou pula, ou reinício): controle e câmera de volta para ela, atrás dela e olhando para onde ela olha
+## (dentro da sala dos clones; na emboscada, o raptor que rugiu), nunca na inclinação que o mouse deixou.
 func stop() -> void:
 	if not busy:
 		return
 	busy = false
 	_skip = false
 	layer.visible = false
+	_hint.visible = false
 	if scene == "ambush":
 		# a roda se desfaz um de cada vez, já em luta (pulou antes de saírem: saem agora)
 		for i in ambushers.size():
@@ -361,6 +386,6 @@ func stop() -> void:
 		player.cutscene_walk = Vector3.ZERO
 		player.model.holster(false)
 		player.model.set_state("idle")
-		player.camera_rig.yaw = player.rotation.y
+		player.camera_rig.reset_view(player.rotation.y)
 		player.camera_rig.camera.current = true
 	finished.emit()

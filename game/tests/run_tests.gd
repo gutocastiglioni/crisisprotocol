@@ -48,6 +48,9 @@ var _world: Node3D
 
 func _initialize() -> void:
 	InputSetup.register()
+	# config própria dos testes (o main a lê ao abrir): cenas vistas/tela cheia não vêm nem vão para a de verdade
+	Settings.path = "user://test_settings.cfg"
+	DirAccess.remove_absolute(Settings.path)
 	# os testes do jogo de ação de antes valem no perfil "arcade" (o que o jogo mantém inteiro); o "survival" tem os seus
 	GameMode.set_mode(GameMode.ARCADE)
 	_run.call_deferred()

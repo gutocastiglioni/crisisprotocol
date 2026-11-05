@@ -74,7 +74,9 @@ func test_corpse_and_ambush() -> void:
 	await t._frames(20)
 	t.check(rs.all(func(r: Raptor) -> bool: return r.lurking and r.alert_level() == 0), "escondidos não ouvem tiro nem alarme")
 	t.check(not cs.busy and corpse.armed, "longe dele: nada acontece")
-	# chegando perto: a cena
+	# chegando perto: a cena (nunca vista: não dá para pular); a câmera dela olhando de cima
+	Settings.cutscenes_seen.clear()
+	p.camera_rig.pitch = -1.0
 	p.global_position = corpse.global_position + (corpse.stand_point() - corpse.global_position).normalized() * (Corpse.NOTICE_RANGE - 1.0)
 	await t._frames(3)
 	t.check(cs.busy and cs.scene == "ambush" and p.cutscene and not main._hud.visible and not corpse.armed, "chegou perto do morto: a cena da emboscada", "%s %s" % [cs.busy, p.global_position.distance_to(corpse.global_position)])
@@ -82,6 +84,17 @@ func test_corpse_and_ambush() -> void:
 	t.check(p.health == 100, "na cena ela não leva dano")
 	await t._frames(int(Cutscene.AMB_WALK * 60) + 10)
 	t.check(p.global_position.distance_to(corpse.stand_point()) < 0.35, "anda até a mão dele", "%.2f" % p.global_position.distance_to(corpse.stand_point()))
+	t.check(not cs.skippable and not cs._hint.visible, "primeira vez: sem PULAR")
+	await _tap_interact()
+	t.check(cs.busy, "primeira vez: E não pula a cena")
+	var pitch0 := p.camera_rig.pitch
+	var yaw0 := p.camera_rig.yaw
+	Input.action_press("look_down")
+	Input.action_press("look_left")
+	await t._frames(6)
+	Input.action_release("look_down")
+	Input.action_release("look_left")
+	t.check(p.camera_rig.pitch == pitch0 and p.camera_rig.yaw == yaw0, "na cena o analógico não gira a câmera dela por trás")
 	await t._frames(int((Cutscene.AMB_SUB_AT - Cutscene.AMB_WALK) * 60) + 10)
 	t.check(cs._sub.visible and cs._sub.text == Cutscene.AMB_SUBTITLE and p.model.state == "crouch", "agachada: ELE ESTA SEGURANDO ALGUMA COISA...", "%s %s" % [cs._sub.visible, p.model.state])
 	t.check(rs.all(func(r: Raptor) -> bool: return r.lurking), "os raptors ainda escondidos")
@@ -92,9 +105,25 @@ func test_corpse_and_ambush() -> void:
 	t.check(rs.all(func(r: Raptor) -> bool: return not r.lurking and r.visible and r.collision_layer == 2 and r.state == "ambush"), "saíram das moitas", _where(rs))
 	t.check(ring.all(func(d: float) -> bool: return d > Cutscene.AMB_RING - 1.5 and d < Cutscene.AMB_RING + 1.5), "rodeando ela a uns %.0f m" % Cutscene.AMB_RING, str(ring))
 	t.check(rs.all(func(r: Raptor) -> bool: return r.alert_level() == 0), "na roda, sem aviso de alerta ainda")
+	# os três rodam no mesmo sentido em volta dela (nenhum na contramão) e andam para a frente do corpo
+	var ang0 := rs.map(func(r: Raptor) -> float: return atan2(r.global_position.x - p.global_position.x, r.global_position.z - p.global_position.z))
+	await t._frames(20)
+	var turns := []
+	for i in rs.size():
+		var a := atan2(rs[i].global_position.x - p.global_position.x, rs[i].global_position.z - p.global_position.z)
+		turns.append(snappedf(angle_difference(ang0[i], a), 0.01))
+	var ahead := rs.all(func(r: Raptor) -> bool: return Vector2(r.velocity.x, r.velocity.z).normalized().dot(Vector2(-r.global_basis.z.x, -r.global_basis.z.z)) > 0.9)
+	t.check(turns.all(func(d: float) -> bool: return signf(d) == signf(turns[0]) and absf(d) > 0.02) and ahead, "rodam no mesmo sentido, de frente para onde andam", str(turns))
 	t.check(not p.model.holstered, "ela de arma na mão")
-	await t._frames(int((Cutscene.AMB_END_AT - Cutscene.AMB_WIDE_AT - 1.2) * 60) + 10)
+	await t._frames(int((Cutscene.AMB_END_AT - Cutscene.AMB_WIDE_AT - 1.2) * 60) - 10)
 	t.check(not cs.busy and not p.cutscene and main._hud.visible and p.camera_rig.camera.current, "fim da cena: controle de volta")
+	t.check(Settings.cutscene_seen("ambush"), "vista até o fim: fica marcada")
+	var rig := p.camera_rig
+	var level_pitch: float = CameraRig.SHOULDER.pitch if GameMode.shoulder_cam() else CameraRig.PITCH
+	var cam_fwd := -rig.camera.global_basis.z
+	var to_roar := cs._roarer.global_position - rig.camera.global_position
+	var facing := Vector2(cam_fwd.x, cam_fwd.z).normalized().dot(Vector2(to_roar.x, to_roar.z).normalized())
+	t.check(is_equal_approx(rig.pitch, level_pitch) and facing > 0.7, "câmera de volta atrás dela, reta, olhando para o raptor que rugiu (não de cima)", "pitch %.2f frente %.2f" % [rig.pitch, facing])
 	t.check(rs.all(func(r: Raptor) -> bool: return r.in_combat() and r.alert_t > 0.0), "os três já em luta", _where(rs))
 	t.check(not p.has_key(key.id) and key.state == "held", "a chave continua na mão dele")
 	# a chave pode ser pega no meio da luta (sem brilhar)
@@ -135,6 +164,7 @@ func test_corpse_and_ambush() -> void:
 	p.global_position = corpse.stand_point() + Vector3(2.0, 0, 0)
 	await t._frames(int(Cutscene.SKIP_AFTER * 60) + 10)
 	t.check(cs.busy, "cena de novo")
+	t.check(cs.skippable and cs._hint.visible and cs._hint.text() == "PULAR", "já vista: PULAR na faixa de baixo")
 	await _tap_interact()
 	await t._frames(2)
 	t.check(not cs.busy and not p.cutscene, "E pula a cena")

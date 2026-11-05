@@ -503,7 +503,8 @@ func test_clone_lab_and_cutscene() -> void:
 	await t._frames(int(Door.OPEN_TIME * 60) + 5)
 	t.check(gate.opened and space.intersect_ray(through).is_empty(), "E abre o portão da sala")
 	t.check(not cs.busy and not lab.played, "na porta, a cena ainda não começou")
-	# entra: a cena do choque
+	# entra: a cena do choque (nunca vista: não dá para pular)
+	Settings.cutscenes_seen.clear()
 	p.global_position = Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
 	await t._frames(3)
 	t.check(cs.busy and p.cutscene and not main._hud.visible and cs.layer.visible, "entrou: cena com faixas pretas, sem HUD e sem controle")
@@ -512,12 +513,24 @@ func test_clone_lab_and_cutscene() -> void:
 	t.check(p.health == 100, "na cena ela não leva dano")
 	await t._frames(int(Cutscene.WALK_TIME * 60) - 10)
 	t.check(p.global_position.z < z0 - 1.5 and p.model.state == "walk", "anda devagar entre os tubos", "%.2f %s" % [z0 - p.global_position.z, p.model.state])
+	t.check(not cs._hint.visible, "primeira vez: sem PULAR")
+	var tap := InputEventAction.new()
+	tap.action = "interact"
+	tap.pressed = true
+	Input.parse_input_event(tap)
+	await t._frames(2)
+	var release := InputEventAction.new()
+	release.action = "interact"
+	Input.parse_input_event(release)
+	await t._frames(1)
+	t.check(cs.busy, "primeira vez: E não pula a cena")
 	await t._frames(int((Cutscene.SUB_AT - Cutscene.WALK_TIME) * 60) + 15)
 	t.check(p.model.state == "shocked" and cs._sub.visible and cs._sub.text == "O QUE...?!", "o susto: animação Shocked e a legenda", "%s %s" % [p.model.state, cs._sub.visible])
 	t.check(cs._cam.current, "câmera da cena no ar")
 	await t._frames(int((Cutscene.END_AT - Cutscene.SUB_AT) * 60) + 5)
 	t.check(not cs.busy and not p.cutscene and main._hud.visible and not cs.layer.visible and p.camera_rig.camera.current, "fim da cena: controle, HUD e câmera dela de volta")
 	t.check(lab.played and CloneLab.inside(p.global_position), "ela fica dentro da sala")
+	t.check(Settings.cutscene_seen("clones"), "vista até o fim: fica marcada")
 	# sair e entrar de novo não repete; reiniciar fecha tudo e a cena volta a valer
 	p.global_position = Vector3(0, CloneLab.FLOOR_Y, -11.4)
 	await t._frames(3)
@@ -532,6 +545,7 @@ func test_clone_lab_and_cutscene() -> void:
 	p.global_position = Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
 	await t._frames(int(Cutscene.SKIP_AFTER * 60) + 5)
 	t.check(cs.busy, "cena tocando de novo")
+	t.check(cs._hint.visible, "já vista: PULAR na faixa de baixo")
 	var held := InputEventAction.new()
 	held.action = "interact"
 	held.pressed = true

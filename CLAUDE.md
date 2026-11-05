@@ -200,7 +200,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Emboscada: os 3 raptors do pátio começam escondidos nas moitas sem colisão de `Yard.LURK` (`Raptor.lurk`: `Enemy.lurking` = sem
   corpo, sem IA, não ouvem nem recebem alarme). Ela a `Corpse.NOTICE_RANGE` do morto, com linha livre → `Cutscene.play_ambush`
   (anda até a mão, close do punho com a chave + "ELE ESTÁ SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
-  (`start_ambush`, estado "ambush"), o da frente ruge; E pula). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
+  (`start_ambush`, estado "ambush", os três no mesmo sentido `AMB_CIRCLE`), o da frente ruge; E pula, ver Cenas). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
   A chave fica sem brilho (`KeyItem.shine` falso) até os 3 morrerem; dá para pegá-la antes. R: moitas, chave e cena de volta.
   A etiqueta vermelha da chave tem "0M79" escrito (`KeyItem.tag`, Label3D na etiqueta, também na tela do item): parece um código e
   engana (não é o do portão).
@@ -280,7 +280,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Sala dos clones (`CloneLab`): anexo atrás da plataforma de carga (piso na altura da doca, `FLOOR_Y` 1,3), portão de enrolar (`Door`
   com `room` -1, fora da corrente de salas) aberto com E. Seis tubos com raptors (`RaptorModel` com a animação travada, azulados, sem
   piar). Ao entrar pela primeira vez: `Cutscene.play_clones` (faixas pretas, sem HUD; `Player.cutscene` = sem controle nem dano;
-  anda, close no clone, rosto dela com Shocked e "O QUE...?!", plano geral; E pula; R reinicia e a cena volta a valer).
+  anda, close no clone, rosto dela com Shocked e "O QUE...?!", plano geral; E pula, ver Cenas; R reinicia e a cena volta a valer).
+  Cenas (`Cutscene`): só dá para pular depois de vista até o fim uma vez (`Settings.cutscenes_seen`, no `user://settings.cfg`;
+  os testes usam `user://test_settings.cfg`, capturas não leem nem gravam); aí aparece "<glifo> PULAR" na faixa de baixo e E/X
+  pula. Na cena mouse/analógico não giram a câmera dela; no fim `CameraRig.reset_view` a põe atrás dela, reta, olhando para onde ela olha.
   Cada tubo tem uma plaqueta num pedestal (`SubjectPlate`, "SUBJECT XXXX" de `CloneLab.SUBJECTS`, grupo "plates"): E na frente dela
   (`Player.pick_plate` → sinal `read_plate`) = `Inspect.plate_zoom` (pausa, câmera até a plaqueta, ficha embaixo). No canto do fundo à
   esquerda (`CloneLab.TANK`; a sala foi até `Z_FAR` -32 para caber) o tanque do alossauro: vidro de `TANK_SIDES` lados inteiro,
