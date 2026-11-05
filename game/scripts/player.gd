@@ -43,6 +43,7 @@ const JUMP_SPEED := 4.6  # pulo normal (~0,6 m)
 const AIR_CONTROL := 2.0
 const COYOTE := 0.12  # sem chão por menos que isso ainda conta como no chão (degraus, quinas)
 const TURN_RATE := 12.0
+const BACK_WALK_SCALE := 0.8  # andando de costas (survival): fração da velocidade do andar
 const GRAVITY := 18.0
 const SHOT_COOLDOWN := 0.28  # pistola
 const SHOT_RANGE := 60.0
@@ -321,6 +322,12 @@ func _physics_process(delta: float) -> void:
 	elif aiming:
 		_aim_at(delta)
 		hv = _aim_locomotion(wish)
+	elif _backing(wish):
+		# survival: para trás anda de costas, sem virar (o andar ao contrário), em pé ou agachada; nunca corre
+		var gait := "crouch_walk" if crouching else "walk"
+		var speed := Moves.speed(gait) * GameMode.move_scale() * clampf(wish.length() / 0.6, 0.3, 1.0) * BACK_WALK_SCALE
+		hv = wish.normalized() * speed
+		model.set_state(gait, -speed / Moves.speed(gait))
 	elif crouching:
 		var speed := Moves.speed("crouch_walk") * GameMode.move_scale() * minf(1.0, wish.length() / 0.6)
 		hv = wish.normalized() * speed
@@ -406,6 +413,18 @@ func _jump(wish: Vector3) -> bool:
 	velocity.y = JUMP_SPEED
 	model.play("jump")
 	return false
+
+
+## Direcional puxado para trás (mais para trás que para o lado) e apontando para trás dela, sem mirar: anda de costas
+## (`GameMode.back_walk`). Com a câmera de frente para ela, para trás é a frente dela e ela anda para a frente.
+func _backing(wish: Vector3) -> bool:
+	if not GameMode.back_walk() or wish.length() < 0.1:
+		return false
+	var stick := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if stick.y <= absf(stick.x):
+		return false
+	var local := global_basis.inverse() * wish
+	return local.z > absf(local.x)
 
 
 ## Mirando: passo lateral, para a frente ou de costas (em pé ou agachada), na velocidade dos ciclos de passo. No perfil

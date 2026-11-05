@@ -18,6 +18,7 @@ func run(runner: SceneTree) -> void:
 	await test_weapon_movement()
 	await test_aim_lock()
 	await test_shoulder_camera()
+	await test_back_walk()
 	await test_recoil_kick()
 	await test_roll_cooldown()
 	await test_short_dodge()
@@ -398,6 +399,42 @@ func test_shoulder_camera() -> void:
 	var normal := absf(rig.yaw - y2)
 	t.check(slow < normal * 0.8, "mirando o mouse gira mais devagar", "%f contra %f" % [slow, normal])
 	p.queue_free()
+
+
+
+## Survival: para trás ela anda de costas, sem virar, e a câmera fica atrás dela; no arcade ela vira e corre.
+func test_back_walk() -> void:
+	for crouch in [false, true]:
+		var w: Node3D = await t._fresh_world()
+		var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+		await t._frames(30)
+		p.crouching = crouch
+		await t._frames(10)
+		var yaw0 := p.rotation.y
+		var back := p.global_basis.z
+		var pos0 := p.global_position
+		Input.action_press("move_back")
+		await t._frames(90)
+		var moved := (p.global_position - pos0).dot(back)
+		var state := p.model.state
+		Input.action_release("move_back")
+		var label := "agachada" if crouch else "em pé"
+		t.check(absf(angle_difference(yaw0, p.rotation.y)) < 0.05, "survival %s: para trás não vira" % label, str(angle_difference(yaw0, p.rotation.y)))
+		t.check(moved > 0.8 and moved < Moves.speed("walk") * 1.6, "survival %s: anda de costas devagar" % label, "%.2f m" % moved)
+		t.check(state == ("crouch_walk" if crouch else "walk"), "survival %s: andar ao contrário" % label, state)
+		t.check(absf(angle_difference(p.camera_rig.yaw, p.rotation.y)) < 0.05, "survival %s: a câmera segue atrás dela" % label)
+		p.queue_free()
+	GameMode.set_mode(GameMode.ARCADE)
+	var w2: Node3D = await t._fresh_world()
+	var p2: Player = t._spawn_player(w2, Vector3(0, 0, 6))
+	await t._frames(30)
+	var yaw1 := p2.rotation.y
+	Input.action_press("move_back")
+	await t._frames(60)
+	Input.action_release("move_back")
+	t.check(absf(angle_difference(yaw1, p2.rotation.y)) > 2.5, "arcade: para trás ela vira e corre como antes", str(angle_difference(yaw1, p2.rotation.y)))
+	p2.queue_free()
+	GameMode.set_mode(GameMode.SURVIVAL)
 
 
 func test_recoil_kick() -> void:

@@ -22,10 +22,12 @@ const PROFILES := {
 	ARCADE: {
 		"shoulder_cam": false, "move_scale": 1.0, "roll_cooldown": 0.0, "short_dodge": false, "aim_to_shoot": false,
 		"weapon_handling": false, "limited_ammo": false, "enemy_damage": 1.0, "pickups": false, "sprint": false,
+		"back_walk": false,
 	},
 	SURVIVAL: {
 		"shoulder_cam": true, "move_scale": 0.8, "roll_cooldown": 1.4, "short_dodge": true, "aim_to_shoot": true,
 		"weapon_handling": true, "limited_ammo": true, "enemy_damage": 2.0, "pickups": true, "sprint": true,
+		"back_walk": true,
 	},
 }
 
@@ -69,6 +71,11 @@ static func value(key: String) -> Variant:
 
 static func shoulder_cam() -> bool:
 	return value("shoulder_cam")
+
+
+## Direcional para trás (atrás dela) = anda de costas, sem virar; a câmera segue atrás dela.
+static func back_walk() -> bool:
+	return value("back_walk")
 
 
 static func move_scale() -> float:
