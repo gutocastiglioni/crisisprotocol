@@ -2,7 +2,9 @@ class_name CameraRig
 extends Node3D
 ## Câmera em 3ª pessoa. Perfil "arcade" (GameMode): atrás e acima dela; mirando, chega por cima do ombro direito; parado o
 ## controle, volta devagar para trás dela (jeito Syphon Filter). Perfil "survival": sempre por cima do ombro direito (jeito RE4
-## Remake: ela no terço esquerdo da tela, enquadrada da coxa para cima, câmera na altura da cabeça), sem voltar sozinha; mirando, chega mais perto e a mira fica lenta; o tiro dá coice (`kick`).
+## Remake: ela no terço esquerdo da tela, enquadrada da coxa para cima, câmera na altura da cabeça); parada, o analógico
+## direito/mouse giram à vontade; soltou e ela andou, a câmera volta para trás dela, olhando para onde ela olha (`RECENTER_*`);
+## mirando, chega mais perto, não volta sozinha e a mira fica lenta; o tiro dá coice (`kick`).
 ## Mira Sniper telescópica: ao mirar com a Sniper, a câmera entra em 1ª pessoa alinhada à mira, oculta o modelo para visão desobstruída,
 ## reduz a sensibilidade proporcionalmente ao zoom (2x / 4x / 8x / 16x) e projeta alcance de até 120 metros.
 ## Mouse/analógico giram.
@@ -21,6 +23,11 @@ const SHOULDER_AIM_SENS := 0.6  # mirando, o mouse/analógico giram a esta fraç
 const RECOIL_RECOVER := 0.4  # radianos por segundo: o quanto do coice a câmera desfaz
 const RECOIL_KEEP := 0.4  # fração de cada coice que fica (tiros seguidos sobem a mira)
 const PITCH := -0.22  # inclinação inicial no arcade (no survival, SHOULDER.pitch)
+## survival: andando sem girar a câmera (sem mirar), ela volta para trás dela e na inclinação inicial
+const RECENTER_DELAY := 0.2  # s depois de soltar o analógico/mouse
+const RECENTER_RATE := 4.0  # rapidez da volta (por segundo)
+const RECENTER_MAX := 2.4  # rad/s no máximo: andando de lado ela faz a curva sem a câmera rodar como pião
+const RECENTER_MOVE := 0.5  # m/s no plano: abaixo disso ela está parada e a câmera fica onde foi deixada
 
 var target: Node3D
 var yaw := 0.0
@@ -91,6 +98,12 @@ func _process(delta: float) -> void:
 	var shoulder := GameMode.shoulder_cam()
 	if not shoulder and not aiming and moving and _idle_look > FOLLOW_DELAY:
 		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-1.2 * delta))
+	if shoulder and not aiming and _idle_look > RECENTER_DELAY and _walking():
+		var r := 1.0 - exp(-RECENTER_RATE * delta)
+		var turn := clampf(angle_difference(yaw, target.global_rotation.y) * r, -RECENTER_MAX * delta, RECENTER_MAX * delta)
+		yaw += turn
+		pitch = lerpf(pitch, SHOULDER.pitch, r)
+		_recoil = 0.0
 	if _recoil > 0.0:
 		var back := minf(_recoil, RECOIL_RECOVER * delta)
 		pitch -= back
@@ -135,6 +148,18 @@ func _process(delta: float) -> void:
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
 	camera.v_offset = randf_range(-amp, amp)
+
+
+## Ela andando pelo direcional (não empurrada, não numa cena, não esgueirando pela quina).
+func _walking() -> bool:
+	if target.get("cutscene") or target.get("dead"):
+		return false
+	if target.has_method("lean_side") and target.call("lean_side") != 0.0:
+		return false
+	if Input.get_vector("move_left", "move_right", "move_forward", "move_back").length() < 0.2:
+		return false
+	var v: Vector3 = target.get("velocity")
+	return Vector2(v.x, v.z).length() > RECENTER_MOVE
 
 
 ## Enquadramento padrão (fim de cena): atrás dela olhando para `new_yaw`, na inclinação inicial, sem coice; o pivô

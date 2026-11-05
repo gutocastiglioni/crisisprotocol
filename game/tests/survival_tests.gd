@@ -361,14 +361,30 @@ func test_shoulder_camera() -> void:
 	Input.action_press("aim")
 	await t._frames(60)
 	t.check(absf(rig.spring.spring_length - CameraRig.SHOULDER.length_aim) < 0.05 and rig.camera.fov < CameraRig.SHOULDER.fov - 10.0, "mirando: chega mais perto e fecha o campo de visão", "%f %f" % [rig.spring.spring_length, rig.camera.fov])
-	# não volta sozinha para trás dela
+	# parada, o analógico gira à vontade e a câmera fica onde foi deixada
 	Input.action_release("aim")
 	await t._frames(30)
+	rig._look(Vector2(1.2, -0.3))
 	var yaw0 := rig.yaw
-	Input.action_press("move_left")
-	await t._frames(240)
-	Input.action_release("move_left")
-	t.check(absf(angle_difference(yaw0, rig.yaw)) < 0.01, "survival: a câmera não gira sozinha atrás dela", str(rig.yaw - yaw0))
+	await t._frames(60)
+	t.check(absf(angle_difference(yaw0, rig.yaw)) < 0.01, "survival: parada, a câmera fica onde o analógico a deixou", str(rig.yaw - yaw0))
+	# soltou e andou: volta para trás dela, olhando para onde ela olha, na inclinação inicial
+	Input.action_press("move_forward")
+	await t._frames(120)
+	Input.action_release("move_forward")
+	t.check(absf(angle_difference(rig.yaw, p.rotation.y)) < 0.1 and absf(rig.pitch - CameraRig.SHOULDER.pitch) < 0.05, "survival: andou, a câmera volta para trás dela", "%f %f" % [angle_difference(rig.yaw, p.rotation.y), rig.pitch])
+	# mirando, não volta sozinha
+	await t._frames(30)
+	Input.action_press("aim")
+	await t._frames(10)
+	rig._look(Vector2(0.8, 0.0))
+	var yaw_aim := rig.yaw
+	Input.action_press("move_forward")
+	await t._frames(60)
+	Input.action_release("move_forward")
+	Input.action_release("aim")
+	t.check(absf(angle_difference(yaw_aim, rig.yaw)) < 0.01, "survival: mirando andando a câmera não volta sozinha", str(rig.yaw - yaw_aim))
+	await t._frames(10)
 	# mirando, o mouse gira mais devagar
 	Input.action_press("aim")
 	await t._frames(5)
