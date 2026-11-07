@@ -1,7 +1,7 @@
 class_name ExplosiveCrate
 extends StaticBody3D
-## Caixote de metal com explosivos (jeito Syphon Filter), empilhados no canto da porta do pátio onde os guardas do posto
-## mexem neles (`Soldier.GUARDS` "work"). Bala comum (pistola, M16, escopeta) só bate no metal: faísca, mossa, a mira
+## Caixote de metal com explosivos (jeito Syphon Filter), empilhados no fundo do túnel da mina (`Tunnel.STACKS`) onde os
+## guardas do fundo mexem neles (`Tunnel.GUARDS`, "work"). Bala comum (pistola, M16, escopeta) só bate no metal: faísca, mossa, a mira
 ## escreve HARDENED (`TEXT`, pelo `Player.armor_hit`) e o barulho do metal põe em alerta quem está perto (`ping`), que larga
 ## o trabalho e vai procurar. Explosão por perto (granada armada da M79, `Grenade.explode`, ou outro caixote) detona
 ## (`shockwave`): cada caixote explode com `RADIUS`/`DAMAGE` e a onda detona os vizinhos um instante depois (cadeia), o
@@ -18,61 +18,16 @@ const DAMAGE := 420  # no centro (cai até Grenade.MIN_FRACTION na borda: ainda 
 const CHAIN_DELAY := 0.06  # s até o vizinho explodir + CHAIN_PER_M por metro de distância
 const CHAIN_PER_M := 0.07
 const PING_RANGE := 14.0  # quem ouve a bala batendo no metal (mesma sala)
-## Pilhas no chão: [centro (x, z), caixotes na pilha, giro, de trabalho]. Encostadas na parede norte no canto da porta
-## do pátio (parede oeste x = -12,8, norte z = -12,8; fora da saída da ronda 0, x = -8,5), uma no meio do canto e uma na
-## parede oeste atrás do guarda 5, sem fechar o vão da porta (z -10,1..-6,9) nem a passagem dos raptors rente à parede
-## oeste ao sul dela: a cadeia (`CHAIN_RADIUS`) liga todas e a explosão pega os 4 do posto.
-## De trabalho = 1 caixote com o detonador em cima, o guarda 7 na frente (`work_spot`).
-const STACKS := [
-	[Vector2(-12.25, -12.25), 2, 0.03, false],
-	[Vector2(-11.2, -12.25), 2, -0.04, false],
-	[Vector2(-10.15, -12.25), 1, 0.02, false],
-	[Vector2(-9.1, -12.25), 2, 0.02, false],
-	[Vector2(-9.1, -11.2), 1, -0.05, false],
-	[Vector2(-8.05, -12.25), 1, 0.0, true],  # o do guarda 7, olhando para a parede norte
-	# elo do meio: colado ao norte da caixa baixa (-9,6; -5,2), a oeste da rota da ronda 0 (x = -8,5), entre o 3 e o 5 (na parede oeste fechava a
-	# passagem dos raptors da porta para o galpão, que desce rente à parede)
-	[Vector2(-9.6, -6.45), 2, -0.03, false],
-	# parede oeste atrás do 5
-	[Vector2(-12.25, -2.6), 2, 0.02, false],
-	[Vector2(-12.25, -1.45), 1, -0.03, false],
-]
 const WORK_GAP := 0.32  # da face do caixote à raiz do guarda (a cápsula de 0,3 não encosta; as mãos chegam no detonador)
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
 
 var exploded := false
-var work_dir := Vector3.ZERO  # lado do guarda do caixote de trabalho (zero = pelo `work_spot` das pilhas do galpão)
+var work_dir := Vector3.ZERO  # lado do guarda do caixote de trabalho (o detonador fica virado para ele)
 var _fuse := -1.0
 var _shape: CollisionShape3D
 var _view: Node3D
-
-
-## Monta as pilhas de `STACKS` em `parent` (antes de assar a malha de navegação).
-static func build(parent: Node) -> Array[ExplosiveCrate]:
-	var out: Array[ExplosiveCrate] = []
-	for s in STACKS:
-		for k in int(s[1]):
-			var c := ExplosiveCrate.new()
-			# o de cima um pouco torto, como nas pilhas de caixas do galpão
-			c.rotation.y = float(s[2]) * (1.0 if k == 0 else -1.5)
-			parent.add_child(c)
-			c.position = Vector3(s[0].x, SIZE * (k + 0.5), s[0].y)
-			if s[3]:
-				c._add_detonator()
-			out.append(c)
-	return out
-
-
-## Onde fica o guarda que mexe no caixote de trabalho `i` (índice em STACKS) e o giro dele (de frente para o caixote).
-static func work_spot(i: int) -> Dictionary:
-	var s: Array = STACKS[i]
-	var c := Vector3(s[0].x, 0, s[0].y)
-	# o lado de fora: do caixote para o meio do canto
-	var out := Vector3(1, 0, 0) if s[0].y > -11.8 else Vector3(0, 0, 1)
-	var pos := c + out * (SIZE * 0.5 + WORK_GAP)
-	return {"pos": pos, "rot_y": atan2(out.x, out.z)}
 
 
 func _ready() -> void:
@@ -137,10 +92,7 @@ static func _material() -> ShaderMaterial:
 
 ## Detonador em cima do caixote de trabalho, do lado do guarda: caixinha escura com fios e a luzinha vermelha.
 func _add_detonator() -> void:
-	var toward := work_dir
-	if toward == Vector3.ZERO:
-		var spot := work_spot(_stack_index())
-		toward = ((spot.pos as Vector3) - Vector3(position.x, 0, position.z)).normalized()
+	var toward := work_dir if work_dir != Vector3.ZERO else Vector3.BACK
 	var yaw := atan2(toward.x, toward.z)
 	var top := SIZE * 0.5
 	_part(Vector3(0.3, 0.06, 0.2), Vector3(0, top + 0.03, 0) + toward * 0.36, Color(0.16, 0.17, 0.15), yaw)
@@ -149,13 +101,6 @@ func _add_detonator() -> void:
 		var side: Vector3 = toward.cross(Vector3.UP) * 0.08 * k
 		_part(Vector3(0.02, 0.02, 0.4), Vector3(0, top + 0.01, 0) + toward * 0.02 + side,
 			Color(0.8, 0.12, 0.08) if k < 0 else Color(0.1, 0.25, 0.8), yaw)
-
-
-func _stack_index() -> int:
-	for i in STACKS.size():
-		if Vector2(position.x, position.z).distance_to(STACKS[i][0]) < 0.05:
-			return i
-	return 0
 
 
 ## Peça lisa de `size` em `at` (medidas e giro `yaw` do mundo, sem o giro do caixote).

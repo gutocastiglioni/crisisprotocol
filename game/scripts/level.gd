@@ -22,8 +22,6 @@ const LAMPS := [
 	[Vector3(0, 3.8, 0), Color(1.0, 0.85, 0.6), 2.2],
 	[Vector3(-7, 3.5, -8), Color(0.6, 0.75, 1.0), 1.6],
 	[Vector3(8, 3.5, 7), Color(1.0, 0.55, 0.35), 1.6],
-	# luminária de trabalho em cima dos caixotes de explosivos (ExplosiveCrate): a pilha aparece de longe, do mezanino
-	[Vector3(-10.4, 3.2, -11.0), Color(1.0, 0.82, 0.55), 1.5],
 ]
 const PANEL_Y := 0.26  # painel aceso da luminária acima da lâmpada
 
@@ -112,7 +110,6 @@ static func build(parent: Node) -> Dictionary:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
 	_dividers(parent)
 	# caixotes de explosivos no canto da porta do pátio (os guardas do posto mexem neles)
-	ExplosiveCrate.build(parent)
 	_maze(parent)
 	_console(parent)
 	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar; o portão da sala dos clones fica atrás dela)

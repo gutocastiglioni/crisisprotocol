@@ -54,12 +54,12 @@ const HURT_SHOTS := ["hit_crouch", "stagger", "getup", "getup_fwd"]
 ## revisão do container trancado da M79, da chave na mão do morto do pátio e da M79 (ver _setup_key_shot)
 const KEY_SHOTS := ["locked", "unlock", "corpse", "key_get", "ambush", "m79_aim", "fire_m79", "pickup_m79", "crates", "crates_fire",
 	"crates_ping", "crates_close", "crates_boom"]
-## Caixotes de explosivos do posto da porta do pátio: do mezanino (sniper fora), mirando a M79 na pilha do canto
+## Caixotes de explosivos do fundo do túnel da mina: da entrada da câmara do fundo, mirando a M79 na primeira pilha do lado norte
 ## (crates), atirando nela (crates_fire, --at pega a cadeia de explosões), tiro de pistola no caixote (crates_ping: HARDENED
-## e o posto alertado) e câmera de revisão perto do guarda dos caixotes (crates_close, --yaw gira, --dist=m afasta e
-## mostra a parede oeste inteira; crates_boom = a mesma com a granada estourando na pilha em 1 s e o fogo depois).
-const CRATES_FROM := Vector3(0.5, Catwalk.FLOOR_Y, 11.3)
-const CRATES_AIM := Vector3(-11.2, 1.6, -12.0)
+## e os do fundo alertados) e câmera de revisão perto do guarda do detonador (crates_close, --yaw gira, --dist=m afasta e
+## mostra a câmara inteira; crates_boom = a mesma com a granada estourando na pilha em 1 s e o fogo depois).
+const CRATES_FROM := Vector3(-100.8, 0, Tunnel.Z + 1.5)
+const CRATES_AIM := Vector3(-102.0, 1.6, Tunnel.Z - 5.0)
 ## revisão do começo da fase: telhado, alçapão, escada do canto, labirinto, portão e sala dos clones (ver _setup_start_shot)
 const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roof", "sniper_ladder", "maze", "gate", "lab", "clones",
 	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "mezz_climb", "ladder_locked", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
@@ -1467,6 +1467,9 @@ func _setup_key_shot() -> void:
 		player.camera_rig.yaw = player.rotation.y
 		sniper.process_mode = Node.PROCESS_MODE_DISABLED
 		sniper.visible = false
+		tunnel.talk_armed = false
+		for i in 2:
+			tunnel.guards[i].process_mode = Node.PROCESS_MODE_DISABLED  # os do meio, às costas dela
 		if _shot in ["crates_close", "crates_boom"]:
 			_review_cam = Camera3D.new()
 			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -1523,7 +1526,7 @@ func _key_shot(at: Callable) -> void:
 			if _review_cam:
 				var a := deg_to_rad(60.0) if is_nan(_yaw) else _yaw
 				var far := "--dist=" in " ".join(OS.get_cmdline_user_args())
-				var mid := Vector3(-10.2, 1.0, -7.0) if far else Vector3(-9.6, 1.0, -11.3)
+				var mid := Vector3(-108.0, 1.0, Tunnel.Z) if far else Vector3(-105.5, 1.0, Tunnel.Z - 3.8)
 				_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * (_dist if far else 3.6) + Vector3.UP * (2.5 if far else 1.2)
 				_review_cam.look_at(mid)
 

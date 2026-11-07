@@ -46,11 +46,8 @@ const FLAK_TEXT := "FLAK JACKET"
 ## (3, 4, 5, 7 = "patio": até 2; 9, 10 = "norte": 1); com ela vista (vermelho) saem todos.
 ## - 5, 7: de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
 ##   raptors, atrás das paredes de caixas: o 5 colado na parede do sul olhando para leste (vigia o tronco da ronda 0); o 7 no
-##   canto do fundo, o mais perto do portão norte, mexendo no detonador do caixote de trabalho dos explosivos ("work" =
-##   índice em `ExplosiveCrate.STACKS`; `pos`/`rot_y` = `ExplosiveCrate.work_spot`): como o do painel, de costas e
-##   distraído não vê nada e o fuzil fica encostado no caixote; barulho, alarme ou bala no caixote (`ExplosiveCrate.ping`)
-##   o tiram de lá. As pilhas descem pela parede oeste até o 5: uma granada da M79 nelas explode tudo em cadeia e pega o
-##   posto inteiro (3, 4, 5 e 7).
+##   canto do fundo, o mais perto do portão norte. Os explosivos e o guarda no detonador ("work") ficam no túnel da mina
+##   (`Tunnel`).
 ## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
 ##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
 ## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
@@ -69,7 +66,7 @@ const GUARDS := [
 	# lado, mas as caixas tapam a vista dele para fora, para a saída do labirinto
 	{"pos": Vector3(-10.6, 0, -1.6), "rot_y": -PI * 0.5, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
-	{"pos": Vector3(-8.05, 0, -11.43), "rot_y": 0.0, "route": [], "hold": true, "post": "patio", "work": 5},
+	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
 	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
 	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},

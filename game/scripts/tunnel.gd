@@ -151,7 +151,8 @@ func _props() -> void:
 		var x0: float = s[0]
 		var x1: float = s[1]
 		var hw: float = s[2]
-		var x := x0 - 2.0
+		# na câmara do fundo as escoras ficam nos vãos entre as pilhas de explosivos (não atravessam os caixotes)
+		var x := x0 - (4.0 if hw >= SECTIONS[3][2] else 2.0)
 		while x > x1 + 1.0:
 			for side in [-1, 1]:
 				Yard._box(self, Vector3(0.28, H, 0.28), Vector3(x, H * 0.5, Z + side * (hw - 0.16)), "bark", 0.8)

@@ -80,9 +80,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Armas: `--shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump` (tiros na pilha de caixas;
   a captura imprime `buracos=`).
   Ela e o guerrilheiro lado a lado: `--shot=idle_compare|carry_compare|walk_compare [--yaw=graus]` (sem arma / M16 parados / M16 andando).
-  Caixotes de explosivos: `--shot=crates|crates_fire|crates_ping|crates_close|crates_boom` (crates/crates_fire/crates_ping = do mezanino
-  mirando a pilha do canto com a M79 / atirando nela, `--at` pega a cadeia / pistola no caixote = HARDENED; crates_close = câmera perto
-  do guarda 7, `--yaw` gira, `--dist=m` afasta e mostra a parede oeste; crates_boom = a mesma com a granada estourando em 1 s e o fogo).
+  Caixotes de explosivos (fundo do túnel): `--shot=crates|crates_fire|crates_ping|crates_close|crates_boom` (crates/crates_fire/crates_ping
+  = da entrada da câmara do fundo mirando a primeira pilha do lado norte com a M79 / atirando nela, `--at` pega a cadeia / pistola no caixote =
+  HARDENED; crates_close = câmera perto do guarda do detonador, `--yaw` gira, `--dist=m` afasta e mostra a câmara; crates_boom = a
+  mesma com a granada estourando em 1 s e o fogo).
   Raptor: `--shot=raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead|raptor_idle [--playercam]`
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
@@ -434,16 +435,16 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   arremessa a jogadora perto e ela leva `PLAYER_SHARE` do dano; barulho `NOISE`; `Fx.explosion` + mancha `Fx.scorch`, que conta em
   `MAX_DECALS` e some com o R). Survival: 4 granadas no baú, caixa verde em `Pickup.LAYOUT`.
 - Caixotes de explosivos (`ExplosiveCrate`, jeito Syphon Filter; textura `explosive.png` de `make_level_textures.py`, UV 0..1 por
-  face): pilhas `STACKS` na parede norte do canto da porta do pátio, uma no meio do canto e uma atrás do guarda 5 (a passagem dos
-  raptors rente à parede oeste fica livre: ai_tests `test_yard_nav`);
-  luminária própria em `Level.LAMPS`. Só o guarda 7 mexe neles (`Soldier.GUARDS` "work" = índice da pilha, `work_spot`; distraído como o
-  do painel, animação Console no detonador, fuzil encostado `Soldier._stowed`); 3 e 4 na porta, 5 vigiando a ronda 0. Bala comum
+  face): só no fundo do túnel da mina (`Tunnel.STACKS`; o posto da porta do pátio do galpão voltou a ser o de antes, sem
+  eles). Os 4 guardas do fundo mexem nos caixotes de trabalho (`Tunnel.GUARDS` "work"; distraídos como o do painel, animação
+  Console, detonador virado para eles por `ExplosiveCrate.work_dir`, fuzil encostado `Soldier._stowed`). Bala comum
   (`Player._pellet_hit`) só bate no metal: mossa, a mira escreve HARDENED (`armor_hit`) e `ping` = `on_alarm` em quem está a
-  `PING_RANGE` na mesma sala (o 7 larga o detonador). Explosão perto (`Grenade.explode` → `shockwave`, ou outro caixote a
+  `PING_RANGE` na mesma sala (quem está no caixote larga o trabalho). Explosão perto (`Grenade.explode` → `shockwave`, ou outro caixote a
   `CHAIN_RADIUS`) detona com atraso pela distância: cada um é um `Grenade.blast` (`RADIUS`/`DAMAGE`, os outros caixotes não protegem,
   empurrão `BODY_PUSH` pequeno: são muitos), some e deixa o chão pegando fogo (`Fire.burn`: chamas, luz, fumaça, machuca quem fica
   dentro); guarda morto perto pega fogo (`Soldier.ignite`: `Fire.attach` no peito/quadril do ragdoll, `HeroineModel.char_body`
-  carboniza). A granada na pilha do canto mata o posto inteiro (3, 4, 5, 7). R: caixotes de volta, fogo apagado (`Fire.clear`).
+  carboniza). As pilhas de cada lado encadeiam até as do portão: a granada num lado pega os dois daquele lado e arromba o
+  portão da pedreira; o detonador (`Tunnel`) estoura todas. R: caixotes de volta, fogo apagado (`Fire.clear`).
   Testes: `explosive_tests.gd`.
 - Container trancado e chave (jeito RE/Dino Crisis): `Chest.lock` = id da chave (ferrolho + cadeado na frente). A M79 fica no
   container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está na mão do guerrilheiro

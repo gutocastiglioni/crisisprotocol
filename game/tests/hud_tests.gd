@@ -148,7 +148,7 @@ func test_hud_in_game() -> void:
 	await t._frames(10)
 	t.check(radar.seen.is_empty(), "radar: no telhado ela ainda não viu ninguém", str(radar.seen.size()))
 	# no galpão, olhando para os guardas da porta do pátio pelo vão da parede de caixas do leste (z = -8,4); daqui o sentinela
-	# 3 fica atrás da caixa empilhada (-3,75; -7) e, mais para -Z, atrás dos caixotes de explosivos: o 4 é o que está à vista
+	# 3 fica atrás da caixa empilhada (-3,75; -7) por ~1 cm: o 4, da mesma porta, é o que está à vista
 	p.global_position = Vector3(-1.0, 0, -8.4)
 	p.rotation.y = PI * 0.5
 	p.camera_rig.yaw = p.rotation.y
