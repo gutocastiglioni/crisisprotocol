@@ -1,11 +1,13 @@
 class_name KeyItem
 extends Node3D
 ## Chave escondida com alguém (TargetDummy.loot): some até ele morrer; aí cai no chão onde ele estava (`drop`) e fica
-## brilhando (estrela de 4 pontas que pisca de tempos em tempos, com uma luzinha) para ser vista de longe. Ela chegando
+## brilhando como a arma largada (Pickup.glow_set: halo no chão e feixes em cruz), em azul claro (`DROP_GLOW`), para
+## ser vista de longe. Ela chegando
 ## perto (PICK_RANGE), pega sozinha: a chave vai para o bolso (`Player.add_key(id)`) e o sinal `picked` faz o main
 ## mostrar o item na tela (Inspect.show_item). Abre o baú com `Chest.lock` igual ao `id`. Reinício: volta a ficar escondida.
-## Na mão de um morto (`hold`, Corpse): aparece parada onde ele a segura e se pega igual; `shine` desligado = sem a
-## estrela nem a luz (a do guerrilheiro só brilha depois que os raptors da emboscada morrem).
+## Na mão de um morto (`hold`, Corpse): escondida, sem o halo; aparece parada onde ele a segura, se pega igual e só
+## tem a estrela de 4 pontas que pisca de tempos em tempos, com uma luzinha; `shine` desligado = sem a estrela nem a
+## luz (a do guerrilheiro só brilha depois que os raptors da emboscada morrem).
 
 signal picked(key: KeyItem)
 
@@ -17,6 +19,7 @@ const BRASS := Color(0.85, 0.66, 0.26)
 const TAG := Color(0.75, 0.12, 0.1)
 const TAG_INK := Color(0.08, 0.04, 0.03)
 const CARD_BLUE := Color(0.12, 0.22, 0.38)  # azul tático (cartão do galpão)
+const DROP_GLOW := Color(0.55, 0.85, 1.0)  # azul claro: o brilho das armas largadas, na cor dos itens
 const SPARKLE := preload("res://shaders/sparkle.gdshader")
 
 @export var id := "container"
@@ -28,9 +31,9 @@ const SPARKLE := preload("res://shaders/sparkle.gdshader")
 ## cor do plástico do cartão (keycard)
 @export var card_color := CARD_BLUE
 
-## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, brilhando), "held" (na mão de um morto) ou "taken"
+## "hidden" (com o dono), "dropping" (caindo), "dropped" (no chão, com o halo azul), "held" (na mão de um morto) ou "taken"
 var state := "hidden"
-## brilha (estrela e luz) no chão ou na mão; desligado, fica só a chave
+## na mão de um morto, brilha (estrela e luz); desligado, fica só a chave
 var shine := true:
 	set(v):
 		shine = v
@@ -40,6 +43,7 @@ var _model: Node3D
 var _sparkle: MeshInstance3D
 var _glow: MeshInstance3D
 var _light: OmniLight3D
+var _halo: Node3D  # halo e feixes azuis no chão (dropped)
 var _t := 0.0
 
 
@@ -185,6 +189,10 @@ func _ready() -> void:
 	_light.omni_range = 1.4
 	_light.position.y = 0.15
 	add_child(_light)
+	_halo = Node3D.new()
+	add_child(_halo)
+	Pickup.glow_set(_halo, DROP_GLOW)
+	_halo.visible = false
 	_show(false)
 
 
@@ -208,10 +216,11 @@ func _star(size: float, color: Color) -> MeshInstance3D:
 
 func _show(on: bool) -> void:
 	visible = on
-	_light.visible = on and state in ["dropped", "held"] and shine
+	_light.visible = on and state == "held" and shine
+	_halo.visible = on and state == "dropped"
 
 
-## O dono morreu: a chave cai de `from` até o chão embaixo e começa a brilhar.
+## O dono morreu: a chave cai de `from` até o chão embaixo e o halo azul acende.
 func drop(from: Vector3) -> void:
 	if state != "hidden":
 		return
@@ -227,7 +236,7 @@ func drop(from: Vector3) -> void:
 	tw.tween_callback(func() -> void:
 		state = "dropped"
 		_t = 0.0
-		_light.visible = true
+		_show(true)
 		Sfx.play(self, "key_drop", global_position))
 
 
@@ -242,13 +251,13 @@ func hold(xf: Transform3D) -> void:
 	_show(true)
 
 
-## Brilho da estrela (0..1) agora: uma piscada forte a cada TWINKLE s.
+## Brilho da estrela (0..1) agora (na mão de um morto): uma piscada forte a cada TWINKLE s.
 func twinkle() -> float:
 	return pow(maxf(0.0, sin(_t * TAU / TWINKLE)), 6.0)
 
 
 func _process(delta: float) -> void:
-	if not state in ["dropped", "held"] or not shine:
+	if state != "held" or not shine:
 		_sparkle.visible = false
 		_glow.visible = false
 		return

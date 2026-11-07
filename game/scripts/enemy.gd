@@ -100,6 +100,7 @@ var alarm_walks := false  # vai ao alarme como quem investiga (gente: trote, "?"
 var shouts := false  # gente: ferido ou achando corpo avisa só quem ouve o grito (raptor: o guincho chama a sala toda)
 var _shout_t := -1.0  # > 0: o grito sai quando chegar a 0
 var _shout_at := Vector3.ZERO
+var _shout_about: Enemy  # o corpo de que o grito fala (quem já o conhece não reage)
 ## Guarda de posto (guardas da porta do pátio): barulho e vulto só o fazem parar e olhar para lá, sem sair do lugar,
 ## até alguém vê-la (alerta: `alert_t` > 0); aí caça e procura como os outros e, quando desiste, volta ao posto.
 var hold_post := false
@@ -118,6 +119,24 @@ var _progress_t := 0.0
 var _marker: Label3D
 var _known_dead: Array[Enemy] = []  # corpos que já foi ver (ou deu o alarme): não chamam mais a atenção dele
 var _corpse: Enemy  # corpo que viu e está indo ver (`_corpse_at`)
+var _note_t := 0.0  # em luta: relógio da olhada nos corpos à vista (`_note_corpses`)
+## Tempos do alerta (quem herda ajusta: o guerrilheiro procura e esquece 15% mais rápido que os bichos).
+var alert_time := ALERT_TIME
+var lose_time := LOSE_TIME
+var search_time := SEARCH_TIME
+## Busca ativa (laranja): a busca começou com ele alertado (alarme, corpo achado, ela sumiu da luta). Sem isso é a busca
+## amarela de quem só desconfiou (barulho, vulto). Vale até a busca acabar (`_resume`), mesmo se o `alert_t` acabar no meio.
+var active_search := false
+## Busca amarela: indo ver o lugar suspeito, para a esta distância dele (com vista do lugar) e observa (0 = vai até o fim).
+var observe_dist := 0.0
+## Ronda que já foi alertada (`_was_alerted`) fica de guarda junto de um corpo que conhece quando a busca acaba, no lugar
+## da ronda (`_start_guard`). Posto de portão nunca (sem rota, `post`, `hold_post`, `distracted`).
+var guards_bodies := false
+var _was_alerted := false
+var _guard_body: Enemy
+var _guard_spot := Vector3.ZERO
+var _guard_yaw := 0.0
+var _guard_at := false
 var _trail := Blood.Trail.new()
 
 ## Chamar no `_ready` de quem herda (depois de montar o corpo): indicador "?"/"!", grupo e ponto de partida.
@@ -167,6 +186,8 @@ func _tick(delta: float) -> void:
 	alert_t = maxf(alert_t - delta, 0.0)
 	if alert_t <= 0.0:
 		identified = false
+	else:
+		_was_alerted = true
 	if dead:
 		# morto não cai: o soldado sem colisor atravessaria o chão levando o ragdoll (filho do esqueleto dele) junto
 		velocity = Vector3.ZERO
@@ -177,7 +198,7 @@ func _tick(delta: float) -> void:
 	if _shout_t > 0.0:
 		_shout_t -= delta
 		if _shout_t <= 0.0:
-			broadcast_alarm(_shout_at, true)
+			broadcast_alarm(_shout_at, true, false, _shout_about)
 	if state == "down":
 		return
 	if not in_combat():
@@ -186,6 +207,7 @@ func _tick(delta: float) -> void:
 		_check_corpses()
 	elif state != "hold":
 		_track_target(delta)
+		_note_corpses(delta)
 
 ## Estados calmos e de busca (iguais para todo inimigo). Devolve true se `state` era um deles.
 func _calm_state(delta: float) -> bool:
@@ -213,12 +235,12 @@ func _calm_state(delta: float) -> bool:
 				_search_look(delta)
 			else:
 				_look(delta, "Idle")
-			if _t >= _dur:
+			if _t >= _dur and not _start_guard():
 				start_patrol()
 		"suspicious":
 			_suspicious(delta)
 		"investigate":
-			if _go(_goal, investigate_speed, delta):
+			if _go(_goal, _investigate_speed(), delta) or _close_enough():
 				if _corpse_at(_search_center):
 					_found_corpse(_corpse)  # chegou o mais perto que dava do corpo (pode ter caído em cima de caixa)
 				else:
@@ -235,6 +257,8 @@ func _calm_state(delta: float) -> bool:
 		"sweep":
 			if _go(_goal, patrol_speed, delta):  # vasculhando: passo de ronda, com calma
 				start_search()
+		"guard":
+			_guard(delta)
 		_:
 			return false
 	return true
@@ -296,6 +320,7 @@ func _reset_enemy() -> void:
 	_route_i = 0
 	_alarm_delay = -1.0
 	_shout_t = -1.0
+	_shout_about = null
 	_lost_t = 0.0
 	_path = PackedVector3Array()
 	_dropped = false
@@ -305,6 +330,11 @@ func _reset_enemy() -> void:
 	_vigil_target_yaw = 0.0
 	_known_dead.clear()
 	_corpse = null
+	_note_t = 0.0
+	active_search = false
+	_was_alerted = false
+	_guard_body = null
+	_guard_at = false
 	remove_meta("reported")  # o alarme do corpo dele era da outra vez
 
 ## Solta item ao morrer (arma ou munição). Devolve o Pickup instanciado ou null.
@@ -327,6 +357,9 @@ func start_patrol() -> void:
 
 ## Volta à rotina (patrulha pelo ponto mais próximo, ou guarda parada, que antes anda de volta ao posto).
 func _resume() -> void:
+	active_search = false
+	if _start_guard():
+		return
 	if route.is_empty():
 		if _flat(_spawn.origin - global_position).length() > arrival_dist + 0.3:
 			_goal = _spawn.origin
@@ -369,6 +402,8 @@ func start_hunt(at: Vector3) -> void:
 	_enter("hunt", "Run", 0.2)
 
 func _begin_search(at: Vector3) -> void:
+	# alertado = busca ativa; a que já era ativa não volta a ser amarela no meio (barulho novo durante a busca)
+	active_search = alert_t > 0.0 or (active_search and state in ["investigate", "hunt", "search", "sweep"])
 	_search_center = at
 	_sweeps_left = search_sweeps
 	_visited.clear()
@@ -380,7 +415,8 @@ func _begin_search(at: Vector3) -> void:
 func start_search() -> void:
 	_visited.append(global_position)
 	_enter("search", "Study", 0.3)
-	_dur = rng.randf_range(SEARCH_TIME, SEARCH_TIME + 2.0)
+	var st := search_time if active_search else SEARCH_TIME
+	_dur = rng.randf_range(st, st * (SEARCH_TIME + 2.0) / SEARCH_TIME)
 	_look_t = 0.0
 
 ## Olhando em volta: primeiro vira para o lugar procurado (e ergue a cabeça se é alto, como a passarela), depois varre.
@@ -557,6 +593,10 @@ func _reaches(pos: Vector3) -> bool:
 func is_searching() -> bool:
 	return not in_combat() and not dead and (alert_level() == 2 or state in ["hunt", "search", "sweep", "investigate"])
 
+## O barulho em `pos` que alcança `radius` m chega até ele (vivo, fora de cena, mesma sala ou portas abertas, dentro do raio).
+func can_hear(pos: Vector3, radius: float) -> bool:
+	return not dead and not lurking and _flat(pos - global_position).length() < radius and _reaches(pos)
+
 ## Barulho em `pos` que alcança `radius` metros: se estiver vasculhando, vai direto em encontrar.
 func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 	if dead or lurking or in_combat() or not _reaches(pos):
@@ -601,7 +641,7 @@ func on_alarm(src: Node3D, at: Vector3, rank := 0, seen := false) -> void:
 	if dead or lurking or src == self or not _reaches(src.global_position):
 		return
 	_last_known = at
-	alert_t = ALERT_TIME
+	alert_t = alert_time
 	identified = identified or seen
 	if in_combat():
 		return
@@ -613,7 +653,7 @@ func on_alarm(src: Node3D, at: Vector3, rank := 0, seen := false) -> void:
 
 ## Ouviu o alarme mas não é dos que vão: para, olha para o lugar e segue a rotina (alertado: vê mais longe e mais aberto).
 func _heed(at: Vector3) -> void:
-	if not state in ["idle", "patrol", "look"]:
+	if not state in ["idle", "patrol", "look", "guard"]:
 		return
 	_search_center = at
 	_enter("look", "Idle", 0.3)
@@ -639,31 +679,36 @@ func _raise_alarm() -> void:
 
 ## Sabe (ou desconfia) que ela está em `at`: alerta só a si mesmo.
 func _alert_self(at: Vector3) -> void:
-	alert_t = ALERT_TIME
+	alert_t = alert_time
 	aware = 1.0
 	_lost_t = 0.0
 	_last_known = at
 
 ## Ferido sem tê-la notado ou achou um corpo em `at`: alerta-se e avisa os outros. Gente (`shouts`) grita SHOUT_DELAY depois
 ## e só vem quem ouve; raptor/alossauro chamam a sala toda na hora.
-func _alarm_from(at: Vector3) -> void:
+## `about` = o corpo achado: o aviso não chega a quem já o conhece, e quem ouve passa a conhecê-lo (outro achando o mesmo
+## corpo depois não realerta quem já sabia dele).
+func _alarm_from(at: Vector3, about: Enemy = null) -> void:
 	_alert_self(at)
 	if shouts:
 		_shout_at = at
+		_shout_about = about
 		_shout_t = SHOUT_DELAY
 	else:
-		broadcast_alarm(at)
+		broadcast_alarm(at, false, false, about)
 
 ## Avisa os outros que ela está em `at`, do mais perto ao mais longe (a ordem de cada tipo é o `rank` de `on_alarm`).
 ## `earshot` = grito: só quem ouve (`_hears_shout`). `seen` = quem avisa a viu (vermelho: libera os postos).
-func broadcast_alarm(at: Vector3, earshot := false, seen := false) -> void:
+func broadcast_alarm(at: Vector3, earshot := false, seen := false, about: Enemy = null) -> void:
 	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool:
-		return e is Enemy and e != self and not e.dead and (not earshot or _hears_shout(e)))
+		return e is Enemy and e != self and not e.dead and (not earshot or _hears_shout(e)) and (about == null or not about in e._known_dead))
 	others.sort_custom(func(a: Enemy, b: Enemy) -> bool: return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
 	var ranks := {}
 	for e: Enemy in others:
 		var kind: Script = e.get_script()
 		e.on_alarm(self, at, ranks.get(kind, 0), seen)
+		if about != null and not about in e._known_dead:
+			e._known_dead.append(about)
 		ranks[kind] = ranks.get(kind, 0) + 1
 
 ## `e` ouve o grito deste: até SHOUT_MUFFLED sempre, até SHOUT_RANGE só com nada do cenário entre as cabeças.
@@ -704,11 +749,11 @@ func _perceive(delta: float) -> void:
 			if _stimulus.distance_to(_goal) > 3.0:
 				start_investigate(_stimulus)
 		elif _holds_post():
-			if state in ["idle", "patrol", "look"]:
+			if state in ["idle", "patrol", "look", "guard"]:
 				start_suspicious()
 		elif state != "hunt":
 			start_investigate(_stimulus)
-	elif aware >= SUSPECT_AT and state in ["idle", "patrol", "look"]:
+	elif aware >= SUSPECT_AT and state in ["idle", "patrol", "look", "guard"]:
 		start_suspicious()
 
 ## Mexendo no painel: parado no posto (o lugar exato, não só perto, e virado para ele) e sem alerta. Qualquer outro estado
@@ -1017,7 +1062,7 @@ func _check_corpses() -> void:
 			return
 		if _corpse == e and state in ["suspicious", "investigate"]:
 			return  # já está indo ver
-		if state in ["idle", "patrol", "look", "suspicious"]:
+		if state in ["idle", "patrol", "look", "suspicious", "guard"]:
 			_corpse = e
 			_stimulus = e.global_position
 			aware = maxf(aware, 0.9)
@@ -1042,5 +1087,115 @@ func _found_corpse(e: Enemy) -> void:
 		start_search()
 		return
 	e.set_meta("reported", true)
-	_alarm_from(e.global_position)  # achou o corpo, não ela: o alarme é o lugar do corpo
+	_alarm_from(e.global_position, e)  # achou o corpo, não ela: o alarme é o lugar do corpo
 	start_hunt(e.global_position)
+
+
+## Em luta: corpo de companheiro à vista (perto, sem nada no meio) passa a ser conhecido. Depois de perdê-la de vista ele
+## não se surpreende com o mesmo corpo (nem grita por ele); os outros, que não o viram, ainda podem.
+func _note_corpses(delta: float) -> void:
+	_note_t -= delta
+	if _note_t > 0.0:
+		return
+	_note_t = 0.25
+	var eye := global_position + Vector3.UP * eye_height
+	var space := get_world_3d().direct_space_state
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var e := n as Enemy
+		if e == null or e == self or not e.dead or e in _known_dead or _flat(e.global_position - global_position).length() > CORPSE_SIGHT:
+			continue
+		if space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, e.global_position + Vector3.UP * 0.3, 1)).is_empty():
+			_known_dead.append(e)
+
+## Velocidade indo ver um lugar (quem herda escolhe: o guerrilheiro anda na busca amarela e corre na ativa).
+func _investigate_speed() -> float:
+	return investigate_speed
+
+## Busca amarela: já está a `observe_dist` do lugar suspeito e o vê daqui: para e observa (não vai até em cima).
+func _close_enough() -> bool:
+	return observe_dist > 0.0 and not active_search and _flat(_search_center - global_position).length() < observe_dist \
+		and _sees_from(global_position, _search_center)
+
+# ------------------------------------------------------------------ guarda do corpo (ronda que foi alertada)
+func _can_guard_bodies() -> bool:
+	return guards_bodies and _was_alerted and not route.is_empty() and post == "" and not hold_post and not distracted
+
+## Outro vivo já guarda `e`.
+func _guarded_by_other(e: Enemy) -> bool:
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Enemy
+		if o != null and o != self and not o.dead and o._guard_body == e:
+			return true
+	return false
+
+## Os ânimos acalmaram: vai (ou volta) para junto do corpo que guarda. Devolve false se não guarda corpo nenhum.
+func _start_guard() -> bool:
+	if not _can_guard_bodies():
+		return false
+	if _guard_body == null or not is_instance_valid(_guard_body) or not _guard_body.dead:
+		_guard_body = _pick_body()
+		if _guard_body == null:
+			return false
+		_place_guard()
+	_goal = _guard_spot
+	_path = PackedVector3Array()
+	_repath_t = 0.0
+	_guard_at = false
+	_enter("guard", "Walk", 0.3)
+	return true
+
+## O corpo conhecido mais perto, na mesma sala, que ninguém guarda ainda.
+func _pick_body() -> Enemy:
+	var best: Enemy = null
+	var best_d := INF
+	for e: Enemy in _known_dead:
+		if not is_instance_valid(e) or not e.dead or _guarded_by_other(e) \
+				or Level.room_of(e.global_position.x) != Level.room_of(global_position.x):
+			continue
+		var d := _flat(e.global_position - global_position).length()
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
+
+## Lugar da guarda: chão a ~1,8 m do corpo, do lado de onde se vê mais longe (de costas para o corpo, olhando para fora).
+func _place_guard() -> void:
+	var body := _guard_body.global_position
+	var away := _flat(global_position - body)
+	var out := away.normalized() if away.length() > 0.1 else -global_basis.z
+	_guard_spot = Vector3(body.x, global_position.y, body.z) + out * 1.8
+	if _has_nav():
+		var space := get_world_3d().direct_space_state
+		var spots := []
+		for k in 12:
+			var a := TAU * k / 12.0
+			var dir := Vector3(cos(a), 0.0, sin(a))
+			var q: Variant = _floor_at(body + dir * 1.8)
+			if q == null:
+				continue
+			var eye: Vector3 = q + Vector3.UP * eye_height
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + dir * 10.0, 1))
+			var open: float = eye.distance_to(hit.position) if hit else 10.0
+			spots.append([-open + _flat(q - global_position).length() * 0.15, q, dir])
+		spots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for sp: Array in spots.slice(0, 6):
+			if _reachable(sp[1]):
+				_guard_spot = sp[1]
+				out = sp[2]
+				break
+	_guard_yaw = atan2(-out.x, -out.z)
+
+## De guarda: anda até o lugar ao lado do corpo e fica ali vigiando para fora (a percepção segue a de quem está parado).
+func _guard(delta: float) -> void:
+	if _guard_body == null or not is_instance_valid(_guard_body) or not _guard_body.dead:
+		_guard_body = null
+		start_patrol()
+		return
+	if not _guard_at:
+		if _go(_goal, patrol_speed, delta):
+			_guard_at = true
+			_vigil_t = 0.5
+		return
+	_stop(delta)
+	rotation.y = lerp_angle(rotation.y, _guard_yaw, 1.0 - exp(-4.0 * delta))
+	_idle_vigil(delta)

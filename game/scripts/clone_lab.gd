@@ -3,7 +3,7 @@ extends Node3D
 ## Sala dos clones: anexo atrás da plataforma de carga, ao norte do galpão. O portão de enrolar (Door, `room` -1: fora da
 ## corrente galpão -> pátio -> pedreira) fica na parede do fundo do galpão, na altura da plataforma (o piso da sala é o
 ## da doca). Dentro, duas fileiras de tubos de vidro com velociraptors clonados suspensos no líquido, parados como se
-## estivessem congelados (RaptorModel com a animação travada, azulados), bolhas subindo, névoa fria no chão e um console no
+## estivessem congelados (RaptorModel sem animação, encolhidos na pose de embrião `EMBRYO`, azulados), bolhas subindo, névoa fria no chão e um console no
 ## fundo. Ela entra pela primeira vez: sinal `entered` (o main toca a cena do choque, Cutscene.play_clones).
 ## Cada tubo tem uma plaqueta (SubjectPlate, "SUBJECT XXXX", lida com E). No canto do fundo à esquerda fica o tanque
 ## enorme do alossauro, inteiro, drenado e com a porta de vidro aberta (vazio: ele está na pedreira); o número da
@@ -25,11 +25,21 @@ const TUBE_R := 0.85
 const TUBE_H := 3.9
 const BASE_H := 0.45
 const CAP_H := 0.4
-const RAPTOR_PITCH := 85.0  # de pé no tubo: focinho para cima, cauda para baixo
+const RAPTOR_PITCH := 25.0  # o novelo boiando um pouco de focinho para baixo
 const RAPTOR_SCALE := 0.92  # um pouco menor que o adulto do pátio: cauda e garras longe do vidro
-const RAPTOR_FWD := 0.5  # o corpo em pé fica para trás da origem: empurra para o meio do tubo
-const RAPTOR_LIFT := 2.5  # origem do raptor acima do piso (a ponta da cauda fica logo acima da base)
-const FROZEN_FRAME := 0.7  # s da animação Idle em que eles ficam parados
+const RAPTOR_MID := 0.5  # altura do meio do novelo no tubo (fração do vidro)
+## pose de embrião (graus XYZ sobre o repouso do osso, convenção de art/raptor_anims.py): costas arqueadas, pescoço e
+## cabeça dobrados até os joelhos, pernas recolhidas contra a barriga, braços encolhidos e a cauda enrolada por baixo
+## e em volta do lado do corpo
+const EMBRYO := {
+	"Hips": [-10, 0, 0], "Spine": [-26, 0, 0], "Chest": [-26, 0, 0],
+	"Neck1": [-40, 0, 6], "Neck2": [-42, 0, 6], "Head": [-38, 0, 4], "Jaw": [0, 0, 0],
+	"Tail1": [-45, 0, 6], "Tail2": [-45, 0, 10], "Tail3": [-42, 0, 14], "Tail4": [-38, 0, 16],
+	"Thigh_L": [75, 0, 8], "Shin_L": [-55, 0, 0], "Meta_L": [70, 0, 0], "Toe_L": [-40, 0, 0],
+	"Thigh_R": [75, 0, -8], "Shin_R": [-55, 0, 0], "Meta_R": [70, 0, 0], "Toe_R": [-40, 0, 0],
+	"Arm_L": [45, 0, -10], "Forearm_L": [-70, 0, 0], "Hand_L": [-50, 0, 0],
+	"Arm_R": [45, 0, 10], "Forearm_R": [-70, 0, 0], "Hand_R": [-50, 0, 0],
+}
 const FROZEN_TINT := Color(0.62, 0.86, 1.08)
 const ENTER_Z := Z_NEAR - 1.2  # passou do portão
 const SUBJECTS := ["0412", "0413", "0414", "0415", "0416", "0417"]  # um por tubo, na ordem em que são montados
@@ -79,16 +89,17 @@ static func inside(p: Vector3) -> bool:
 func _build_room() -> void:
 	var depth := Z_NEAR - Z_FAR
 	var mid_z := (Z_NEAR + Z_FAR) * 0.5 - 0.2
-	var wall_h := CEIL_Y + 0.3 - FLOOR_Y
+	var wall_h := CEIL_Y - FLOOR_Y  # até debaixo da laje do teto: topo da parede no plano da laje piscava na beira
 	# base maciça até a altura da doca e o piso
 	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, FLOOR_Y, depth + 0.4), Vector3(0, FLOOR_Y * 0.5, mid_z), "concrete", 0.35)
 	for s in [-1, 1]:
 		Level.block(self, Vector3(0.4, wall_h, depth + 0.4), Vector3(s * HALF_W, FLOOR_Y + wall_h * 0.5, mid_z), "wall", 0.5)
 	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, wall_h, 0.4), Vector3(0, FLOOR_Y + wall_h * 0.5, Z_FAR), "wall", 0.5)
 	# parede de cima, acima da parede do galpão (o anexo é mais alto)
-	var top_h := CEIL_Y + 0.3 - Level.WALL_H
+	var top_h := CEIL_Y - Level.WALL_H
 	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, top_h, 0.4), Vector3(0, Level.WALL_H + top_h * 0.5, Z_NEAR), "wall", 0.5)
-	var ceil := Level.block(self, Vector3(HALF_W * 2.0 + 0.4, 0.3, depth + 0.4), Vector3(0, CEIL_Y + 0.15, mid_z), "concrete", 0.35)
+	# a laje vai até a face de fora da parede de cima (a beira por onde ela sobe do telhado do galpão é de concreto)
+	var ceil := Level.block(self, Vector3(HALF_W * 2.0 + 0.4, 0.3, depth + 0.6), Vector3(0, CEIL_Y + 0.15, mid_z + 0.1), "concrete", 0.35)
 	(ceil.get_child(0) as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# faixa de perigo na entrada e no corredor do meio
 	Level.block(self, Vector3(GATE_W, 0.02, 0.5), Vector3(0, FLOOR_Y + 0.01, Z_NEAR - 0.6), "hazard", 1.0)
@@ -184,11 +195,16 @@ func _tube(at: Vector3, yaw: float) -> void:
 	tube.add_child(holder)
 	var r := RaptorModel.new()
 	r.chirps = false
-	r.rotation.x = deg_to_rad(RAPTOR_PITCH)
+	r.rotation.x = deg_to_rad(-RAPTOR_PITCH)
 	r.scale = Vector3.ONE * RAPTOR_SCALE
-	r.position = Vector3(0, RAPTOR_LIFT, -RAPTOR_FWD)
 	holder.add_child(r)
 	_freeze(r)
+	# o meio do novelo (caixa dos ossos) no eixo do tubo, na altura RAPTOR_MID do vidro
+	var box := AABB(holder.to_local(r.global_position), Vector3.ZERO)
+	var sk := r.skeleton
+	for b in sk.get_bone_count():
+		box = box.expand(holder.to_local(sk.global_transform * sk.get_bone_global_pose(b).origin))
+	r.position += Vector3(0, BASE_H + TUBE_H * RAPTOR_MID, 0) - box.get_center()
 	clones.append(r)
 	# luz de dentro (embaixo e no meio, para o clone não virar só silhueta) e bolhas
 	var o := OmniLight3D.new()
@@ -201,10 +217,18 @@ func _tube(at: Vector3, yaw: float) -> void:
 	tube.add_child(_mist())
 
 
-## Para a animação num quadro e deixa o corpo azulado e desbotado (congelado).
+## Desliga a animação, encolhe o corpo na pose de embrião e o deixa azulado e desbotado (congelado).
 static func _freeze(r: RaptorModel) -> void:
-	r.anim_player.seek(FROZEN_FRAME, true)
-	r.anim_player.pause()
+	r.anim_player.stop()
+	r.anim_player.active = false
+	var sk := r.skeleton
+	sk.reset_bone_poses()
+	for bone: String in EMBRYO:
+		var i := sk.find_bone(bone)
+		if i < 0:
+			continue
+		var e := Vector3(EMBRYO[bone][0], EMBRYO[bone][1], EMBRYO[bone][2]) * (PI / 180.0)
+		sk.set_bone_pose_rotation(i, sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(e))
 	for mi: MeshInstance3D in r.find_children("*", "MeshInstance3D", true, false):
 		for i in mi.mesh.get_surface_count():
 			var m := mi.get_surface_override_material(i) as ShaderMaterial

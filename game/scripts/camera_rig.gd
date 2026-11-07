@@ -69,6 +69,27 @@ var _side_vel := 0.0  # velocidade da troca de lado (mola)
 var swing := 0.0  # 0..1: quanto do efeito do giro está valendo (SWING_*)
 var _swing_vel := 0.0
 var _turn := 0.0  # giro da câmera (rad, + = para a direita) desde o último quadro
+## Ações (alçapão, porta abrindo, pegar item em pé, detonador; pegar arma no baú/caixa não): a câmera gira em volta dela
+## até um ângulo que mostra a ação (perfil / 3/4 de frente: rosto, mãos e o objeto), mais perto e de cima, e no fim volta
+## devagar ao enquadramento de antes (o giro do jogador fica guardado em `yaw`). Lado escolhido no começo da ação: o mais
+## livre de parede (`_pick_side`); o SpringArm segue encurtando se algo entrar no meio.
+## angle = graus em volta dela a partir das costas (180 = de frente), length, pitch (rad), fov, fwd = m que o ponto
+## olhado avança para a frente dela (para as mãos/o objeto), drop = m abaixo do osso da cabeça (peito/mãos).
+const ACTIONS := {
+	"hatch": {"angle": 95.0, "length": 2.1, "pitch": -0.42, "fov": 50.0, "fwd": 0.0, "drop": 0.15},
+	"door": {"angle": 40.0, "length": 2.6, "pitch": -0.3, "fov": 52.0, "fwd": 0.8, "drop": 0.3},
+	"pulse": {"angle": 140.0, "length": 1.8, "pitch": -0.3, "fov": 48.0, "fwd": 0.3, "drop": 0.3},
+}
+const ACTION_IN := 0.6  # s para girar até o ângulo da ação
+const ACTION_OUT := 1.2  # s para voltar ao normal (mais devagar que a chegada)
+const ACT_LOWS := [0.8, 0.3]  # alturas (acima dos pés) do ponto olhado ajoelhada/debruçada, para escolher o lado
+const PULSE_HOLD := 0.9  # ação sem animação (pegar item em pé, detonador): s no ângulo antes de voltar
+var _act_lin := 0.0  # 0..1 linear; o peso usado é o smoothstep dele
+var _act_cfg: Dictionary = ACTIONS.pulse
+var _act_kind := ""
+var _act_side := 1.0  # +1/-1: de que lado dela a câmera gira
+var _pulse := 0.0
+var _head_bone := -1
 
 
 func _ready() -> void:
@@ -137,11 +158,14 @@ func _process(delta: float) -> void:
 	var goal := focus + Vector3.UP * (SHOULDER.height if shoulder else HEIGHT)
 	if target.get("crouching"):
 		goal.y -= 0.45
+	var act := _update_action(delta, in_sniper)
+	if act > 0.0:
+		goal = goal.lerp(_act_pivot(), act)
 	if in_sniper:
 		goal.y = focus.y + (1.15 if target.get("crouching") else 1.52)
 	global_position = goal if not _snapped else global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
 	_snapped = true
-	rotation = Vector3(pitch, yaw, 0.0)
+	rotation = Vector3(lerpf(pitch, float(_act_cfg.pitch), act), lerp_angle(yaw, _act_yaw(), act) if act > 0.0 else yaw, 0.0)
 	var k := 1.0 - exp(-10.0 * delta)
 
 	if in_sniper:
@@ -163,14 +187,19 @@ func _process(delta: float) -> void:
 			_update_swing(delta, aiming)
 			var off: float = (SHOULDER.side_aim if aiming else SHOULDER.side * side * (1.0 - SWING_CENTER * swing)) * (PORTRAIT_SIDE if portrait else 1.0)
 			var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov + SWING_FOV * swing
-			spring.spring_length = lerpf(spring.spring_length, SHOULDER.length_aim if aiming else SHOULDER.length + SWING_BACK * swing, k)
+			var length: float = SHOULDER.length_aim if aiming else SHOULDER.length + SWING_BACK * swing
+			if act > 0.0:
+				off = lerpf(off, 0.0, act)
+				fov = lerpf(fov, float(_act_cfg.fov), act)
+				length = lerpf(length, float(_act_cfg.length), act)
+			spring.spring_length = lerpf(spring.spring_length, length, k)
 			spring.position.x = lerpf(spring.position.x, lerpf(off, signf(lean) * PlayerLean.CAM_SIDE, absf(lean)), k)
 			camera.fov = lerpf(camera.fov, maxf(fov, PORTRAIT_FOV) if portrait else fov, k)
 		else:
-			var off := 0.62 if aiming else 0.0
-			spring.spring_length = lerpf(spring.spring_length, 1.6 if aiming else 3.0, k)
+			var off := lerpf(0.62 if aiming else 0.0, 0.0, act)
+			spring.spring_length = lerpf(spring.spring_length, lerpf(1.6 if aiming else 3.0, float(_act_cfg.length), act), k)
 			spring.position.x = lerpf(spring.position.x, lerpf(off, signf(lean) * PlayerLean.CAM_SIDE, absf(lean)), k)
-			camera.fov = lerpf(camera.fov, 50.0 if aiming else 62.0, k)
+			camera.fov = lerpf(camera.fov, lerpf(50.0 if aiming else 62.0, float(_act_cfg.fov), act), k)
 	_shake_t = maxf(0.0, _shake_t - delta)
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
@@ -184,6 +213,100 @@ func _update_swing(delta: float, aiming: bool) -> void:
 	var want := 0.0 if aiming else clampf(-rate * signf(side) / SWING_RATE, 0.0, 1.0)
 	_swing_vel += ((want - swing) * SWING_SPRING * SWING_SPRING - 2.0 * SWING_DAMP * SWING_SPRING * _swing_vel) * delta
 	swing = clampf(swing + _swing_vel * delta, -0.3, 1.2)
+
+
+## Peso (0..1) do enquadramento de ação: sobe em ACTION_IN enquanto ela faz uma ação de `ACTIONS` (ou num `focus_pulse`),
+## desce em ACTION_OUT quando acaba; curva suave nas duas pontas.
+func _update_action(delta: float, in_sniper: bool) -> float:
+	var kind: String = target.call("camera_action") if target.has_method("camera_action") else ""
+	_pulse = maxf(0.0, _pulse - delta)
+	if kind == "" and _pulse > 0.0:
+		kind = "pulse"
+	if in_sniper or target.get("dead") or target.get("cutscene"):
+		kind = ""
+		_pulse = 0.0
+	if kind != "":
+		if kind != _act_kind:
+			_act_kind = kind
+			_act_cfg = ACTIONS[kind]
+			_pick_side()
+		_act_lin = minf(1.0, _act_lin + delta / ACTION_IN)
+	else:
+		_act_kind = ""
+		_act_lin = maxf(0.0, _act_lin - delta / ACTION_OUT)
+	return smoothstep(0.0, 1.0, _act_lin)
+
+
+## Ponto olhado na ação: abaixo da cabeça dela (desce junto quando ajoelha) e um pouco à frente, nas mãos/no objeto.
+func _act_pivot() -> Vector3:
+	var at: Vector3 = target.global_position
+	var head := _head_y()
+	at.y = (head if not is_nan(head) else at.y + 1.5) - float(_act_cfg.drop)
+	return at - target.global_basis.z * float(_act_cfg.fwd)
+
+
+## Giro da câmera na ação: o do corpo dela (as costas) mais `angle` para o lado escolhido.
+func _act_yaw() -> float:
+	return target.global_rotation.y + _act_side * deg_to_rad(float(_act_cfg.angle))
+
+
+## Lado da ação: o que deixa a câmera mais longe de parede/caixa/mureta (raios do ponto olhado até onde a câmera iria,
+## com o ponto na altura de agora e nas de ajoelhada/debruçada: a pose ainda vai mudar); empate = o mais perto do giro atual.
+func _pick_side() -> void:
+	var top := _act_pivot()
+	var froms: Array[Vector3] = [top]
+	for h: float in ACT_LOWS:
+		froms.append(Vector3(top.x, minf(top.y, target.global_position.y + h), top.z))
+	var space := get_world_3d().direct_space_state
+	var best := -INF
+	var length := float(_act_cfg.length)
+	for sgn: float in [1.0, -1.0]:
+		var y: float = target.global_rotation.y + sgn * deg_to_rad(float(_act_cfg.angle))
+		var back := Basis.from_euler(Vector3(float(_act_cfg.pitch), y, 0.0)) * Vector3(0, 0, length)
+		var free := length
+		for from: Vector3 in froms:
+			var q := PhysicsRayQueryParameters3D.create(from, from + back, 1)
+			if target is CollisionObject3D:
+				q.exclude = [target.get_rid()]
+			var hit := space.intersect_ray(q)
+			if hit:
+				free = minf(free, from.distance_to(hit.position))
+		free -= 0.05 * absf(angle_difference(yaw, y))  # empate: prefere girar menos
+		if free > best:
+			best = free
+			_act_side = sgn
+
+
+## Altura do osso da cabeça dela no mundo (pose da animação); NAN sem modelo.
+func _head_y() -> float:
+	var m = target.get("model")
+	if m == null or m.get("skeleton") == null:
+		return NAN
+	var sk: Skeleton3D = m.skeleton
+	if _head_bone < 0:
+		_head_bone = sk.find_bone("Head")
+		if _head_bone < 0:
+			return NAN
+	return (sk.global_transform * sk.get_bone_global_pose(_head_bone)).origin.y
+
+
+## Ação sem animação (pegar item em pé, armar o detonador): gira até o ângulo da ação, fica PULSE_HOLD e volta. `snap` =
+## corta direto para o ângulo (antes de uma tela que pausa o jogo: ao fechar ela, a câmera já está lá e só volta).
+func focus_pulse(snap := false) -> void:
+	_pulse = PULSE_HOLD
+	_act_kind = "pulse"
+	_act_cfg = ACTIONS.pulse
+	if target == null or not is_inside_tree():
+		return
+	_pick_side()
+	if not snap:
+		return
+	_act_lin = 1.0
+	global_position = _act_pivot()
+	rotation = Vector3(float(_act_cfg.pitch), _act_yaw(), 0.0)
+	spring.spring_length = float(_act_cfg.length)
+	spring.position.x = 0.0
+	camera.fov = float(_act_cfg.fov)
 
 
 ## Ombro da câmera sem mirar (survival): o direito, a não ser que parede/caixa feche um lado da frente do corpo dela; aí o
@@ -264,6 +387,9 @@ func reset_view(new_yaw: float) -> void:
 	_turn = 0.0
 	_side_wall_t = 0.0
 	_side_vel = 0.0
+	_act_lin = 0.0
+	_act_kind = ""
+	_pulse = 0.0
 
 
 ## Treme a câmera por `time` segundos (golpes, mordida).

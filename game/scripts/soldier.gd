@@ -19,7 +19,13 @@ const DAMAGE := 7
 const FIRE_RANGE := 22.0  # alcance do tiro
 const ENGAGE_DIST := 10.0  # mais longe que isto, avança
 const KEEP_DIST := 5.0  # mais perto que isto, recua
-const REACT_TIME := 0.45  # entre vê-la e o primeiro tiro
+## Entre vê-la e o primeiro tiro: pego de surpresa (rotina, busca amarela, correndo para a área) ergue a arma e só então
+## atira (REACT_TIME); na busca ativa, já de arma em punho num ponto (`weapon_ready`), reage na hora (REACT_READY).
+const REACT_TIME := 0.6
+const REACT_READY := 0.1
+const TIME_SCALE := 0.85  # busca ativa e alerta vermelho 15% mais curtos que os dos bichos (alert_time/lose_time/search_time)
+const OBSERVE_DIST := 2.0  # busca amarela: para a esta distância do lugar suspeito e observa
+const READY_TURN := 7.0  # busca ativa: giro do corpo (com a arma) de um ângulo ao outro, firme, sem a cabeça sozinha
 const BURST_SHOTS := [4, 7]
 const SHOT_GAP := 0.1
 const REST_TIME := [0.3, 0.7]
@@ -29,6 +35,13 @@ const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando on
 ## Guarda de pistola (`weapon` "pistol", o do painel): tiros soltos mais espaçados e mais fortes, alcance menor.
 const PISTOL := {"damage": 9, "burst": [1, 3], "gap": 0.4, "range": 16.0}
 const COMBAT := ["alert", "engage"]
+## Sem linha de tiro (caixa, quina ou parede entre o cano e ela) por PEEK_AFTER s: dá um passo de lado até a beirada mais
+## perto de onde o cano a vê (PEEK_STEPS m, os dois lados) e se inclina para fora (PEEK_LEAN); nenhuma beirada serve,
+## avança para cima dela pelo caminho (agressivo). Nunca atira com o cano dentro/atrás da cobertura (`_body_block`).
+const PEEK_AFTER := 0.35
+const PEEK_STEPS := [0.5, 0.9, 1.4, 2.0, 2.7]
+const PEEK_LEAN := 0.2
+const PEEK_REPLAN := 0.6
 const CHAR_TIME := 4.0  # s até o corpo que pegou fogo ficar carbonizado
 const VEST_PARTS := ["Spine", "Chest", ""]  # o colete cobre o tronco ("" = tiro na cápsula: o meio do corpo)
 const VEST_MULT := 0.5  # colete comum: tiro no tronco tira metade (braços, pernas e cabeça sem proteção)
@@ -100,6 +113,12 @@ var damage := DAMAGE
 var fire_range := FIRE_RANGE
 var burst_shots: Array = BURST_SHOTS
 var shot_gap := SHOT_GAP
+var _blocked_t := 0.0  # em luta, tempo vendo-a sem linha de tiro
+var _peek: Variant = null  # ponto da beirada para onde vai se esgueirar (null = nenhum)
+var _peek_t := 0.0
+var _peek_side := 0.0  # lado (dele) para onde se inclina na beirada: 1 direita, -1 esquerda, 0 nada
+var _lean := 0.0
+var _react := REACT_TIME  # o desta reação (REACT_TIME ou REACT_READY, `start_alert`)
 var _stowed: Node3D  # fuzil encostado no caixote enquanto ele mexe no detonador (guarda distraído de M16)
 var burning := false  # morto pela explosão dos caixotes: o corpo pega fogo e carboniza (ignite)
 var _char_tw: Tween
@@ -148,11 +167,17 @@ func _ready() -> void:
 	armor_name = FLAK_TEXT if flak else ""
 	can_stealth = true
 	arrival_dist = 0.7
-	# gente procura com calma: só os 2 mais perto saem quando um dá o alarme, andando, e vasculham mais pontos
+	# gente: só os 2 mais perto saem quando um dá o alarme (indo ver o lugar: alertados = busca ativa, correndo) e vasculham
+	# mais pontos; quem só desconfiou vai andando e para perto para observar (busca amarela)
 	alarm_responders = 2
 	alarm_walks = true
 	search_sweeps = 3
 	shouts = true
+	alert_time = ALERT_TIME * TIME_SCALE
+	lose_time = LOSE_TIME * TIME_SCALE
+	search_time = SEARCH_TIME * TIME_SCALE
+	observe_dist = OBSERVE_DIST
+	guards_bodies = true
 	engage_dist = ENGAGE_DIST + rng.randf_range(-1.0, 1.0)
 	keep_dist = KEEP_DIST + rng.randf_range(-0.4, 0.4)
 	_enemy_ready()
@@ -174,7 +199,7 @@ func _physics_process(delta: float) -> void:
 				_stop(delta)
 				_face(_to_target(), delta, turn_rate)
 				_update_pitch(delta)
-				if _t >= REACT_TIME:
+				if _t >= _react:
 					start_engage()
 			"engage":
 				_engage(delta)
@@ -185,11 +210,18 @@ func _physics_process(delta: float) -> void:
 			head_yaw = lerpf(head_yaw, 0.0, 1.0 - exp(-5.0 * delta))
 			if model:
 				model.set_head_look(head_yaw, 0.0)
-		elif state in ["look", "idle", "search"]:
+		elif state in ["look", "idle", "search", "guard"]:
 			if model:
-				model.set_head_look(head_yaw, head_pitch)
-	if not in_combat() and model and model.aim_pitch and absf(model.aim_pitch.pitch) > 0.01:
-		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, 0.0, 1.0 - exp(-6.0 * delta))
+				# de arma em punho quem olha é o corpo com o fuzil (a cabeça acompanha a mira)
+				var ready := weapon_ready()
+				model.set_head_look(0.0 if ready else head_yaw, 0.0 if ready else head_pitch)
+	if state != "engage" and model and absf(_lean) > 0.001:
+		_lean = lerpf(_lean, 0.0, 1.0 - exp(-6.0 * delta))
+		model.set_lean(_lean)
+	if not in_combat() and model and model.aim_pitch:
+		var want := head_pitch if weapon_ready() else 0.0
+		if absf(model.aim_pitch.pitch - want) > 0.01:
+			model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, want, 1.0 - exp(-6.0 * delta))
 	
 	if in_combat() and _is_target_elevated() and global_position.y < 1.2 and global_position.x > -12.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
 		if velocity.z > 0.0:
@@ -251,7 +283,7 @@ func in_combat() -> bool:
 ## Nomes de animação do raptor ("Idle", "Walk", "Run", "Study") traduzidos para os estados do corpo dela
 ## (andar/correr pelo `HeroineModel.set_gait`, o mesmo critério da jogadora).
 func _play(anim: String, _blend := 0.15, speed := 1.0, _restart := false) -> void:
-	model.set_aim(in_combat())
+	model.set_aim(in_combat() or weapon_ready())
 	if distracted:
 		# no painel a pistola fica guardada; qualquer outra coisa (até desconfiado) e ela vai para a mão
 		var typing := anim == "Idle" and is_distracted()
@@ -276,6 +308,7 @@ func _on_spotted() -> void:
 
 
 func start_alert() -> void:
+	_react = REACT_READY if weapon_ready() else REACT_TIME
 	_enter("alert", "Idle", 0.1)
 	model.set_aim(true)
 
@@ -289,6 +322,10 @@ func start_engage() -> void:
 	_burst = 0
 	_rest = 0.1
 	_strafe_t = 0.0
+	_blocked_t = 0.0
+	_peek = null
+	_peek_t = 0.0
+	_peek_side = 0.0
 
 
 func _is_target_elevated() -> bool:
@@ -330,8 +367,8 @@ func _engage(delta: float) -> void:
 	if not _has_target():
 		_resume()
 		return
-	if _lost_t > LOSE_TIME:
-		alert_t = ALERT_TIME
+	if _lost_t > lose_time:
+		alert_t = alert_time
 		start_hunt(_last_known)
 		return
 	var to := _to_target()
@@ -384,11 +421,17 @@ func _engage(delta: float) -> void:
 				_strafe = -_strafe
 				dir = Vector3.ZERO
 	else:
-		if not sees:
-			# sumiu de vista: vai até onde a viu, pelo caminho
-			var goal := _flat(_last_known - global_position)
-			if goal.length() > 1.0:
-				dir = _steer(_last_known, goal, delta)
+		# sem linha de tiro (ela atrás da caixa/quina, ou o cano encostado nela): segura um instante (supressão onde ela
+		# estava) e depois se esgueira até a beirada de onde a vê; sem beirada, vai para cima dela
+		var blocked := not sees or not _clear_shot(target.sight_point())
+		_blocked_t = _blocked_t + delta if blocked else 0.0
+		if not blocked:
+			_peek = null  # tem linha: atira dali (inclinado, se veio da beirada)
+		if _blocked_t > PEEK_AFTER:
+			dir = _peek_dir(to, sees, delta)
+			gait = "strafe"
+		elif blocked:
+			dir = Vector3.ZERO
 		elif dist > engage_dist:
 			dir = _avoid(to.normalized())
 		elif dist < keep_dist:
@@ -404,6 +447,8 @@ func _engage(delta: float) -> void:
 				_strafe = -_strafe
 				dir = Vector3.ZERO
 	_move_aiming(dir, gait, delta)
+	_lean = lerpf(_lean, _peek_side * PEEK_LEAN, 1.0 - exp(-6.0 * delta))
+	model.set_lean(_lean)
 	# tiro: rajadas longas e descanso curto com ela à vista; recém-sumida, fogo de supressão onde ela estava
 	_shot_t -= delta
 	_rest = maxf(_rest - delta, 0.0)
@@ -426,6 +471,56 @@ func _engage(delta: float) -> void:
 		_shot_t = shot_gap
 		if _burst == 0:
 			_rest = rng.randf_range(REST_TIME[0], REST_TIME[1])
+
+
+## Sem linha de tiro: rumo à beirada de onde o cano a vê (ou, sumida, vê o lugar onde ela estava; `_find_peek`); sem
+## beirada, avança para cima dela (ou até onde a viu) pelo caminho.
+func _peek_dir(to: Vector3, sees: bool, delta: float) -> Vector3:
+	var aim := target.sight_point() if sees else _last_known + Vector3.UP * 1.0
+	var toward := to if sees else _flat(_last_known - global_position)
+	_peek_t -= delta
+	if _peek == null and _peek_t <= 0.0:
+		_peek_t = PEEK_REPLAN
+		_peek = _find_peek(toward, aim)
+	if _peek != null:
+		var off := _flat(_peek - global_position)
+		if off.length() > 0.15:
+			return off.normalized()
+		_peek = null  # chegou e ainda não tem linha (ela se mexeu): procura outra depois do PEEK_REPLAN
+		return Vector3.ZERO
+	_peek_side = 0.0
+	if not sees and toward.length() <= 1.0:
+		return Vector3.ZERO  # já está onde ela estava: o LOSE_TIME manda procurar
+	return _steer(target.global_position if sees else _last_known, toward, delta)
+
+
+## Beirada mais perto, de lado (perpendicular à linha `to` até ela), com o corpo livre para chegar e o cano vendo `aim`.
+func _find_peek(to: Vector3, aim: Vector3) -> Variant:
+	if to.length() < 0.1:
+		return null
+	var side := to.normalized().cross(Vector3.UP)
+	var m_off := model.muzzle_position() - global_position
+	var space := get_world_3d().direct_space_state
+	for d: float in PEEK_STEPS:
+		for sgn: float in [_strafe, -_strafe]:
+			var step := side * sgn
+			var p := global_position + step * d
+			if not _clear_to(p) or EnemyCrowd.is_enemy_in_path(self, step, d):
+				continue
+			if _has_nav() and _floor_at(p) == null:
+				continue
+			var at_h := p + Vector3.UP * m_off.y
+			if space.intersect_ray(PhysicsRayQueryParameters3D.create(at_h, p + m_off, 1)).is_empty() 					and space.intersect_ray(PhysicsRayQueryParameters3D.create(p + m_off, aim, 1)).is_empty():
+				_peek_side = signf((global_basis.inverse() * step).x)
+				return p
+	return null
+
+
+## O corpo dele até o cano: com ele colado na caixa o cano fica dentro/atrás dela (o raio que começa dentro da caixa não
+## bate nela e o tiro a atravessaria). Devolve a batida (vazio = cano à mostra).
+func _body_block(muzzle: Vector3) -> Dictionary:
+	var from := global_position + Vector3.UP * (muzzle.y - global_position.y)
+	return get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, muzzle, 1))
 
 
 ## Anda na direção `dir` sem virar o corpo (continua mirando): para a frente/de costas ou de lado, no ritmo da animação.
@@ -490,7 +585,10 @@ func _aim_point(at_her: bool) -> Vector3:
 
 ## Nada do cenário entre o cano e `aim`: só assim ele aperta o gatilho (não atira na caixa em que ela se esconde).
 func _clear_shot(aim: Vector3) -> bool:
-	var q := PhysicsRayQueryParameters3D.create(model.muzzle_position(), aim, 1)
+	var muzzle := model.muzzle_position()
+	if not _body_block(muzzle).is_empty():
+		return false
+	var q := PhysicsRayQueryParameters3D.create(muzzle, aim, 1)
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 
@@ -506,7 +604,9 @@ func _fire(at_her := true, aim := Vector3.INF) -> void:
 	var dir := (chest - muzzle).normalized()
 	Fx.muzzle_flash(parent, muzzle, weapon, dir)
 	var space := get_world_3d().direct_space_state
-	var block := space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
+	var block := _body_block(muzzle)
+	if block.is_empty():
+		block = space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
 	var dist := muzzle.distance_to(chest)
 	var chance := _hit_chance(dist, _burst_i) if at_her and _lock_t >= LOCK_TIME else 0.0
 	var end := chest
@@ -620,12 +720,60 @@ func reset() -> void:
 	_burst = 0
 	_burst_i = 0
 	_lock_t = 0.0
+	_react = REACT_TIME
+	_blocked_t = 0.0
+	_peek = null
+	_peek_side = 0.0
+	_lean = 0.0
+	model.set_lean(0.0)
 	if model and model.aim_pitch:
 		model.aim_pitch.pitch = 0.0
 	_enter("idle", "Idle", 0.0)
 
 func has_head_look() -> bool:
 	return true
+
+
+## Busca ativa num ponto (procurando ou vasculhando em volta): fuzil no ombro apontado para onde olha, jeito tático, pronto
+## para atirar (`REACT_READY`). Correndo para a área (hunt/investigate) leva a arma baixa.
+func weapon_ready() -> bool:
+	return not dead and active_search and state in ["search", "sweep"]
+
+
+## Busca amarela: anda até o lugar suspeito. Busca ativa: corre.
+func _investigate_speed() -> float:
+	return hunt_speed if active_search else patrol_speed
+
+
+## Busca amarela: observa o lugar e volta à rotina, sem vasculhar em volta (isso é da busca ativa).
+func _start_sweep() -> bool:
+	return active_search and super._start_sweep()
+
+
+## 1 = amarelo também na busca de quem só desconfiou (andou até o lugar e observa); laranja só a busca ativa.
+func alert_level() -> int:
+	var lv := super.alert_level()
+	if lv == 2 and not active_search and state in ["investigate", "search", "sweep"]:
+		return 1
+	return lv
+
+
+## Olhando em volta. De arma em punho (busca ativa) gira o corpo com o fuzil de um ângulo a outro em volta do lugar
+## procurado, parando a mira em cada um, e às vezes confere as costas; senão, a cabeça vigia como sempre.
+func _look(delta: float, anim: String) -> void:
+	if not weapon_ready():
+		super._look(delta, anim)
+		return
+	_stop(delta)
+	_play(anim, 0.3)
+	head_yaw = lerpf(head_yaw, 0.0, 1.0 - exp(-8.0 * delta))
+	_look_t -= delta
+	if _look_t <= 0.0:
+		_look_t = rng.randf_range(0.8, 1.4)
+		var to := _flat(_search_center - global_position)
+		var base := atan2(-to.x, -to.z) if to.length() > 1.0 else rotation.y
+		_look_to = base + (PI if rng.randf() < 0.2 else rng.randf_range(-1.3, 1.3))
+	rotation.y = lerp_angle(rotation.y, _look_to, 1.0 - exp(-READY_TURN * delta))
 
 
 func _idle_vigil(delta: float) -> void:

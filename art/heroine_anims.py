@@ -395,6 +395,7 @@ def actions(sk):
     import heroine_drop as DR
     import heroine_gait as G
     import heroine_hurt as HU
+    import heroine_jump as J
     import heroine_moves as M
     import heroine_m79 as GL
     import heroine_rifle as RF
@@ -434,8 +435,10 @@ def actions(sk):
         "CrouchStrafeL": crouch_strafe,
         "CrouchStrafeR": G.mirror_lateral(crouch_strafe),
         "Roll": M.roll_keys(A, sk),
-        "Jump": M.jump_keys(A),
-        "Fall": M.fall_keys(A),
+        "Jump": J.jump_keys(A),
+        "JumpUp": J.jump_up_keys(A),
+        "Land": J.land_keys(A, sk),
+        "Fall": J.fall_keys(A),
         "Hang": M.hang_keys(A, sk),
         "LadderUp": ladder_up_keys,
         "LadderDown": ladder_down_keys,

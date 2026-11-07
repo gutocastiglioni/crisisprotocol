@@ -29,6 +29,7 @@ signal headshot(who: Node)
 signal armor_hit(who: Node, tag: String)  ## o tiro bateu numa proteção com nome (Flak Jacket, casco): a mira mostra
 ## aviso para o HUD ("SEM MUNIÇÃO", "PARE PARA ATIRAR", "M16 +15")
 signal notice(text: String)
+signal noise_made(radius: float, heard: Array)  ## barulho dela (passo, cambalhota, tiro) e os inimigos que o ouviram: o radar mostra
 ## interagiu com um baú trancado (o main mostra o cadeado e, se ela tem a chave, destranca)
 signal locked(chest: Node)
 ## interagiu com o teclado de uma porta trancada por código (o main abre o painel)
@@ -42,7 +43,9 @@ signal read_plate(plate: SubjectPlate)
 const RUN_SPEED := 4.4
 const SPRINT_SPEED := 4.2  # corrida forte do survival (SHIFT / L3): acima da corrida normal (3,5), longe de velocista
 const JUMP_SPEED := 4.6  # pulo normal (~0,6 m)
-const JUMP_FWD := 2.4  # embalo mínimo do pulo para a frente (parada: ~1,2 m)
+const JUMP_FWD := 2.4  # embalo mínimo do pulo projetado (~1,2 m)
+const JUMP_UP_SPEED := 4.9  # pulo parado (~0,65 m, no lugar)
+const JUMP_MOVING := 0.5  # m/s no plano: abaixo disso e sem direcional o pulo é parado
 const AIR_CONTROL := 2.0
 const COYOTE := 0.12  # sem chão por menos que isso ainda conta como no chão (degraus, quinas)
 const TURN_RATE := 12.0
@@ -126,6 +129,7 @@ var death_cause := ""
 var cutscene := false
 var cutscene_walk := Vector3.ZERO
 var _jumping := false
+var _jump_up := false  # o pulo de agora é o parado (JumpUp)
 var _shot_cd := 0.0
 var _hip_aim_t := 0.0
 var _lock_t := 0.0  # depois do tiro: o movimento fica preso/lento por um instante (coice)
@@ -290,6 +294,8 @@ func _physics_process(delta: float) -> void:
 				return
 			var key_node := pick_key()
 			if key_node:
+				if camera_rig:
+					camera_rig.focus_pulse(true)  # corta para ela antes da tela do item; ao fechar, afasta
 				key_node.take(self)
 				return
 			var drop := pick_drop()
@@ -303,6 +309,8 @@ func _physics_process(delta: float) -> void:
 			var det := pick_detonator()
 			if det:
 				det.arm()
+				if camera_rig:
+					camera_rig.focus_pulse()
 				return
 			var door := pick_door()
 			if door:
@@ -311,12 +319,15 @@ func _physics_process(delta: float) -> void:
 				elif door.is_locked():
 					if has_key(door.lock):
 						door.unlock(self)
+						moves.start_door(door)
 						_say("ACESSO PERMITIDO")
 					else:
 						door.deny(self)
 						_say("ACESSO NEGADO - REQUER CARTÃO")
 				else:
 					door.open()
+					moves.start_door(door)
+				return
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
 
@@ -333,7 +344,7 @@ func _physics_process(delta: float) -> void:
 		hv = flat.lerp(wish * maxf(Moves.speed("walk"), flat.length()), AIR_CONTROL * delta * wish.length())
 		if _jumping and moves.try_air_grab(delta):  # só no pulo dela: caindo de um buraco ou da beira, não agarra
 			return
-		model.set_state("jump" if _jumping and velocity.y > -1.0 else "fall")
+		model.set_state(("jump_up" if _jump_up else "jump") if _jumping and velocity.y > -1.0 else "fall")
 	elif leaning:
 		if aiming:
 			_aim_at(delta)
@@ -423,7 +434,12 @@ func stealth_prompt() -> String:
 
 ## Barulho no lugar dela que os inimigos a `radius` metros ouvem (a atenção deles sobe até `power`, mais quanto mais perto).
 func make_noise(radius: float, power: float) -> void:
+	var heard: Array = []
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e is Enemy and e.can_hear(global_position, radius):
+			heard.append(e)
 	get_tree().call_group("enemies", "hear_noise", global_position, radius, power)
+	noise_made.emit(radius, heard)
 
 
 ## Direção pedida no plano, relativa à câmera (comprimento = quanto o direcional foi empurrado).
@@ -432,8 +448,9 @@ func move_wish() -> Vector3:
 	return camera_rig.yaw_basis() * Vector3(input.x, 0.0, input.y)
 
 
-## Pulo: com borda à frente, escala/agarra (PlayerMoves); senão, pulo para a frente (para onde o direcional aponta, ou
-## para a frente dela; encostada na parede, para onde a câmera olha), com pelo menos JUMP_FWD de embalo. No ar, borda na altura das mãos = agarra (`try_air_grab`).
+## Pulo: com borda à frente, escala/agarra (PlayerMoves); senão, parada e sem direcional = pulo parado (sobe no lugar);
+## andando ou com direcional = pulo projetado para onde o direcional aponta (encostada na parede e sem direcional, para onde
+## a câmera olha), com pelo menos JUMP_FWD de embalo. No ar, borda na altura das mãos = agarra (`try_air_grab`).
 func _jump(wish: Vector3) -> bool:
 	crouching = false
 	var fwd := wish.normalized() if wish.length() > 0.1 else -global_basis.z
@@ -443,10 +460,16 @@ func _jump(wish: Vector3) -> bool:
 	if moves.try_ledge(fwd):
 		return true
 	_jumping = true
-	rotation.y = atan2(-fwd.x, -fwd.z)
-	var along := maxf(Vector3(velocity.x, 0.0, velocity.z).dot(fwd), JUMP_FWD)
-	velocity = fwd * along + Vector3.UP * JUMP_SPEED
-	model.play("jump")
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	# parada e sem direcional: pulo parado, no lugar (JumpUp); andando/correndo ou com direcional: projetado (Jump)
+	_jump_up = wish.length() <= 0.1 and flat.length() < JUMP_MOVING
+	if _jump_up:
+		velocity = Vector3.UP * JUMP_UP_SPEED
+		model.play("jump_up")
+	else:
+		rotation.y = atan2(-fwd.x, -fwd.z)
+		velocity = fwd * maxf(flat.dot(fwd), JUMP_FWD) + Vector3.UP * JUMP_SPEED
+		model.play("jump")
 	move_and_slide()
 	return true
 
@@ -1033,6 +1056,11 @@ func body_part(who: Object, at: Vector3, dir: Vector3) -> String:
 
 
 ## Ponto que a câmera segue: os pés da cápsula viva, ou o quadril do ragdoll (caída ou na boca do raptor).
+## Ação que a câmera enquadra de perto (CameraRig.ACTIONS: alçapão, porta abrindo; pegar arma não); "" = nenhuma.
+func camera_action() -> String:
+	return moves.mode if CameraRig.ACTIONS.has(moves.mode) else ""
+
+
 func camera_focus() -> Vector3:
 	if model.is_ragdoll():
 		return model.ragdoll.bodies["Hips"].global_position - Vector3.UP * 0.9

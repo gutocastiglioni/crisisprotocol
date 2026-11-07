@@ -45,6 +45,9 @@ var _ladder_y := 0.0
 var _ladder_sound_y := 0.0
 var _hatch: Hatch
 var _hatch_lifted := false
+var _door: Door
+const DOOR_TURN := 8.0  # rapidez com que vira para a porta enquanto ela abre
+const DOOR_GRACE := 0.3  # s além do Door.OPEN_TIME: segurança para não ficar presa se a folha não terminar
 var _mount_from := Vector3.ZERO
 var _mount_yaw := 0.0
 var _mount_turn := 0.0
@@ -81,6 +84,7 @@ func update(delta: float) -> void:
 		"ladder_mount": _ladder_mount()
 		"ladder_out", "ladder_in": _ladder_top()
 		"hatch": _hatch_open()
+		"door": _door_wait(delta)
 
 
 ## Interrompe a ação (golpe, mordida, morte, reinício). Pegando a arma antes das mãos chegarem nela, a arma fica.
@@ -182,7 +186,10 @@ func try_air_grab(delta: float) -> bool:
 	var l := find_ledge(-p.global_basis.z)
 	if l.is_empty() or l.height < AIR_GRAB_LOW or l.height > AIR_GRAB_HIGH:
 		return false
-	_start_grab(l, AIR_GRAB_TIME)
+	# o chão de verdade embaixo dela (no ar os pés não estão nele): decide se os pés pendurados tocariam o chão
+	var down := p.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+		p.global_position + Vector3.UP * 0.1, p.global_position + Vector3.DOWN * 6.0, 1, [p.get_rid()]))
+	_start_grab(l, AIR_GRAB_TIME, (down.position as Vector3).y if down else p.global_position.y - 6.0)
 	return true
 
 
@@ -222,7 +229,7 @@ func _start_mantle(l: Dictionary) -> void:
 	_begin("mantle")
 
 
-func _start_grab(l: Dictionary, time := GRAB_TIME) -> void:
+func _start_grab(l: Dictionary, time := GRAB_TIME, floor_y := NAN) -> void:
 	_grab_time = time
 	var hang: Dictionary = Moves.data().hang
 	var climb: Dictionary = Moves.data().climb
@@ -232,7 +239,8 @@ func _start_grab(l: Dictionary, time := GRAB_TIME) -> void:
 	root.y = l.top - hang.top
 	_base = root
 	_climb_from = 0.0
-	var floor_y := p.global_position.y
+	if is_nan(floor_y):
+		floor_y = p.global_position.y
 	# borda baixa demais para ficar pendurada (pés no chão): o pulo entra direto na subida, no quadro em que
 	# os pés já estão acima do chão
 	while root.y + Moves.path_at(climb.path, _climb_from).y < floor_y + 0.2 and _climb_from < float(climb.frames):
@@ -651,6 +659,30 @@ func _hatch_open() -> void:
 		_hatch = null
 		p.model.holster(false)
 		p.model.set_state("idle")
+
+
+# ------------------------------------------------------------------ porta abrindo
+## Abriu a porta: fica parada, virada para ela, até as folhas terminarem de correr (`Door.is_moving`); sem andar,
+## pular, rolar nem atirar. Golpe/morte/reinício cancelam (`cancel`).
+func start_door(door: Door) -> void:
+	mode = "door"
+	t = 0.0
+	_door = door
+	p.aiming = false
+	p.velocity = Vector3.ZERO
+	p.model.set_aim(false)
+	p.model.set_state("crouch" if p.crouching else "idle")
+
+
+func _door_wait(delta: float) -> void:
+	if is_instance_valid(_door):
+		var d := _door.global_position - p.global_position
+		d.y = 0.0
+		if d.length() > 0.05:
+			p.rotation.y = lerp_angle(p.rotation.y, atan2(-d.x, -d.z), 1.0 - exp(-DOOR_TURN * delta))
+	if not is_instance_valid(_door) or not _door.is_moving() or t > Door.OPEN_TIME + DOOR_GRACE:
+		mode = ""
+		_door = null
 
 
 func _ladder_drop() -> void:

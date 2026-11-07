@@ -147,6 +147,11 @@ func test_hud_in_game() -> void:
 	main.sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	await t._frames(10)
 	t.check(radar.seen.is_empty(), "radar: no telhado ela ainda não viu ninguém", str(radar.seen.size()))
+	# barulho: no telhado ninguém ouve (anel claro); parada não faz anel
+	await t._frames(int(Radar.RING_TIME * 60) + 4)
+	t.check(radar.rings.is_empty(), "radar: parada, sem anel de barulho", str(radar.rings.size()))
+	p.make_noise(10.0, 0.0)
+	t.check(radar.rings.size() == 1 and not radar.heard_recently(), "radar: barulho no telhado = anel que ninguém ouviu", str(radar.rings))
 	# no galpão, olhando para os guardas da porta do pátio pelo vão da parede de caixas do leste (z = -8,4); daqui o sentinela
 	# 3 fica atrás da caixa empilhada (-3,75; -7) por ~1 cm: o 4, da mesma porta, é o que está à vista
 	p.global_position = Vector3(-1.0, 0, -8.4)
@@ -158,6 +163,16 @@ func test_hud_in_game() -> void:
 	var behind: Soldier = main.soldiers[2]  # sentinela do baú da M16, às costas dela
 	t.check(radar.is_tracked(door_guard), "radar: guarda à vista aparece", str(radar.seen.size()))
 	t.check(not radar.is_tracked(behind), "radar: guarda às costas (nunca visto) não aparece")
+	# barulho no galpão que chega ao guarda da porta: anel laranja e o ponto dele pisca; longe dele, não
+	var gd := Vector2(door_guard.global_position.x - p.global_position.x, door_guard.global_position.z - p.global_position.z).length()
+	p.make_noise(gd + 1.0, 0.0)
+	t.check(radar.heard_recently() and radar.pings.has(door_guard.get_instance_id()), "radar: barulho que o guarda ouve = anel laranja + ping nele", "%.1f m" % gd)
+	radar.rings.clear()
+	radar.pings.clear()
+	p.make_noise(gd - 1.0, 0.0)
+	t.check(not radar.pings.has(door_guard.get_instance_id()), "radar: barulho curto não chega ao guarda: sem ping nele")
+	radar.rings.clear()
+	radar.pings.clear()
 	for r: Raptor in main.yard_raptors:
 		t.check(not radar.is_tracked(r), "radar: raptor escondido na mata (outra sala) não aparece")
 	# virou de costas: o que já viu continua no radar

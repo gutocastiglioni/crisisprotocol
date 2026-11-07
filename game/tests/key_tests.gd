@@ -146,11 +146,8 @@ func test_key_drop_and_pickup() -> void:
 	await t._frames(int(KeyItem.FALL_TIME * 60) + 10)
 	t.check(k.state == "dropped" and k.visible, "alvo morto: a chave cai", k.state)
 	t.check(absf(k.global_position.y) < 0.05 and Vector2(k.global_position.x, k.global_position.z).length() < 0.1, "no chão onde ele estava", str(k.global_position))
-	var bright := 0.0
-	for i in 90:
-		await t.process_frame
-		bright = maxf(bright, k.twinkle())
-	t.check(bright > 0.8 and k._glow.visible, "brilha piscando no chão", str(bright))
+	await t._frames(5)
+	t.check(k._halo.visible and not k._glow.visible and not k._light.visible, "no chão: halo azul como o das armas, sem a estrela")
 	t.check(picked.is_empty() and not p.has_key("container"), "longe: não pega")
 	p.global_position = k.global_position + Vector3(0.5, 0, 0.3)
 	await t._frames(3)

@@ -279,27 +279,6 @@ def roll_keys(A, sk):
     return bake(sk, "Roll", keys, plants, ROLL_PATH, fix)
 
 
-# ------------------------------------------------------------------ pulo e queda (o Godot faz a física)
-def jump_keys(A):
-    """Salto para a frente (o Godot dá o embalo: ~1,2 m parada, mais correndo): sai do chão empurrando com a perna
-    direita esticada para trás e o joelho esquerdo subindo, braços trocados como na corrida (direito à frente); no
-    alto a passada abre (esquerda à frente, direita dobrada atrás), tronco inclinado, cabeça olhando à frente; no fim
-    as duas pernas vêm para a frente para pousar. A Fall entra quando ela começa a descer."""
-    push = A.merge(arms(-30, -8, 30, 55, -8, 55), legs(55, -85, 5, -18, -12, -40),
-                   {"loc": (0, -0.04, 0), "Hips": (6, 0, 0), "Spine": (12, 0, 0), "Chest": (4, 0, 0), "Head": (-10, 0, 0)})
-    stride = A.merge(arms(-35, -14, 25, 65, -10, 40), legs(70, -55, 10, -32, -80, -25),
-                     {"loc": (0, 0.02, 0), "Hips": (4, 0, 0), "Spine": (10, 0, 0), "Chest": (4, 0, 0), "Head": (-12, 0, 0)})
-    land = A.merge(arms(30, -22, 35, 40, -22, 35), legs(55, -60, 5, 35, -72, 0),
-                   {"Hips": (4, 0, 0), "Spine": (8, 0, 0), "Head": (-6, 0, 0)})
-    return [(0, push), (6, stride), (13, land), (18, land)]
-
-
-def fall_keys(A):
-    a = A.merge(arms(22, -45, 30), legs(25, -45, -15, 10, -30, -20), {"Spine": (4, 0, 0), "Head": (6, 0, 0)})
-    b = A.merge(arms(18, -50, 35), legs(12, -32, -20, 28, -50, -15), {"Spine": (4, 0, 0), "Head": (6, 0, 0)})
-    return [(0, a), (15, b), (30, a)]
-
-
 # ------------------------------------------------------------------ pendurada e subindo
 # Pendurada: punhos HANG_REACH acima dos pés, HANG_FWD à frente; a parede fica HANG_WALL à frente da raiz
 # (a borda passa entre os punhos e o corpo). O Godot posiciona a raiz por essas medidas.

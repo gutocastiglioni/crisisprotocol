@@ -234,6 +234,11 @@ func open() -> void:
 		Sfx.play(self, "chest_open", global_position + Vector3.UP * 1.2, 2.0, 0.6)
 
 
+## As folhas ainda estão correndo (abrindo, arrombada): ela espera parada (`PlayerMoves.start_door`).
+func is_moving() -> bool:
+	return _tween != null and _tween.is_valid() and _tween.is_running()
+
+
 ## Arrombada por explosão: abre na hora (sem tranca) e as folhas voam para `push` (mundo) e caem deitadas no chão.
 func blow(push: Vector3) -> void:
 	if opened:

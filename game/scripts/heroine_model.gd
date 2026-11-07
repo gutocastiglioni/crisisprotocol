@@ -26,7 +26,7 @@ const UPPER_BODY := [
 const STATES := {
 	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
-	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
+	"jump": "Jump", "jump_up": "JumpUp", "fall": "Fall", "land": "Land", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
 	"pickup_pistol": "PickupPistol",
 	"assassinate": "Assassinate", "crit_strike": "CritStrike",
 	"death": "Death", "dazed": "Dazed", "ladder_up": "LadderUp", "ladder_down": "LadderDown", "ladder_idle": "LadderIdle",
@@ -48,7 +48,7 @@ const SCALED := [
 const GAIT_WALK_MAX := 1.05  # set_gait: até esta fração acima da velocidade do passo ainda é andar
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
-	"jump", "fall",
+	"jump", "jump_up", "fall", "land",
 ]
 ## arma: [malha, marcador do cano]
 const WEAPONS := {
@@ -70,10 +70,10 @@ const STEP_DB := {
 	"walk": -6.0, "run": 0.0, "strafe_l": -7.0, "strafe_r": -7.0,
 	"crouch_walk": -13.0, "crouch_strafe_l": -13.0, "crouch_strafe_r": -13.0,
 }
-const AIR := ["jump", "fall"]
-const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem
+const AIR := ["jump", "jump_up", "fall"]
+const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem e, chegando parada, o pouso (Land)
 ## entram mais rápido
-const QUICK := ["assassinate", "crit_strike", "stagger_back", "stagger_fwd"]
+const QUICK := ["assassinate", "crit_strike", "stagger_back", "stagger_fwd", "jump", "jump_up", "land"]  # pulos: o impulso dura 5 quadros
 const XFADE := 0.15
 const QUICK_XFADE := 0.05
 ## levantar do chão: sem mistura com o estado de antes do ragdoll (o PoseFade parte da pose em que o corpo caiu)
@@ -83,7 +83,7 @@ const GETUP_SPEED := 1.25  # o levantar é desenhado com calma; no jogo toca um 
 const HIT_ANIMS := {"front": "HitFront", "back": "HitBack", "left": "HitL", "right": "HitR"}
 const HIT_XFADE := 0.06
 ## som ao entrar no estado
-const STATE_SOUNDS := {"roll": "roll", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb", "ladder_out": "climb", "ladder_in": "climb", "ladder_out_low": "climb", "ladder_in_low": "climb"}
+const STATE_SOUNDS := {"roll": "roll", "jump": "jump", "jump_up": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb", "ladder_out": "climb", "ladder_in": "climb", "ladder_out_low": "climb", "ladder_in_low": "climb"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
@@ -123,6 +123,7 @@ var _foot_bones: Array[int] = []
 var _foot_up := [false, false]
 var _foot_rest := 0.08  # altura do tornozelo em repouso (lida do esqueleto)
 var _air_t := 0.0
+var _land_t := 0.0  # pouso (Land) tocando: pedir "idle" não o corta; andar, correr, agachar etc. cortam
 var _quiet := true  # montando (_ready): a primeira arma na mão não faz barulho
 var _hit_slot := false  # alterna as duas entradas de cada direção do golpe
 
@@ -364,6 +365,7 @@ func _process(delta: float) -> void:
 	tree.set("parameters/carry_arms/blend_amount", _carry_arms)
 	_update_pump(delta)
 	_air_t = _air_t + delta if state in AIR else 0.0
+	_land_t = maxf(_land_t - delta, 0.0)
 	_footsteps()
 
 
@@ -436,11 +438,18 @@ func set_gait(v: float) -> void:
 func set_state(s: String, speed_scale := 1.0) -> void:
 	if s in SCALED:
 		tree.set("parameters/%s_speed/scale" % s, speed_scale)
+	if state == "land" and s == "idle" and _land_t > 0.0:
+		return  # termina de amortecer o pouso e levantar
 	if s == state:
 		return
-	if state in AIR and not s in AIR and not s in STATE_SOUNDS and _air_t > LAND_AIR_TIME:
+	var landing := state in AIR and not s in AIR and not s in STATE_SOUNDS and _air_t > LAND_AIR_TIME
+	if landing:
 		Sfx.play(self, "land")
-	if STATE_SOUNDS.has(s) and not (s == "jump" and state in AIR):
+	if landing and s == "idle" and anim_player.has_animation(STATES["land"]):
+		# chegou parada no chão: amortece (joelhos, tronco) e levanta até a Idle
+		s = "land"
+		_land_t = anim_player.get_animation(STATES["land"]).length
+	if STATE_SOUNDS.has(s) and not (s in ["jump", "jump_up"] and state in AIR):
 		Sfx.play(self, STATE_SOUNDS[s])
 	state = s
 	var xf := 0.0 if s in GETUP else (QUICK_XFADE if s in QUICK else XFADE)

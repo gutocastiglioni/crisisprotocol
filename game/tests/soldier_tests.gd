@@ -25,6 +25,12 @@ func run(runner: SceneTree) -> void:
 	await test_searching_enemy_spots_on_noise_or_nearby_kill()
 	await test_enemies_separation_and_no_overlap()
 	await test_soldier_hunts_player_behind_rear_crates()
+	await test_yellow_search_walks_and_observes()
+	await test_active_search_weapon_ready()
+	await test_known_corpse_after_combat()
+	await test_patroller_guards_body()
+	await test_no_shot_through_cover()
+	await test_peek_or_push()
 
 
 func _spawn_soldier(player_pos: Vector3, soldier_pos := Vector3.ZERO, yaw := PI) -> Array:
@@ -432,7 +438,7 @@ func test_shared_alarm() -> void:
 		await t._frames(1)
 		if s.state == "investigate":
 			break
-	check(s.state == "investigate" and s.alert_level() == 2, "raptor grita: o soldado vem procurar (andando, com calma)", s.state)
+	check(s.state == "investigate" and s.alert_level() == 2, "raptor grita: o soldado vem procurar (alertado = busca ativa)", s.state)
 	pr = await _spawn_soldier(Vector3(0, 0, 8))
 	w = pr[2]
 	s = pr[1]
@@ -684,13 +690,13 @@ func test_stealth_alert_states_and_corpse_detection() -> void:
 	check(sentry.state == "suspicious" and sentry.alert_level() == 1, "sentinela desconfia ao ouvir baque/ver o corpo (nível 1 Amarelo)", "%s %d" % [sentry.state, sentry.alert_level()])
 	check(sentry._marker.text == "?" and sentry._marker.modulate == UiStyle.ACCENT, "marcador amarelo ? sobre a cabeça")
 	
-	# Após olhar brevemente, a sentinela inicia busca ativa indo investigar o ponto (Laranja, nível 2, "!")
+	# Após olhar brevemente, vai andando ver o ponto: ainda não sabe de nada, é a busca amarela (nível 1, "?")
 	for i in 120:
 		await t._frames(1)
 		if sentry.state == "investigate":
 			break
-	check(sentry.state == "investigate" and sentry.alert_level() == 2, "sentinela inicia busca ativa investigando o local (nível 2 Laranja)", "%s %d" % [sentry.state, sentry.alert_level()])
-	check(sentry._marker.text == "!" and sentry._marker.modulate.g < 0.7, "marcador laranja ! na busca ativa")
+	check(sentry.state == "investigate" and sentry.alert_level() == 1 and not sentry.active_search, "sentinela vai ver o local na busca amarela (nível 1)", "%s %d" % [sentry.state, sentry.alert_level()])
+	check(sentry._marker.text == "?" and sentry._marker.modulate == UiStyle.ACCENT, "marcador amarelo ? indo ver")
 	
 	# Ao chegar ao corpo e confirmar a morte, dá o alarme e entra em caça (hunt, ainda busca ativa nível 2)
 	for i in 300:
@@ -715,6 +721,7 @@ func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
 	var p: Player = pr[0]
 	var s: Soldier = pr[1]
 	var w: Node3D = pr[2]
+	s.active_search = true
 	s.start_search()
 	await t._frames(2)
 	check(s.is_searching() and s.alert_level() == 2, "soldado está em busca ativa vasculhando (Laranja)")
@@ -822,3 +829,224 @@ func test_soldier_hunts_player_behind_rear_crates() -> void:
 	check(s.global_position.z >= 10.0, "_clamp_to_bounds permite soldado no corredor atrás das caixas (z=%.2f)" % s.global_position.z)
 
 
+## Busca amarela (só desconfiou: barulho): vai andando até perto do lugar, para a OBSERVE_DIST com vista dele e observa de
+## arma baixa, sem vasculhar em volta; depois volta à rotina. Nível 1 do começo ao fim.
+func test_yellow_search_walks_and_observes() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3.ZERO, PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.cutscene = true  # ninguém a vê: só o barulho conta
+	var spot := Vector3(-8, 0, 4)
+	s.hear_noise(spot, 26.0, 2.2)
+	var states := {}
+	var levels := {}
+	var max_v := 0.0
+	var aimed := false
+	var stop_d := -1.0
+	for i in 60 * 20:
+		await t._frames(1)
+		states[s.state] = true
+		if s.state in ["investigate", "search", "sweep"]:
+			levels[s.alert_level()] = true
+			aimed = aimed or s.model.is_aimed()
+		if s.state == "investigate":
+			max_v = maxf(max_v, Vector2(s.velocity.x, s.velocity.z).length())
+		if s.state == "search" and s._t > 1.0 and stop_d < 0.0:
+			stop_d = Enemy._flat(spot - s.global_position).length()
+		if stop_d >= 0.0 and s.state in ["idle", "patrol"]:
+			break
+	check(states.has("investigate") and states.has("search"), "barulho: vai ver o lugar e olha", str(states.keys()))
+	check(levels.keys() == [1], "busca amarela é nível 1 do começo ao fim", str(levels.keys()))
+	check(max_v <= s.patrol_speed + 0.05, "vai andando (não trota)", "%.2f > %.2f" % [max_v, s.patrol_speed])
+	check(stop_d > 1.0 and stop_d < Soldier.OBSERVE_DIST + 0.3, "para perto do lugar (não em cima) e observa", "%.2f" % stop_d)
+	check(not states.has("sweep") and not aimed, "não vasculha em volta nem ergue a arma", "%s aimed=%s" % [str(states.keys()), aimed])
+	check(s.state in ["idle", "patrol"] and s.alert_level() == 0, "depois volta à rotina", s.state)
+	p.cutscene = false
+
+
+## Busca ativa (alertado: alarme, corpo, ela sumiu da luta): corre para a área e, nos pontos, procura de fuzil no ombro
+## (`weapon_ready`): ela aparecendo ali leva tiro quase na hora (REACT_READY); pego de surpresa, REACT_TIME. Busca ativa e
+## alerta 15% mais curtos que os dos bichos.
+func test_active_search_weapon_ready() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3.ZERO, PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.health = 100000
+	check(is_equal_approx(s.alert_time, Enemy.ALERT_TIME * 0.85) and is_equal_approx(s.lose_time, Enemy.LOSE_TIME * 0.85)
+		and is_equal_approx(s.search_time, Enemy.SEARCH_TIME * 0.85), "busca ativa e alerta 15% mais curtos",
+		"%.2f %.2f %.2f" % [s.alert_time, s.lose_time, s.search_time])
+	p.cutscene = true
+	s.alert_t = s.alert_time
+	s.start_investigate(Vector3(-8, 0, 4))
+	check(s.active_search and s.alert_level() == 2, "alertado: busca ativa (nível 2)", "%s %d" % [s.state, s.alert_level()])
+	var max_v := 0.0
+	var run_aimed := false
+	for i in 60 * 10:
+		await t._frames(1)
+		if s.state == "investigate":
+			max_v = maxf(max_v, Vector2(s.velocity.x, s.velocity.z).length())
+			run_aimed = run_aimed or s.model.is_aimed()
+		if s.state == "search" and s._t > 0.5:
+			break
+	check(max_v > s.patrol_speed * 1.5, "corre para a área", "%.2f" % max_v)
+	check(not run_aimed, "correndo leva a arma baixa")
+	check(s.state == "search" and s.weapon_ready() and s.model.is_aimed(), "no ponto procura de fuzil no ombro", "%s ready=%s" % [s.state, s.weapon_ready()])
+	check(s._dur >= s.search_time - 0.01 and s._dur <= s.search_time * 5.0 / 3.0 + 0.01, "olha em volta pelo tempo encurtado", "%.2f" % s._dur)
+	# ela aparece na frente dele: reage quase na hora
+	p.cutscene = false
+	p.global_position = s.global_position - s.global_basis.z * 6.0
+	p.reset_physics_interpolation()
+	var t_alert := -1
+	var t_shot := -1
+	var react := -1.0
+	for i in 90:
+		await t._frames(1)
+		if t_alert < 0 and s.state == "alert":
+			t_alert = i
+			react = s._react
+		if s.shots_fired > 0:
+			t_shot = i
+			break
+	check(t_alert >= 0 and is_equal_approx(react, Soldier.REACT_READY), "de arma em punho: reação curta", "%d %.2f" % [t_alert, react])
+	check(t_shot >= 0 and t_shot - t_alert <= roundi(60 * (Soldier.REACT_READY + 0.25)), "atira logo depois de vê-la", "alerta %d tiro %d" % [t_alert, t_shot])
+	# pego de surpresa (rotina): ergue a arma e só depois atira
+	pr = await _spawn_soldier(Vector3(0, 0, 6))
+	s = pr[1]
+	for i in 120:
+		await t._frames(1)
+		if s.state == "alert":
+			break
+	check(s.state == "alert" and is_equal_approx(s._react, Soldier.REACT_TIME), "pego de surpresa: reação maior", "%s %.2f" % [s.state, s._react])
+
+
+## Corpo visto na luta fica conhecido: depois de perdê-la de vista ele não se surpreende com o mesmo corpo (não vai ver, não
+## grita); quem não o viu ainda desconfia dele.
+func test_known_corpse_after_combat() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 7))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	p.health = 100000
+	var v := Soldier.new()
+	v.position = Vector3(2.5, 0, 2.5)
+	v.target = p
+	w.add_child(v)
+	await t._frames(2)
+	s.start_engage()
+	v.die(Vector3.FORWARD, null, false, true)
+	await t._frames(30)
+	check(v in s._known_dead, "corpo à vista na luta fica conhecido")
+	# ela some: ele perde o rastro, procura e desiste sem ir ver o corpo nem gritar
+	p.cutscene = true
+	var states := {}
+	var shouted := false
+	var went := false
+	for i in 60 * 25:
+		await t._frames(1)
+		states[s.state] = true
+		shouted = shouted or s._shout_t > 0.0
+		went = went or s._corpse == v
+		if went or (i > 60 and s.state in ["idle", "patrol"]):
+			break
+	check(states.has("search") and not went and not shouted and not v.has_meta("reported"), "não se surpreende com o corpo que já viu",
+		"%s foi=%s grito=%s" % [str(states.keys()), went, shouted])
+	# outro guarda, que não viu, desconfia do corpo
+	var o := Soldier.new()
+	o.position = v.global_position + Vector3(0, 0, -5)
+	o.rotation.y = PI  # olhando para +Z, para o corpo
+	o.target = p
+	w.add_child(o)
+	var doubted := false
+	for i in 120:
+		await t._frames(1)
+		doubted = o.state == "suspicious" or o._corpse == v
+		if doubted:
+			break
+	check(doubted, "quem não viu o corpo ainda desconfia dele", o.state)
+	p.cutscene = false
+
+
+## Ronda alertada, quando os ânimos acalmam, fica de guarda junto do corpo que achou (no lugar da ronda), de costas para ele
+## vigiando em volta; fixo de portão nunca guarda corpo (volta ao posto).
+func test_patroller_guards_body() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3.ZERO, PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	p.cutscene = true
+	var v := Soldier.new()
+	v.position = Vector3(1.2, 0, 5)
+	v.target = p
+	w.add_child(v)
+	s.route = [Vector3(0, 0, 0), Vector3(0, 0, 9)]
+	await t._frames(2)
+	v.die(Vector3.FORWARD, null, false, true)
+	var states := {}
+	for i in 60 * 40:
+		await t._frames(1)
+		states[s.state] = true
+		if s.state == "guard" and s._guard_at:
+			break
+	check(states.has("hunt") and s.state == "guard" and s._guard_body == v, "achou o corpo, procurou e, calmo, fica de guarda nele", str(states.keys()))
+	await t._frames(60 * 3)
+	var off := Enemy._flat(s.global_position - v.global_position)
+	var fwd := -s.global_basis.z
+	check(s.state == "guard" and off.length() > 1.0 and off.length() < 2.6 and s.alert_level() == 0, "fica ao lado do corpo, calmo", "%s %.2f" % [s.state, off.length()])
+	check(fwd.dot(off.normalized()) > 0.8, "de costas para o corpo, vigiando em volta", "%.2f" % fwd.dot(off.normalized()))
+	# fixo de portão: sabe do corpo e foi alertado, mas volta ao posto
+	var g := Soldier.new()
+	g.position = Vector3(5, 0, 0)
+	g.post = "patio"
+	g.target = p
+	w.add_child(g)
+	await t._frames(2)
+	g._was_alerted = true
+	g._known_dead.append(v)
+	g._resume()
+	check(g.state != "guard" and g._guard_body == null, "fixo de portão nunca guarda corpo", g.state)
+	p.cutscene = false
+
+
+## Colado na caixa o cano entra nela: o tiro não pode atravessar (o raio do cano começa dentro da caixa e não bate nela).
+func test_no_shot_through_cover() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 6))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	_wall(pr[2], Vector3(0, 2, 0.7), Vector3(4, 4, 0.4))  # face a 0,5 m do peito dele: o fuzil apontado entra nela
+	s.set_physics_process(false)
+	s.model.set_aim(true)
+	await t._frames(20)
+	var hp := p.health
+	s._lock_t = 10.0
+	for i in 30:
+		s._fire(true, p.sight_point())
+	check(not s._clear_shot(p.sight_point()), "cano encostado na caixa: sem linha de tiro")
+	check(p.health == hp, "nenhum tiro atravessa a caixa", "%d -> %d" % [hp, p.health])
+
+
+## Sem linha de tiro em luta: se esgueira até a beirada da caixa e atira dali; caixa larga demais, vai para cima dela.
+func test_peek_or_push() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, 7))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.health = 100000
+	_wall(pr[2], Vector3(0, 2, 1.4), Vector3(1.2, 4, 0.4))  # pilha estreita na frente dele
+	s.start_engage()
+	var peeked := false
+	for i in 60 * 4:
+		await t._frames(1)
+		peeked = peeked or s._peek != null
+		if s.shots_fired > 0 and s._clear_shot(p.sight_point()):
+			break
+	check(peeked and s.shots_fired > 0 and absf(s.global_position.x) > 0.4, "atrás da pilha: se esgueira até a beirada e atira dali",
+		"x=%.2f tiros=%d" % [s.global_position.x, s.shots_fired])
+	pr = await _spawn_soldier(Vector3(0, 0, 7))
+	p = pr[0]
+	s = pr[1]
+	p.health = 100000
+	_wall(pr[2], Vector3(0, 2, 1.4), Vector3(14, 4, 0.4))  # parede larga: nenhuma beirada perto
+	s.start_engage()
+	var start := s.global_position
+	await t._frames(60 * 2)
+	check(s._peek == null and Enemy._flat(s.global_position - start).length() > 0.8, "sem beirada perto: vai atrás dela",
+		"%.2f %s" % [Enemy._flat(s.global_position - start).length(), s.state])

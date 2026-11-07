@@ -218,10 +218,25 @@ func test_jump() -> void:
 	await _tap("jump")
 	await t._frames(8)
 	t.check(not p.is_on_floor() and p.global_position.y > 0.3, "pulo sai do chão", "%.2f" % p.global_position.y)
-	t.check(p.model.state == "jump", "pulo: animação", p.model.state)
-	await t._frames(60)
-	t.check(p.is_on_floor() and p.model.state == "idle", "pulo: cai de pé", p.model.state)
-	t.check(p.global_position.z < -0.9, "pulo parada vai para a frente (~1,2 m)", "%.2f" % p.global_position.z)
+	t.check(p.model.state == "jump_up", "pulo parado: animação JumpUp", p.model.state)
+	var landed := false
+	for i in 70:
+		await t._frames(1)
+		landed = landed or p.model.state == "land"
+	t.check(landed, "pulo parado: pousa amortecendo (Land)")
+	await t._frames(40)
+	t.check(p.is_on_floor() and p.model.state == "idle", "pulo: cai de pé e volta à Idle", p.model.state)
+	t.check(Vector2(p.global_position.x, p.global_position.z).length() < 0.15, "pulo parado: sobe e desce no lugar", str(p.global_position))
+	# com o direcional: pulo projetado para a frente
+	var z0 := p.global_position.z
+	Input.action_press("move_forward")
+	await _tap("jump")
+	await t._frames(4)
+	t.check(p.model.state == "jump", "pulo projetado: animação Jump", p.model.state)
+	await t._frames(50)
+	Input.action_release("move_forward")
+	await t._frames(20)
+	t.check(p.is_on_floor() and z0 - p.global_position.z > 0.9, "pulo projetado vai para a frente (> 0,9 m)", "%.2f" % (z0 - p.global_position.z))
 
 
 ## Pulo para a frente na direção de uma borda que está longe demais no começo do pulo: no ar, com a borda na altura
@@ -231,6 +246,7 @@ func test_air_grab() -> void:
 	_box(w, Vector3(2, 2.4, 2), Vector3(0, 1.2, -2.9))  # parede em z = -1.9 (fora do alcance parada)
 	var p := _player(w, Vector3(0, 0, 0.0))
 	await t._frames(10)
+	Input.action_press("move_forward")
 	await _tap("jump")
 	t.check(p.moves.mode == "" and not p.is_on_floor() or p.velocity.y > 0.0, "borda longe: sai no pulo para a frente", p.moves.mode)
 	var grabbed := false
@@ -239,6 +255,7 @@ func test_air_grab() -> void:
 		if p.moves.mode in ["grab", "hang"]:
 			grabbed = true
 			break
+	Input.action_release("move_forward")
 	t.check(grabbed, "no ar, de frente para a borda na altura das mãos: agarra", str(p.global_position))
 	await t._frames(30)
 	t.check(p.moves.hanging(), "agarrou no ar: fica pendurada", p.moves.mode)

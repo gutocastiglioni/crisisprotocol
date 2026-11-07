@@ -11,6 +11,9 @@ extends Control
 ## INVISIVEL = `Player.visibility()` até INVISIBLE_AT (agachada, capim alto) ou num lugar onde não a percebem (telhado,
 ## alto da escada), desde que nenhum inimigo esteja com ela à vista agora (`Enemy.has_eyes_on`). O olho fecha quando ela
 ## some, abre mais quanto mais ela aparece, olha para os lados na busca e fica vermelho e arregalado no alerta.
+## Barulho (`Player.noise_made`: passos, cambalhota, tiro): cada um solta um anel que sai dela e abre até o alcance real do som
+## (na escala do radar; o anel que toca um ponto = aquele inimigo ouve). Ninguém ouviu = anel claro (QUIET); algum ouviu =
+## anel laranja (HEARD) e o ponto de quem ouviu pisca com um anelzinho. Parada ou sem barulho = nada.
 
 const SIZE := 50.0
 const STATUS_H := 20.0  # faixa do olho e do estado embaixo do radar
@@ -27,6 +30,10 @@ const BG := Color(0.0, 0.07, 0.03, 0.62)
 const FRAME := Color(0.35, 0.85, 0.45, 0.9)
 const WALL := Color(0.35, 0.8, 0.45, 0.55)
 const ALERT_COLORS := [UiStyle.ACTION, UiStyle.ACCENT, UiStyle.WARN, UiStyle.DANGER]
+const RING_TIME := 0.7  # s do anel de barulho abrindo e sumindo
+const MAX_RINGS := 8
+const QUIET := Color(0.78, 1.0, 0.86)  # barulho que ninguém ouviu
+const HEARD := UiStyle.WARN  # barulho que algum inimigo ouviu
 const BLIP_CALM := Color(0.92, 0.95, 0.9)  # inimigo calmo: branco (o verde do alerta calmo some nas paredes)
 ## contorno das salas no chão (x, z, largura em x, comprimento em z)
 const ROOMS := [
@@ -41,7 +48,15 @@ const ROOMS := [
 	Rect2(Tunnel.SECTIONS[3][1], Tunnel.Z - Tunnel.SECTIONS[3][2], Tunnel.SECTIONS[3][0] - Tunnel.SECTIONS[3][1], Tunnel.SECTIONS[3][2] * 2.0),
 ]
 
-var player: Player
+var player: Player:
+	set(v):
+		if player and player.noise_made.is_connected(noise):
+			player.noise_made.disconnect(noise)
+		player = v
+		if player:
+			player.noise_made.connect(noise)
+var rings: Array = []  # {"r": m, "t": s, "heard": bool}
+var pings := {}  # instance_id -> s desde que ouviu o último barulho dela
 var seen := {}  # instance_id -> Enemy já avistado
 var level := 0  # maior Enemy.alert_level dos inimigos
 var unseen := false  # INVISIVEL
@@ -56,6 +71,13 @@ func _init() -> void:
 
 func update(delta: float) -> void:
 	_t += delta
+	for g in rings:
+		g.t += delta
+	rings = rings.filter(func(g: Dictionary) -> bool: return g.t < RING_TIME)
+	for id in pings.keys():
+		pings[id] += delta
+		if pings[id] >= RING_TIME:
+			pings.erase(id)
 	_hold = maxf(_hold - delta, 0.0)
 	if player != null and player.moves.on_ladder():
 		_hold = LADDER_HOLD
@@ -86,8 +108,24 @@ func _pulse() -> float:
 	return 0.5 + 0.5 * sin(_t * TAU * PULSE_HZ[clampi(level, 0, 3)])
 
 
+## Barulho dela a `radius` m; `heard` = inimigos que o ouviram.
+func noise(radius: float, heard: Array) -> void:
+	rings.append({"r": radius, "t": 0.0, "heard": not heard.is_empty()})
+	if rings.size() > MAX_RINGS:
+		rings.pop_front()
+	for e: Enemy in heard:
+		pings[e.get_instance_id()] = 0.0
+
+
+## Algum inimigo ouviu um barulho dela há pouco (anel laranja ainda aberto).
+func heard_recently() -> bool:
+	return rings.any(func(g: Dictionary) -> bool: return g.heard)
+
+
 func reset() -> void:
 	seen.clear()
+	rings.clear()
+	pings.clear()
 	_hold = RESET_HOLD
 	queue_redraw()
 
@@ -176,6 +214,10 @@ func _draw() -> void:
 		if inside:
 			var look := _to_radar(e.global_position - e.global_basis.z * 2.0, axes) - p
 			draw_line(p, p + look.normalized() * (half + 2.5), col)
+			if pings.has(id):  # ouviu o barulho dela: anelzinho laranja em volta do ponto
+				var a: float = pings[id] / RING_TIME
+				draw_arc(p, half + 1.0 + 3.0 * a, 0.0, TAU, 12, Color(HEARD, 1.0 - a), 1.0)
+	_draw_rings(c)
 	# ela no meio: triângulo para onde está virada
 	var f := _to_radar(player.global_position - player.global_basis.z, axes) - c
 	f = f.normalized() if f.length() > 0.01 else Vector2.UP
@@ -186,6 +228,18 @@ func _draw() -> void:
 	# moldura na cor do alerta, pulsando
 	draw_rect(box, Color(tint.lerp(Color.WHITE, 0.25 * k), 0.55 + 0.45 * k), false, 1.0)
 	_draw_status(tint, k)
+
+
+## Anéis de barulho saindo do centro até o alcance do som (escala do radar), abrindo depressa e sumindo.
+func _draw_rings(c: Vector2) -> void:
+	var px := SIZE * 0.5 / RANGE
+	for g in rings:
+		var a: float = g.t / RING_TIME
+		var r: float = g.r * px * (1.0 - pow(1.0 - minf(a / 0.55, 1.0), 2.0))
+		if r < 0.5:
+			continue
+		var col: Color = HEARD if g.heard else QUIET
+		_clipped_circle(c, r, Color(col, (0.95 if g.heard else 0.7) * (1.0 - a * a)), 1.0)
 
 
 ## Embaixo do radar: olho + VISIVEL/INVISIVEL e, abaixo, o estado dos inimigos (alinhados à direita do radar).
@@ -250,6 +304,13 @@ func _draw_eye(c: Vector2, tint: Color, k: float) -> void:
 	var r := clampf(h * 0.75, 1.2, 2.2)
 	draw_circle(iris, r, UiStyle.DANGER.lerp(Color.WHITE, 0.3 * k) if level == 3 else lid_col)
 	draw_circle(iris, r * (0.35 if level == 3 else 0.5), Color.BLACK)
+
+
+## Círculo recortado pelo quadrado do radar (o tiro ouvido de longe passa da borda).
+func _clipped_circle(c: Vector2, r: float, col: Color, width := 1.0) -> void:
+	var n := clampi(int(r * 1.2), 10, 40)
+	for i in n:
+		_clipped_line(c + Vector2.from_angle(TAU * i / n) * r, c + Vector2.from_angle(TAU * (i + 1) / n) * r, col, width)
 
 
 ## Linha recortada pelo quadrado do radar (Liang-Barsky): o desenho do Control não se recorta sozinho.

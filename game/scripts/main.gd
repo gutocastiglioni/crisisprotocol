@@ -32,6 +32,8 @@ extends Node3D
 ## Sala dos clones e portão da pedreira:  --shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open
 ##   (tank = o tanque vazio do alossauro; plate/plate_allo salvam quando a tela aparece; keypad = sem o cartão,
 ##   keypad_on = com ele, digitando; keypad_ok = código certo; gate_open = depois, o portão abrindo: --at escolhe o quadro)
+##   --shot=clone: o raptor do primeiro tubo de perto (--yaw gira, --dist afasta); --shot=chest_open: baú aberto de cima,
+##   a espuma com o vão da arma (--part=0|1|2 = M16, escopeta, container da M79; --yaw gira, --dist afasta)
 ## Torres de guarda do portão do pátio:  --shot=towers|tower_fall|gate_card  (towers = as duas com os snipers, vistas da
 ##   estrada; tower_fall = o último sniper tomba da torre, câmera de lado, --at escolhe o quadro; gate_card = pega o cartão
 ##   que ele derrubou e salva quando a tela do item aparece)
@@ -63,7 +65,7 @@ const CRATES_AIM := Vector3(-102.0, 1.6, Tunnel.Z - 5.0)
 ## revisão do começo da fase: telhado, alçapão, escada do canto, labirinto, portão e sala dos clones (ver _setup_start_shot)
 const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roof", "sniper_ladder", "maze", "gate", "lab", "clones",
 	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "mezz_climb", "ladder_locked", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
-	"gate_open"]
+	"gate_open", "clone", "chest_open"]
 ## revisão do túnel da mina (ver _setup_tunnel_shot): tunnel = da boca olhando para dentro; tunnel_mid = os dois
 ## sentinelas do meio (parados); tunnel_far = os quatro do fundo nos explosivos; tunnel_talk = a cena da conversa (--at);
 ## tunnel_boom = os do fundo mortos, ela arma o detonador em 0,3 s e corre (a explosão em ~10,3 s arromba o portão, --at);
@@ -627,6 +629,8 @@ func _on_keypad(d: Door) -> void:
 	if ok:
 		player.use_key(d.lock)
 		d.unlock(player)
+		if d.opened and not player.dead and not player.moves.busy():
+			player.moves.start_door(d)  # espera as folhas terminarem de abrir
 
 
 func _on_locked(c: Chest) -> void:
@@ -1181,6 +1185,30 @@ func _setup_start_shot() -> void:
 			# no teto dos clones, de frente para a mureta do fundo, com a pistola com silenciador
 			player.silencer = true
 			spot.call(Vector3(2.0, Roof.LAB_Y, -22.0), 0.3)
+		"clone", "chest_open":
+			# revisão de perto, câmera parada
+			lab.gate.open()
+			lab.played = true
+			_review_cam = Camera3D.new()
+			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			_review_cam.fov = 45.0
+			add_child(_review_cam)
+			_review_cam.current = true
+			var a := 0.0 if is_nan(_yaw) else _yaw
+			if _shot == "clone":
+				var tube: Node3D = lab.clones[0].get_parent().get_parent()
+				var mid := tube.global_position + Vector3.UP * (CloneLab.BASE_H + CloneLab.TUBE_H * CloneLab.RAPTOR_MID)
+				var inward := Vector3(-signf(tube.global_position.x), 0, 0)
+				_review_cam.global_position = mid + inward.rotated(Vector3.UP, a) * _dist * 1.6 + Vector3.UP * 0.3
+				_review_cam.look_at(mid)
+			else:
+				var c: Chest = ([chest, chests[1], locker] as Array)[clampi(int(_part) if _part != "" else 0, 0, 2)]
+				c.open()
+				var mid := c.global_transform * Vector3(0, Chest.PALLET + Chest.SIZE.y * 0.5, 0)
+				var front := c.global_basis.z.rotated(Vector3.UP, a)
+				_review_cam.global_position = mid + (front * 0.3 + Vector3.UP * 1.1) * _dist * 0.5
+				_review_cam.look_at(mid)
+			spot.call(Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 1.0), 0.0)
 		"tank", "plate", "plate_allo":
 			# dentro da sala dos clones (cena do choque já vista): o tanque vazio, uma plaqueta
 			lab.gate.open()
@@ -1547,7 +1575,7 @@ func _setup_move_shot() -> void:
 		"getup": [Vector3(0, Roof.Y, -2.0), 0.0], "getup_fwd": [Vector3(0, Roof.Y, -2.0), PI],
 		"roll_side": [Vector3(0, Roof.Y, 0), 0.0], "jump_side": [Vector3(0, Roof.Y, 0), 0.0],
 	}
-	if _shot in spots:
+	if _shot in spots and not "--pos=" in " ".join(OS.get_cmdline_user_args()):
 		player.global_position = spots[_shot][0]
 		player.rotation.y = spots[_shot][1]
 		player.reset_physics_interpolation()
@@ -1593,8 +1621,13 @@ func _move_shot(at: Callable) -> void:
 		"pickup", "pickup_shotgun":
 			tap.call("interact", 0.3)
 		"jump_side":
-			# pulo para a frente (parada) visto de lado, câmera parada no meio do caminho (do +X; --yaw gira)
+			# visto de lado, câmera parada (do +X; --yaw gira): pulo parado em 0,4 s e projetado (andando) em 1,8 s
 			tap.call("jump", 0.4)
+			if at.call(1.5) and _capture != "":
+				Input.action_press("move_forward")
+			tap.call("jump", 1.8)
+			if at.call(2.5):
+				Input.action_release("move_forward")
 			var mid := Vector3(0, Roof.Y + 0.8, -0.7)
 			var a := PI * 0.5 + (0.0 if is_nan(_yaw) else _yaw - PI * 0.5)
 			_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * 4.2 + Vector3.UP * 0.2
@@ -1675,6 +1708,9 @@ func _setup_soldier_shot() -> void:
 	sd.global_position = player.global_position + Vector3(0, 0, -1.6 if _shot == "assassinate_soldier" else -4.0)
 	sd.rotation.y = 0.0 if _shot == "assassinate_soldier" else PI
 	sd.reset_physics_interpolation()
+	if _shot == "soldier_peek":
+		# pilha de caixas 1,2 m na frente dele, tapando a linha até ela: ele se esgueira até a beirada (--yaw=90 = de lado)
+		Level.block(self, Vector3(1.4, 2.2, 0.6), sd.global_position + Vector3(0.2, 1.1, 1.2), "crate", 1.0 / 1.4)
 	# câmera de revisão perto dele (--yaw gira em volta: 0 = de frente); --playercam usa a dela
 	if not _player_cam:
 		_review_cam = Camera3D.new()
@@ -1704,6 +1740,25 @@ func _soldier_shot(at: Callable) -> void:
 			sd.take_hit(45, Vector3.BACK, sd.global_position + Vector3.UP * 1.2)
 		elif _shot == "soldier_idle":
 			pass
+		elif _shot == "soldier_search":
+			# busca ativa num ponto: fuzil no ombro varrendo em volta (ela fora da vista)
+			player.cutscene = true
+			sd.alert_t = sd.alert_time
+			sd.active_search = true
+			sd._search_center = sd.global_position + Vector3(0, 0, 3)
+			sd.start_search()
+		elif _shot == "soldier_guard":
+			# ronda alertada que acalmou: guarda o corpo do colega (soldiers[1]) que conhece
+			player.cutscene = true
+			var v := soldiers[1]
+			v.process_mode = Node.PROCESS_MODE_INHERIT
+			v.global_position = sd.global_position + Vector3(1.6, 0, 1.6)
+			v.reset_physics_interpolation()
+			v.die(Vector3.FORWARD, null, false, true)
+			sd._known_dead.append(v)
+			sd._was_alerted = true
+			sd.route = [sd.global_position, sd.global_position + Vector3(-4, 0, 0)]
+			sd._resume()
 		else:
 			sd.spot()
 	if _review_cam:

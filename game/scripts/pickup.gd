@@ -138,19 +138,23 @@ func _build_weapon() -> void:
 			aabb = aabb.merge(maabb)
 	inst.position = -aabb.get_center() + Vector3(0, 0.08, 0)
 	_body.add_child(holder)
-	var c: Color = COLORS.get(kind, Color.WHITE)
 	# brilho fora do _body: fica no chão sem girar nem balançar
-	var halo := _soft(Vector2(1.1, 1.1), c, false)
+	glow_set(self, COLORS.get(kind, Color.WHITE), _t)
+
+
+## Halo deitado no chão + dois feixes em cruz da cor `color` (o brilho da arma largada; KeyItem usa o mesmo em azul).
+static func glow_set(parent: Node3D, color: Color, phase := 0.0) -> void:
+	var halo := soft(parent, Vector2(1.1, 1.1), color, false, phase)
 	halo.rotation_degrees.x = -90.0
 	halo.position.y = 0.015
 	for yaw in [0.0, 90.0]:
-		var beam := _soft(Vector2(0.28, 1.1), c * Color(1, 1, 1, 0.45), true)
+		var beam := soft(parent, Vector2(0.28, 1.1), color * Color(1, 1, 1, 0.45), true, phase)
 		beam.rotation_degrees.y = yaw
 		beam.position.y = 0.55
 
 
-## Quadro de brilho suave (item_glow.gdshader) preso ao item, não ao corpo que gira.
-func _soft(size: Vector2, color: Color, beam: bool) -> MeshInstance3D:
+## Um quadro de brilho (item_glow.gdshader) em `parent`.
+static func soft(parent: Node3D, size: Vector2, color: Color, beam: bool, phase := 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = size
@@ -159,10 +163,10 @@ func _soft(size: Vector2, color: Color, beam: bool) -> MeshInstance3D:
 	m.shader = GLOW
 	m.set_shader_parameter("color", color)
 	m.set_shader_parameter("beam", beam)
-	m.set_shader_parameter("phase", _t)
+	m.set_shader_parameter("phase", phase)
 	mi.material_override = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
+	parent.add_child(mi)
 	return mi
 
 
