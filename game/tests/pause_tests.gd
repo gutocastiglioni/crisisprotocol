@@ -141,7 +141,7 @@ func test_pause_menu() -> void:
 		var seen := {"busy": false}
 		for i in 12:
 			await t._frames(1)
-			if p.moves.busy() or p.rolling or p.hopping or p.crouching:
+			if p.moves.busy() or p.rolling or p.crouching:
 				seen.busy = true
 		Input.action_release(a)
 		t.check(not main.inspect.busy and not t.paused and not seen.busy, "fechar a mensagem com %s não faz ela agir" % a, p.moves.mode)

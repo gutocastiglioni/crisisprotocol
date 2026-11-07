@@ -136,12 +136,24 @@ func _impact(hit: Dictionary) -> void:
 			who.take_hit(impact_damage, vel.normalized(), hit.position)
 		else:
 			Fx.impact(parent, hit.position, false, normal, "metal")
+			if col is ExplosiveCrate:
+				(col as ExplosiveCrate).ping(hit.position)  # bateu sem armar: só o barulho do metal
 		return
 	explode(parent, hit.position + normal * 0.05, normal, col)
 
 
-## Explosão em `at` (`normal` = da superfície atingida; `surface` = o corpo dela, para a mancha de queimado).
+## Explosão em `at` (`normal` = da superfície atingida; `surface` = o corpo dela, para a mancha de queimado). Detona os
+## caixotes de explosivos ao alcance (`ExplosiveCrate.shockwave`).
 static func explode(parent: Node, at: Vector3, normal := Vector3.UP, surface: Object = null) -> void:
+	blast(parent, at, normal, surface, RADIUS, DAMAGE)
+	ExplosiveCrate.shockwave(parent.get_tree(), at, RADIUS)
+
+
+## A explosão em si (a da granada e a de cada caixote): bola de fogo, barulho, dano em área de `radius`/`damage` em quem
+## está à vista (`exclude` = corpos do cenário que não protegem: os outros caixotes, que explodem juntos), empurrão nos
+## corpos caídos e tremor da câmera dela.
+static func blast(parent: Node, at: Vector3, normal: Vector3, surface: Object, radius: float, damage: int, exclude: Array[RID] = [],
+		push := BODY_PUSH) -> void:
 	var world := parent as Node3D
 	Fx.explosion(parent, at, normal)
 	if surface:
@@ -151,7 +163,7 @@ static func explode(parent: Node, at: Vector3, normal := Vector3.UP, surface: Ob
 	var space := world.get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = RADIUS
+	sphere.radius = radius
 	q.shape = sphere
 	q.transform = Transform3D(Basis(), at)
 	q.collision_mask = 2 | Ragdoll.LAYER
@@ -163,31 +175,31 @@ static func explode(parent: Node, at: Vector3, normal := Vector3.UP, surface: Ob
 			if who == null or not who.has_method("take_hit") or who.get("dead"):
 				# corpo caído (ou ragdoll de quem já morreu): só é empurrado
 				var pb := col as PhysicalBone3D
-				if _in_sight(space, at, pb.global_position):
+				if _in_sight(space, at, pb.global_position, exclude):
 					var away := pb.global_position - at
-					var k := clampf(1.0 - away.length() / RADIUS, 0.0, 1.0)
-					Ragdoll.push(pb, (away.normalized() + Vector3.UP * 0.6) * BODY_PUSH * k, pb.global_position)
+					var k := clampf(1.0 - away.length() / radius, 0.0, 1.0)
+					Ragdoll.push(pb, (away.normalized() + Vector3.UP * 0.6) * push * k, pb.global_position)
 				continue
 			col = who
 		if col == null or not col.has_method("take_hit") or seen.has(col) or col.get("dead"):
 			continue
 		seen[col] = true
 		var center := (col as Node3D).global_position + Vector3.UP * 0.9
-		if not _in_sight(space, at, center):
+		if not _in_sight(space, at, center, exclude):
 			continue
 		var d := maxf(0.0, at.distance_to(center) - 0.3)
-		var frac := clampf(1.0 - d / RADIUS, MIN_FRACTION, 1.0)
+		var frac := clampf(1.0 - d / radius, MIN_FRACTION, 1.0)
 		var dir := (center - at).normalized()
 		if col is Player:
 			var p := col as Player
-			p.take_hit(maxi(1, roundi(DAMAGE * frac * PLAYER_SHARE)), dir, center)
+			p.take_hit(maxi(1, roundi(damage * frac * PLAYER_SHARE)), dir, center)
 			if not p.dead:
 				if d < LAUNCH_DIST:
 					p.launch(Vector3(dir.x, 0.0, dir.z).normalized() * 6.0 + Vector3.UP * 4.0, center)
 				else:
 					p.knockback(Vector3(dir.x, 0.0, dir.z).normalized() * 4.0)
 		else:
-			col.take_hit(maxi(1, roundi(DAMAGE * frac)), dir, center)
+			col.take_hit(maxi(1, roundi(damage * frac)), dir, center)
 	var player := parent.get_tree().get_first_node_in_group("player") as Player
 	if player:
 		var pd := player.global_position.distance_to(at)
@@ -196,5 +208,5 @@ static func explode(parent: Node, at: Vector3, normal := Vector3.UP, surface: Ob
 
 
 ## Nada de cenário (parede, porta, caixa) entre a explosão e o ponto.
-static func _in_sight(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> bool:
-	return space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, 1)).is_empty()
+static func _in_sight(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3, exclude: Array[RID] = []) -> bool:
+	return space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, 1, exclude)).is_empty()

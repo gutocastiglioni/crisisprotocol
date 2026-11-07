@@ -34,6 +34,11 @@ const ROOMS := [
 	Rect2(-CloneLab.HALF_W, CloneLab.Z_FAR, CloneLab.HALF_W * 2.0, CloneLab.Z_NEAR - CloneLab.Z_FAR),
 	Rect2(Yard.GATE_X, -Yard.Z_HALF, Yard.X_NEAR - Yard.GATE_X, Yard.Z_HALF * 2.0),
 	Rect2(Arena.X_FAR, -Arena.Z_HALF, Arena.X_NEAR - Arena.X_FAR, Arena.Z_HALF * 2.0),
+	# túnel da mina: corredores e as duas câmaras (Tunnel.SECTIONS)
+	Rect2(Tunnel.SECTIONS[0][1], Tunnel.Z - Tunnel.SECTIONS[0][2], Tunnel.SECTIONS[0][0] - Tunnel.SECTIONS[0][1], Tunnel.SECTIONS[0][2] * 2.0),
+	Rect2(Tunnel.SECTIONS[1][1], Tunnel.Z - Tunnel.SECTIONS[1][2], Tunnel.SECTIONS[1][0] - Tunnel.SECTIONS[1][1], Tunnel.SECTIONS[1][2] * 2.0),
+	Rect2(Tunnel.SECTIONS[2][1], Tunnel.Z - Tunnel.SECTIONS[2][2], Tunnel.SECTIONS[2][0] - Tunnel.SECTIONS[2][1], Tunnel.SECTIONS[2][2] * 2.0),
+	Rect2(Tunnel.SECTIONS[3][1], Tunnel.Z - Tunnel.SECTIONS[3][2], Tunnel.SECTIONS[3][0] - Tunnel.SECTIONS[3][1], Tunnel.SECTIONS[3][2] * 2.0),
 ]
 
 var player: Player

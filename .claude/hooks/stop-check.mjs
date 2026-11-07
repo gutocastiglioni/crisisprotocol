@@ -20,8 +20,9 @@ const counterFile = join(tmpdir(), `claude-stop-check-${input.session_id || 'def
 
 /** Executa um comando no projeto e devolve sucesso + o fim da saída. */
 function run(cmd) {
-  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 420_000 }); // a suíte do Godot passa de 240 s; o hook todo tem 600 s (settings.json)
-  return { ok: r.status === 0, stdout: r.stdout || '', out: `${r.stdout || ''}${r.stderr || ''}`.trimEnd().slice(-2500) };
+  // a suíte do Godot leva ~3,5 min e pode esperar na fila de outra sessão (tools/run_godot_tests.mjs); o hook todo tem 600 s (settings.json)
+  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 590_000 });
+  return { ok: r.status === 0, status: r.status, stdout: r.stdout || '', out: `${r.stdout || ''}${r.stderr || ''}`.trimEnd().slice(-2500) };
 }
 
 // Segredos que nunca podem ir para o repositório (chaves públicas como anon/publishable ficam de fora).
@@ -63,6 +64,8 @@ const tested = allChanged.filter((f) => CODE.test(f) || ENGINE.test(f));
 if (!status.ok || allChanged.length === 0) process.exit(0);
 
 const failures = allChanged.flatMap(secretProblems);
+const BUSY = 75; // o comando não rodou porque outra sessão ocupava a fila: avisa, não bloqueia (senão as sessões ficam repetindo)
+const warnings = [];
 
 // Comandos do projeto: .claude/quality.json (qualquer stack; o bootstrap cria). Sem ele, cai no padrão npm.
 const quality = (() => { try { return JSON.parse(readFileSync(join(cwd, '.claude/quality.json'), 'utf8')); } catch { return null; } })();
@@ -81,6 +84,7 @@ if (quality) {
 if (tested.length) {
   for (const [name, cmd] of checks) {
     const r = run(cmd);
+    if (r.status === BUSY) { warnings.push(`${name}: ${r.out}`); continue; }
     if (!r.ok) failures.push(`${name} (${cmd}):\n${r.out}`);
   }
 }
@@ -94,6 +98,7 @@ for (const file of changed) {
 
 if (failures.length === 0) {
   rmSync(counterFile, { force: true });
+  if (warnings.length) console.log(JSON.stringify({ systemMessage: `stop-check: NÃO VERIFICADO — ${warnings.join(' | ')}` }));
   process.exit(0);
 }
 

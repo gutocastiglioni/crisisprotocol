@@ -15,6 +15,7 @@ const KEYS := {
 	"switch_weapon": [KEY_Q, KEY_TAB],
 	"crouch": [KEY_C, KEY_CTRL],
 	"lean": [KEY_V],
+	"cover": [KEY_G],  # encostar/soltar da parede (no controle: dois empurrões do analógico direito para cima, PlayerCover)
 	"reset": [KEY_R],
 	"pause": [KEY_ESCAPE],
 	"zoom_in": [KEY_X, KEY_SPACE],
@@ -36,14 +37,18 @@ const JOY_BUTTONS := {
 	"roll": JOY_BUTTON_B,
 	"zoom_in": JOY_BUTTON_A,
 	"zoom_out": JOY_BUTTON_B,
-	"crouch": JOY_BUTTON_A,
-	"jump": JOY_BUTTON_X,
+	"crouch": JOY_BUTTON_A,  # nos menus o X confirma; no jogo o X pula (crouch_tapped ignora o X que pulou)
+	"jump": JOY_BUTTON_A,
+	"crouch_pad": JOY_BUTTON_X,  # quadrado: agachar no jogo
 	"interact": JOY_BUTTON_Y,
 	"switch_weapon": JOY_BUTTON_BACK,
 	"aim": JOY_BUTTON_LEFT_SHOULDER,
-	"lean": JOY_BUTTON_RIGHT_STICK,  # esgueirar pela quina (R3); atirar fica no R2
+	# R3 também agacha, mas só no jogo (ação à parte: nos menus o "crouch" é o X de confirmar/voltar); atirar fica no R2
+	"crouch_stick": JOY_BUTTON_RIGHT_STICK,
 	"pause": JOY_BUTTON_START,  # menu de pausa (reiniciar fica lá dentro; no teclado R segue reiniciando)
+	# L3: corrida forte segurando; um toque perto da beirada de uma cobertura esgueira pela quina (PlayerLean.find)
 	"sprint": JOY_BUTTON_LEFT_STICK,
+	"lean": JOY_BUTTON_LEFT_STICK,
 }
 # ação: [eixo, sentido]
 const JOY_AXES := {
@@ -86,6 +91,14 @@ static func register() -> void:
 		j.axis = JOY_AXES[a][0]
 		j.axis_value = JOY_AXES[a][1]
 		_add(a, j)
+
+
+## Agachar/levantar neste quadro: C / CTRL, quadrado ou R3 (o X do controle também é "crouch", para os menus, mas no
+## jogo ele pula: apertado junto com o pulo não agacha).
+static func crouch_tapped() -> bool:
+	if Input.is_action_just_pressed("crouch_pad") or Input.is_action_just_pressed("crouch_stick"):
+		return true
+	return Input.is_action_just_pressed("crouch") and not Input.is_action_just_pressed("jump")
 
 
 static func _add(action: String, event: InputEvent) -> void:

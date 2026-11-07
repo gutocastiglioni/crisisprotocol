@@ -1,20 +1,24 @@
 class_name PlayerMoves
 extends RefCounted
-## Ações da heroína que seguem um caminho da raiz (Moves) e tomam o controle enquanto duram: cambalhota com
-## projeção, pulinho de esquiva (survival), pulo até a borda (fica pendurada), subir da borda, escalar obstáculo baixo e pegar arma no baú.
+## Ações da heroína que seguem um caminho da raiz (Moves) e tomam o controle enquanto duram: cambalhota rente ao
+## chão, pulo até a borda (fica pendurada), subir da borda, escalar obstáculo baixo e pegar arma no baú.
 ## A cápsula anda pelo mesmo caminho que o corpo animado (gerado com a animação), então nada escorrega.
 
 const LEDGE_REACH := 0.9  # distância máxima até a parede para agarrar/escalar
 const GRAB_MAX := 0.85  # o pulo até a borda sobe os pés até essa altura (borda alta: até hang.top + isso)
 const GRAB_TIME := 0.38  # duração do pulo até a borda
+## No ar (pulo ou queda): agarra a borda à frente com o alto dela entre AIR_GRAB_LOW e AIR_GRAB_HIGH acima dos pés
+## (os braços esticados para cima chegam a ~2,1 m); AIR_GRAB_TIME até ficar pendurada; depois de soltar, AIR_REGRAB sem agarrar.
+const AIR_GRAB_LOW := 1.3
+const AIR_GRAB_HIGH := 2.1
+const AIR_GRAB_TIME := 0.15
+const AIR_REGRAB := 0.5
 const DROP_PUSH := 0.14  # ao soltar da borda, afasta da parede (pendurada, a cápsula encosta nela)
 const ROLL_TURN := 18.0  # rapidez com que vira para a direção da cambalhota
 const KNEEL_WALK := 8.0  # quadros até chegar ao lugar de ajoelhar na frente do baú
-const DODGE_BACK_COS := cos(deg_to_rad(50.0))  # direção pedida até 50° das costas dela: pulinho para trás
-const DOUBLE_TAP := 0.2  # segundo X até este tempo depois do primeiro = clique duplo = o pulinho vira cambalhota
 
 var p: Player
-var mode := ""  # "", "roll", "dodge", "grab", "hang", "climb", "mantle", "pickup"
+var mode := ""  # "", "roll", "grab", "hang", "climb", "mantle", "pickup"
 var t := 0.0
 var _base := Vector3.ZERO  # origem do caminho da ação
 var _fwd := Vector3.FORWARD  # frente do caminho (para a parede, ou para onde rola)
@@ -25,12 +29,13 @@ var _ledge := {}
 var _from := Vector3.ZERO
 var _to := Vector3.ZERO
 var _climb_from := 0.0
+var _grab_time := GRAB_TIME
+var _regrab_t := 0.0  # depois de soltar da borda: não agarra no ar de novo na hora
 var _armed := false  # pendurada: o direcional precisa voltar ao centro antes de valer de novo
 var _chest: Node
 var _kneel: Transform3D
 var _yaw0 := 0.0
 var _got_item := false
-var _landed := false  # pulinho: já tocou a aterrissagem
 var _enemy: Node3D
 var _hit_done := false
 var _hit_frame := 0.0
@@ -67,7 +72,6 @@ func update(delta: float) -> void:
 	t += delta
 	match mode:
 		"roll": _roll(delta)
-		"dodge": _dodge(delta)
 		"grab": _grab()
 		"hang": _hang()
 		"climb", "mantle": _follow()
@@ -88,7 +92,6 @@ func cancel() -> void:
 		_enemy = null
 	mode = ""
 	p.rolling = false
-	p.hopping = false
 
 
 # ------------------------------------------------------------------ cambalhota
@@ -122,62 +125,6 @@ func _roll(delta: float) -> void:
 		p.rolling = false
 
 
-# ------------------------------------------------------------------ pulinho de esquiva
-## Pulinho curto para `dir` (no chão, normalizada) sem rolar: para trás se `dir` está até 50° das costas dela; senão de
-## lado, virando só o necessário para `dir` ficar à esquerda ou à direita dela. Invulnerável até o quadro "guard".
-## Sai no mesmo passo do X (sem esperar o clique duplo); um segundo X até DOUBLE_TAP vira cambalhota (`_dodge`).
-func start_dodge(dir: Vector3) -> void:
-	var d: Dictionary = Moves.data().dodge
-	var fwd := -p.global_basis.z
-	var face := -dir
-	var anim := "dodge_back"
-	_path = d.back
-	if dir.dot(-fwd) < DODGE_BACK_COS:
-		# das duas frentes que deixam `dir` de lado, a mais perto de para onde ela já olha
-		face = Vector3(-dir.z, 0.0, dir.x)
-		if face.dot(fwd) < 0.0:
-			face = -face
-		anim = "dodge_r" if dir.dot(face.cross(Vector3.UP)) > 0.0 else "dodge_l"
-		_path = d.side
-	mode = "dodge"
-	t = 0.0
-	_fwd = dir
-	_yaw0 = atan2(-face.x, -face.z)
-	_frames = float(d.frames)
-	_prev = 0.0
-	_landed = false
-	p.hopping = true
-	p.crouching = false
-	p.model.play(anim)
-
-
-func _dodge(delta: float) -> void:
-	if t < DOUBLE_TAP and Input.is_action_just_pressed("roll"):
-		# clique duplo: o pulinho ainda está no impulso (quase parada) e vira cambalhota, para o direcional ou para `dir`
-		var wish := p.move_wish()
-		p.hopping = false
-		start_roll(wish.normalized() if wish.length() > 0.1 else _fwd)
-		return
-	var d: Dictionary = Moves.data().dodge
-	var f := t * Moves.fps()
-	var dist := Moves.path_at(_path, f).x
-	var v := _fwd * (dist - _prev) / delta
-	_prev = dist
-	p.velocity.x = v.x
-	p.velocity.z = v.z
-	if not p.is_on_floor():
-		p.velocity.y -= Player.GRAVITY * delta
-	p.rotation.y = lerp_angle(p.rotation.y, _yaw0, 1.0 - exp(-ROLL_TURN * delta))
-	p.move_and_slide()
-	p.hopping = f < float(d.guard)
-	if not _landed and f >= float(d.land):
-		_landed = true
-		Sfx.play(p.model, "land")
-	if f >= _frames:
-		mode = ""
-		p.hopping = false
-
-
 # ------------------------------------------------------------------ bordas
 ## Borda à frente (até LEDGE_REACH): parede quase vertical, topo plano e espaço para ficar de pé em cima.
 ## Devolve {n: normal da parede (para fora), face: ponto da parede na linha dela, top: altura do topo,
@@ -202,6 +149,8 @@ func find_ledge(fwd: Vector3) -> Dictionary:
 		Vector3(probe.x, feet.y + 3.3, probe.z), Vector3(probe.x, feet.y + 0.3, probe.z), 1, ex))
 	if top_hit.is_empty() or top_hit.normal.y < 0.85:
 		return {}
+	if (top_hit.collider as Node).has_meta("no_climb"):
+		return {}  # pilhas do labirinto (Level.MAZE): nem de cima da caixa da subida do mezanino ela sobe nelas
 	var top: float = top_hit.position.y
 	# parede logo abaixo do topo (a de baixo pode ser outra caixa, um pouco mais para dentro ou para fora)
 	var y := top - 0.08
@@ -222,6 +171,19 @@ func find_ledge(fwd: Vector3) -> Dictionary:
 	if not space.intersect_shape(q, 1).is_empty():
 		return {}
 	return {"n": n, "face": Vector3(face.x, top, face.z), "top": top, "height": top - feet.y}
+
+
+## No ar, de frente para uma borda na altura das mãos (pulando nela ou caindo junto dela): agarra e fica pendurada
+## (borda já abaixo do peito: entra direto na subida).
+func try_air_grab(delta: float) -> bool:
+	_regrab_t -= delta
+	if mode != "" or _regrab_t > 0.0 or p._fall_knocked:  # derrubada da escada cai sem controle
+		return false
+	var l := find_ledge(-p.global_basis.z)
+	if l.is_empty() or l.height < AIR_GRAB_LOW or l.height > AIR_GRAB_HIGH:
+		return false
+	_start_grab(l, AIR_GRAB_TIME)
+	return true
 
 
 ## Pulo com borda à frente: obstáculo baixo = escala; borda alta = pula até ela e fica pendurada.
@@ -260,7 +222,8 @@ func _start_mantle(l: Dictionary) -> void:
 	_begin("mantle")
 
 
-func _start_grab(l: Dictionary) -> void:
+func _start_grab(l: Dictionary, time := GRAB_TIME) -> void:
+	_grab_time = time
 	var hang: Dictionary = Moves.data().hang
 	var climb: Dictionary = Moves.data().climb
 	_face_wall(l.n)
@@ -294,7 +257,7 @@ func _begin(m: String) -> void:
 
 
 func _grab() -> void:
-	var s := clampf(t / GRAB_TIME, 0.0, 1.0)
+	var s := clampf(t / _grab_time, 0.0, 1.0)
 	var flat := _from.lerp(_to, s * s * (3.0 - 2.0 * s))
 	flat.y = _from.y + (_to.y - _from.y) * (1.0 - (1.0 - s) * (1.0 - s))  # sobe freando, como num pulo
 	p.global_position = flat
@@ -315,12 +278,13 @@ func _hang() -> void:
 		_armed = true
 	if Input.is_action_just_pressed("jump") or (_armed and toward > 0.5):
 		_start_climb(0.0)
-	elif Input.is_action_just_pressed("crouch") or (_armed and toward < -0.5):
+	elif InputSetup.crouch_tapped() or (_armed and toward < -0.5):
 		drop()
 
 
 ## Solta da borda e cai.
 func drop() -> void:
+	_regrab_t = AIR_REGRAB
 	p.global_position += -_fwd * DROP_PUSH
 	p.reset_physics_interpolation()
 	mode = ""

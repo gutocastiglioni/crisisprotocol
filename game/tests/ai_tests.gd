@@ -662,9 +662,11 @@ func test_doors_seal_rooms() -> void:
 	t.get_root().add_child(main)
 	await t._frames(3)
 	var doors := t.get_nodes_in_group("doors")
-	check(doors.size() == 3, "três portas: galpão-pátio, pátio-pedreira e o portão da sala dos clones", str(doors.size()))
+	check(doors.size() == 4, "quatro portas: galpão-pátio, pátio-túnel, túnel-pedreira (arrombável) e o portão da sala dos clones",
+		str(doors.size()))
 	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
-	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2, "três salas: galpão, pátio e pedreira")
+	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2 and Level.room_of(-140.0) == 3,
+		"quatro salas: galpão, pátio, túnel da mina e pedreira")
 	var yard_r: Raptor = main.raptors[0]
 	yard_r.reset()  # fora da moita da emboscada: um raptor comum no pátio
 	var p: Player = main.player
@@ -733,6 +735,9 @@ func test_unreachable_hunt_gives_up() -> void:
 			for r in Level.MAZE.size():
 				for c in Level.MAZE[r].length():
 					var cell := Level.maze_cell(c, r)
+					if Vector2i(c, r) == Level.maze_ladder_cell():
+						# a caixa da subida do mezanino (Catwalk.CLIMB_CRATE) ocupa o fundo do nicho: o chão é na frente dela
+						cell.z = Catwalk.CLIMB_CRATE.z - Catwalk.CLIMB_CRATE_SIZE.z * 0.5 - 0.35
 					var path := NavigationServer3D.map_get_path(people, probe, cell, true)
 					if Level.MAZE[r][c] == "." and (path.is_empty() or Enemy._flat(path[path.size() - 1] - cell).length() > 0.5):
 						cut.append(Vector2i(c, r))

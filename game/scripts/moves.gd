@@ -12,7 +12,7 @@ static func data() -> Dictionary:
 	if _data.is_empty():
 		var v: Variant = JSON.parse_string(FileAccess.get_file_as_string(DATA_PATH))
 		# o arquivo vem do build da arte; sem ele (build parcial) nada dos movimentos funciona: falha uma vez, alto
-		assert(v is Dictionary and v.has_all(["fps", "speeds", "roll", "dodge", "hang", "climb", "mantle", "rifle", "shotgun", "assassinate", "crit_strike"]),
+		assert(v is Dictionary and v.has_all(["fps", "speeds", "roll", "hang", "climb", "mantle", "rifle", "shotgun", "assassinate", "crit_strike"]),
 			DATA_PATH + " ausente ou incompleto: rode o build da arte (ver CLAUDE.md)")
 		_data = v
 	return _data
@@ -20,6 +20,13 @@ static func data() -> Dictionary:
 
 static func fps() -> float:
 	return float(data().fps)
+
+
+## Encostada na cobertura (PlayerCover): "angle" (graus entre a frente dela e a parede), "wall" (da raiz ao plano) e
+## onde o punho apoia ("palm_stand"/"palm_crouch", espaço dela). {} se o build da arte é anterior a isso.
+static func cover() -> Dictionary:
+	var c: Variant = data().get("cover")
+	return c if c is Dictionary else {}
 
 
 ## Velocidade do chão em que cada ciclo de passo foi resolvido ("walk", "crouch_walk", "strafe", "crouch_strafe").

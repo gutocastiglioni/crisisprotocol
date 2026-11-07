@@ -1,7 +1,7 @@
 extends Node3D
 ## Cena de teste: sala, heroína, guardas da porta do pátio, baús com M16 e escopeta, um velociraptor, HUD e pós-processo PS1.
 ## Captura para conferência:  godot --path game -- --capture=out.png [--shot=idle|aim|run|ragdoll|front|roll|crouch|face]
-##   movimentos:  --shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|dodge_l|dodge_r|dodge_back|dodge_roll  (--at=segundos)
+##   movimentos:  --shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|roll_side|jump_side  (--at=segundos)
 ##   golpes:  --shot=hit_crouch|stagger|getup|getup_fwd  (getup = desaba de costas e levanta girando; getup_fwd = arremessada
 ##     pelas costas, levanta de bruços; --at=segundos)
 ##   armas:  --shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump  (tiros: --at=segundos)
@@ -23,7 +23,7 @@ extends Node3D
 ##   [--yaw=graus]  (abre o showroom e salva --at segundos depois, contados com o jogo pausado)
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
 ## Perfil de jogo:  --mode=survival|arcade  (F3 alterna no jogo; ver GameMode)
-## Começo da fase:  --shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|gate|lab|clones  (hatch/clones: --at=segundos escolhe o
+## Começo da fase:  --shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|mezz_climb|ladder_locked|gate|lab|clones  (hatch/clones: --at=segundos escolhe o
 ##   quadro da tampa subindo / da cena do choque; sniper_ladder: o sniper a vê na escada do telhado e atira)
 ##   --shot=smell: na beira do telhado do lado do pátio, salva quando a mensagem do cheiro de sangue para o jogo
 ## Caixa de paraquedas:  --shot=drop|drop_get|drop_pick|fire_sd  (drop = de frente para a caixa no teto dos clones, --dist=m
@@ -43,7 +43,7 @@ const POST_SHADER := preload("res://shaders/psx_post.gdshader")
 const MOVE_SHOTS := [
 	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
-	"dodge_l", "dodge_r", "dodge_back", "dodge_roll", "sniper_aim", "sniper_zoom",
+	"roll_side", "jump_side", "sniper_aim", "sniper_zoom",
 	"hit_crouch", "stagger", "getup", "getup_fwd",
 ]
 ## ela e o guerrilheiro lado a lado, parados (idle_compare = sem arma; carry_compare = com a M16) ou andando no lugar
@@ -52,11 +52,23 @@ const COMPARE_SHOTS := ["idle_compare", "carry_compare", "walk_compare"]
 ## revisão dos golpes na heroína (câmera de revisão de lado)
 const HURT_SHOTS := ["hit_crouch", "stagger", "getup", "getup_fwd"]
 ## revisão do container trancado da M79, da chave na mão do morto do pátio e da M79 (ver _setup_key_shot)
-const KEY_SHOTS := ["locked", "unlock", "corpse", "key_get", "ambush", "m79_aim", "fire_m79", "pickup_m79"]
+const KEY_SHOTS := ["locked", "unlock", "corpse", "key_get", "ambush", "m79_aim", "fire_m79", "pickup_m79", "crates", "crates_fire",
+	"crates_ping", "crates_close", "crates_boom"]
+## Caixotes de explosivos do posto da porta do pátio: do mezanino (sniper fora), mirando a M79 na pilha do canto
+## (crates), atirando nela (crates_fire, --at pega a cadeia de explosões), tiro de pistola no caixote (crates_ping: HARDENED
+## e o posto alertado) e câmera de revisão perto do guarda dos caixotes (crates_close, --yaw gira, --dist=m afasta e
+## mostra a parede oeste inteira; crates_boom = a mesma com a granada estourando na pilha em 1 s e o fogo depois).
+const CRATES_FROM := Vector3(0.5, Catwalk.FLOOR_Y, 11.3)
+const CRATES_AIM := Vector3(-11.2, 1.6, -12.0)
 ## revisão do começo da fase: telhado, alçapão, escada do canto, labirinto, portão e sala dos clones (ver _setup_start_shot)
 const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roof", "sniper_ladder", "maze", "gate", "lab", "clones",
-	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
+	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "mezz_climb", "ladder_locked", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
 	"gate_open"]
+## revisão do túnel da mina (ver _setup_tunnel_shot): tunnel = da boca olhando para dentro; tunnel_mid = os dois
+## sentinelas do meio (parados); tunnel_far = os quatro do fundo nos explosivos; tunnel_talk = a cena da conversa (--at);
+## tunnel_boom = os do fundo mortos, ela arma o detonador em 0,3 s e corre (a explosão em ~10,3 s arromba o portão, --at);
+## lair = passa pelo portão arrombado e a cena do alossauro toca (--at)
+const TUNNEL_SHOTS := ["tunnel", "tunnel_mid", "tunnel_far", "tunnel_talk", "tunnel_boom", "lair"]
 ## revisão das torres de guarda do portão do pátio e do cartão do painel (ver _setup_tower_shot)
 const TOWER_SHOTS := ["towers", "tower_fall", "gate_card"]
 const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
@@ -67,7 +79,7 @@ const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparec
 const RESTART_ACTIONS := ["reset", "interact", "crouch", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO esquiva (O)  C agachar (X)  V esgueirar na quina (R3)  F pular/agarrar  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  G guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO rolar (O)  C agachar (quadrado / R3)  V esgueirar na quina (L3)  G encostar na parede (analógico dir. 2x para cima)  F pular/agarrar (X)  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)  G encostar na parede (analógico dir. 2x p/ cima)\nH dano  K morrer  J guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -86,6 +98,7 @@ var allosaurus: Allosaurus
 var catwalk: Catwalk
 var hatch: Hatch  # alçapão do telhado, por onde ela entra na fase
 var lab: CloneLab  # sala dos clones, atrás da plataforma de carga
+var tunnel: Tunnel  # túnel da mina entre o portão do pátio e a pedreira (guardas, explosivos, portão arrombável)
 var drop: SupplyDrop  # caixa de paraquedas com a pistola com silenciador, no teto da sala dos clones
 var towers: Array[GuardTower] = []  # torres de guarda dos dois lados do portão do pátio (Yard.TOWERS)
 var tower_snipers: Array[Sniper] = []  # um em cada torre, fora de cena até os raptors da emboscada morrerem
@@ -136,6 +149,7 @@ func _ready() -> void:
 	var built := Level.build(self)
 	hatch = built.hatch
 	lab = built.lab
+	tunnel = built.tunnel
 	# ela começa no telhado, olhando para o alçapão (desce pela escada do canto até o labirinto de caixas)
 	player = Player.new()
 	player.position = Roof.START
@@ -151,7 +165,7 @@ func _ready() -> void:
 	# baú com a escopeta no canto esquerdo inferior do pátio dos velociraptors (mata sul, perto do fundo)
 	var sg := Chest.new()
 	sg.item = "shotgun"
-	sg.position = Vector3(-49.5, 0, 14.0)
+	sg.position = Yard.SHOTGUN_CHEST
 	sg.rotation.y = 0.0
 	add_child(sg)
 	chests.append(sg)
@@ -199,6 +213,7 @@ func _ready() -> void:
 	player.died.connect(_on_player_died)
 	# área suspensa na parede traseira às costas da heroína (com escada)
 	catwalk = Catwalk.new()
+	catwalk.suspended = true  # escada recolhida e trancada: sobe escalando pela caixa do nicho
 	add_child(catwalk)
 	
 	# inimigo guerrilheiro Sniper no mezanino às costas da heroína (posto de observação elevado)
@@ -223,24 +238,11 @@ func _ready() -> void:
 	# soldados de guarda no galpão/pátio (2 patrulhando o pátio, 2 sentinelas no portão; os de "hold" guardam a porta
 	# do pátio e só saem do posto depois que alguém a vê)
 	for g in Soldier.GUARDS:
-		var sd := Soldier.new()
-		sd.target = player
-		sd.hold_post = g.get("hold", false)
-		sd.post = g.get("post", "")
-		sd.flak = g.get("flak", false)
-		sd.weapon = g.get("weapon", Soldier.WEAPON)
-		sd.distracted = g.get("console", false)
-		if g.route.is_empty():
-			sd.position = g.pos
-			sd.rotation.y = g.rot_y
-		else:
-			sd.position = g.route[0]
-			var next: Vector3 = g.route[1] - g.route[0]
-			sd.rotation.y = atan2(-next.x, -next.z)
-			for p in g.route:
-				sd.route.append(p)
-		add_child(sd)
-		soldiers.append(sd)
+		soldiers.append(_spawn_guard(g))
+	# túnel da mina: 2 sentinelas na câmara do meio e 4 no fundo mexendo nos explosivos (andam pela malha dos raptors)
+	for i in Tunnel.GUARDS.size():
+		tunnel.guards.append(_spawn_guard(Tunnel.guard_spot(i)))
+	tunnel.tick.connect(func(left: int) -> void: show_notice("DETONAÇÃO EM %d" % left))
 	Yard.bake_nav(self)
 	var people := Yard.bake_people_nav(self)
 	for sd: Soldier in soldiers:
@@ -270,6 +272,7 @@ func _ready() -> void:
 	corpse.noticed.connect(func() -> void: cutscene.play_ambush(player, corpse, yard_raptors))
 	player.locked.connect(_on_locked)
 	player.keypad.connect(_on_keypad)
+	player.ladder_locked.connect(func(_l: Ladder) -> void: inspect.show_message(Catwalk.LOCKED_TEXT))
 	player.read_plate.connect(func(pl: SubjectPlate) -> void: inspect.plate_zoom(pl))
 	key.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	drop.picked.connect(func(d: SupplyDrop) -> void: inspect.show_drop(d))
@@ -336,6 +339,28 @@ func _on_tower_sniper_killed() -> void:
 	if alive.size() == 1:
 		alive[0].loot = gate_card
 		alive[0].falls = true
+
+
+## Guarda (formato de Soldier.GUARDS) criado no lugar dele: parado no posto ou no começo da ronda.
+func _spawn_guard(g: Dictionary) -> Soldier:
+	var sd := Soldier.new()
+	sd.target = player
+	sd.hold_post = g.get("hold", false)
+	sd.post = g.get("post", "")
+	sd.flak = g.get("flak", false)
+	sd.weapon = g.get("weapon", Soldier.WEAPON)
+	sd.distracted = g.get("console", false) or g.has("work")
+	if g.route.is_empty():
+		sd.position = g.pos
+		sd.rotation.y = g.rot_y
+	else:
+		sd.position = g.route[0]
+		var next: Vector3 = g.route[1] - g.route[0]
+		sd.rotation.y = atan2(-next.x, -next.z)
+		for p in g.route:
+			sd.route.append(p)
+	add_child(sd)
+	return sd
 
 
 ## Põe o inimigo no começo da rota, olhando para o próximo ponto, com a rota dele.
@@ -511,7 +536,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_restart_from_overlay()
 	elif event.is_action_pressed("reset"):
 		reset_all()
-	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_G or event.physical_keycode == KEY_G):
+	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_J or event.physical_keycode == KEY_J):
 		var sd: Soldier = soldiers[0] if not soldiers.is_empty() else null
 		if sd:
 			if sd.dead:
@@ -520,7 +545,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			sd.rotation.y = player.rotation.y + PI
 			sd.reset_physics_interpolation()
 			sd.die(-player.global_basis.z, sd.global_position + Vector3.UP * 1.2)
-			show_notice("GUERRILHEIRO RAGDOLL (G para repetir)")
+			show_notice("GUERRILHEIRO RAGDOLL (J para repetir)")
 	elif game_over and _is_restart_event(event):
 		_restart_from_overlay()
 	elif event.is_action_pressed("toggle_help"):
@@ -649,6 +674,9 @@ func reset_all() -> void:
 	drop.reset()
 	for d: Door in get_tree().get_nodes_in_group("doors"):
 		d.reset()
+	for c: ExplosiveCrate in get_tree().get_nodes_in_group("explosives"):
+		c.reset()
+	Fire.clear(get_tree())
 	Fx.clear_decals()
 	Blood.clear()
 	for d in dummies:
@@ -673,6 +701,9 @@ func reset_all() -> void:
 	corpse.reset()
 	for sd in soldiers:
 		sd.reset()
+	for sd in tunnel.guards:
+		sd.reset()
+	tunnel.reset()
 	if is_instance_valid(sniper):
 		sniper.reset()
 		sniper.position = Vector3(-2.0, Catwalk.FLOOR_Y, 11.7)
@@ -768,6 +799,8 @@ func _parse_args() -> void:
 			player.camera_rig.yaw = player.rotation.y
 			player.reset_physics_interpolation()
 		sniper.process_mode = Node.PROCESS_MODE_DISABLED
+	elif _shot.begins_with("crates"):
+		pass  # os guardas andam (os do posto mexem nos caixotes); o sniper sai em _setup_key_shot
 	else:
 		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
 		for sd in soldiers:
@@ -785,9 +818,9 @@ func _parse_args() -> void:
 	elif _shot.begins_with("allo_"):
 		_setup_allo_shot()
 	elif _shot == "arena":
-		# da entrada da pedreira (logo depois do portão), olhando para dentro
+		# da entrada da pedreira (logo depois do portão arrombado do túnel), olhando para dentro
 		if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
-			player.global_position = Vector3(-60, 0, -3)
+			player.global_position = Vector3(Arena.X_NEAR - 3.4, 0, -3)
 			player.rotation.y = PI * 0.5
 			player.reset_physics_interpolation()
 		player.camera_rig.yaw = player.rotation.y
@@ -815,10 +848,12 @@ func _parse_args() -> void:
 			Input.action_press("move_forward")
 		"crouch":
 			Input.action_press("crouch")
-		"lean", "lean_aim":
-			# atrás da fileira de caixas ao sul da barra do T (beirada leste 0,3 m à direita dela), olhando para o norte
+		"lean", "lean_aim", "cover", "cover_crouch", "cover_edge":
+			# atrás da fileira de caixas ao sul da barra do T (beirada leste 0,3 m à direita dela), olhando para o norte;
+			# cover*: ali ela encosta de costas na caixa com o G em 0,6 s (PlayerCover; cover_edge anda de lado até a beirada leste)
 			if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
-				player.global_position = Vector3(2.1, 0, 2.6)
+				# cover*: 0,5 m da caixa e 0,9 m da beirada leste (cover_edge anda até ela)
+				player.global_position = Vector3(2.1, 0, 2.6) if _shot.begins_with("lean") else Vector3(1.5, 0, 2.3)
 				player.rotation.y = 0.0
 				player.camera_rig.yaw = 0.0
 				player.reset_physics_interpolation()
@@ -830,6 +865,8 @@ func _parse_args() -> void:
 		_setup_start_shot()
 	if _shot in TOWER_SHOTS:
 		_setup_tower_shot()
+	if _shot in TUNNEL_SHOTS:
+		_setup_tunnel_shot()
 
 
 func _process(delta: float) -> void:
@@ -844,11 +881,20 @@ func _process(delta: float) -> void:
 		sniper_scope.update_scope(in_sniper, player.sniper_zoom_label(), dist, aim_info.get("blocked", false))
 	if corpse.armed and not inspect.busy:
 		corpse.check_notice()
+	if not cutscene.busy and not inspect.busy and not player.dead:
+		var talkers := tunnel.talk_speakers(player)
+		if not talkers.is_empty():
+			tunnel.talk_armed = false
+			cutscene.play_talk(player, talkers)
+		elif tunnel.lair_ready(player, allosaurus):
+			tunnel.lair_armed = false
+			cutscene.play_lair(player, allosaurus)
 	var target := player.pick_target()
 	var key_node := player.pick_key() if target == null else null
 	var drop_node := player.pick_drop() if target == null and key_node == null else null
 	var plate := player.pick_plate() if target == null and key_node == null and drop_node == null else null
 	var door := player.pick_door() if target == null and key_node == null and drop_node == null and plate == null else null
+	var det := player.pick_detonator() if target == null and key_node == null and drop_node == null and plate == null else null
 	var hatch_node := player.pick_hatch() if target == null and key_node == null and drop_node == null and plate == null and door == null else null
 	var ladder := player.pick_ladder() if target == null and key_node == null and drop_node == null and plate == null and door == null and hatch_node == null else null
 	var verb := ""
@@ -863,6 +909,8 @@ func _process(delta: float) -> void:
 		verb = "ABRIR CAIXA"  # o que tem dentro é surpresa
 	elif plate:
 		verb = "VER PLACA"
+	elif det:
+		verb = "ARMAR DETONADOR"
 	elif door:
 		if door.is_locked() and door.code != "":
 			verb = "USAR CHAVE NO PAINEL" if player.has_key(door.lock) else "PAINEL DO PORTÃO"
@@ -875,6 +923,8 @@ func _process(delta: float) -> void:
 	elif ladder:
 		var info: Dictionary = ladder.can_mount(player.global_position)
 		verb = "DESCER ESCADA" if info.get("at_top", false) else "SUBIR ESCADA"
+	elif player.pick_locked_ladder():
+		verb = "VER ESCADA"
 	# os botões possíveis lado a lado: pegar/abrir (E) e o abate furtivo / golpe crítico (atirar sem mirar)
 	var actions := []
 	if verb != "":
@@ -962,8 +1012,22 @@ func _process(delta: float) -> void:
 				Input.action_press("lean")
 				if _shot == "lean_aim":
 					Input.action_press("aim")
+		"cover", "cover_crouch", "cover_edge":
+			if at.call(0.6):
+				Input.action_press("cover")
+			if at.call(0.65):
+				Input.action_release("cover")
+	match _shot:
+		"cover_crouch":
+			if at.call(0.05):
+				Input.action_press("crouch")
+			if at.call(0.1):
+				Input.action_release("crouch")
+		"cover_edge":
+			if _t > 1.2:
+				Input.action_press("move_right")
 		"danger_roll":
-			# a barra no alto (os guardas já atirando): rola (cai depressa) e volta a subir no fim da esquiva
+			# a barra no alto (os guardas já atirando): rola (cai depressa) e volta a subir no fim da cambalhota
 			if at.call(2.6):
 				Input.action_press("roll")
 			if at.call(2.65):
@@ -1025,6 +1089,8 @@ func _process(delta: float) -> void:
 		_start_shot(at)
 	if _shot in TOWER_SHOTS:
 		_tower_shot(at)
+	if _shot in TUNNEL_SHOTS:
+		_tunnel_shot(at)
 	if _capture != "" and _t >= _until:
 		_save_and_quit()
 
@@ -1068,6 +1134,22 @@ func _setup_start_shot() -> void:
 				_review_cam.fov = 60.0
 				add_child(_review_cam)
 				_review_cam.current = not _player_cam
+		"mezz_climb", "ladder_locked":
+			# no nicho da escada recolhida do mezanino, de frente para a caixa da subida (mezz_climb: escala a caixa,
+			# pula, fica pendurada e sobe; --at escolhe o quadro; ladder_locked: E embaixo da escada, salva no aviso)
+			spot.call(Vector3(Catwalk.CLIMB_CRATE.x, 0, Catwalk.CLIMB_CRATE.z - 0.95), PI)
+			if _shot == "ladder_locked" and _capture != "":
+				inspect.on_shown = _save_and_quit
+			if _shot == "mezz_climb":
+				_review_cam = Camera3D.new()
+				_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+				_review_cam.fov = 60.0
+				add_child(_review_cam)
+				_review_cam.current = true
+				var a := 0.0 if is_nan(_yaw) else _yaw
+				var look := Vector3(Catwalk.CLIMB_CRATE.x, 1.9, Catwalk.FRONT_Z)
+				_review_cam.global_position = look + Vector3(sin(a) * 2.8, 1.5, -cos(a) * 2.8)
+				_review_cam.look_at(look)
 		"maze":
 			# no pé da escada do telhado, olhando para o labirinto (oeste)
 			spot.call(hatch.ladder.bottom_pos + hatch.ladder.ladder_out * 0.45, PI * 0.5)
@@ -1149,6 +1231,21 @@ func _start_shot(at: Callable) -> void:
 				var mid := hatch.kneel_point().lerp(hatch.ladder.top_pos, 0.5) + Vector3.UP * 0.6
 				_review_cam.global_position = mid + Vector3(sin(a), 0.0, -cos(a)) * 2.6 + Vector3.UP * 0.5
 				_review_cam.look_at(mid)
+		"ladder_locked":
+			if at.call(0.3):
+				Input.action_press("interact")
+			if at.call(0.35):
+				Input.action_release("interact")
+		"mezz_climb":
+			if at.call(0.2):
+				Input.action_press("move_forward")
+			if at.call(0.5):
+				Input.action_release("move_forward")
+			for sec: float in [0.3, 2.2, 3.6]:
+				if at.call(sec):
+					Input.action_press("jump")
+				if at.call(sec + 0.05):
+					Input.action_release("jump")
 		"ladder_roof":
 			# só na captura (que fecha o jogo no fim); jogando com --shot o direcional fica com quem joga
 			if _t > 0.3 and _capture != "":
@@ -1231,6 +1328,93 @@ func _tower_shot(at: Callable) -> void:
 			Input.action_release("interact")
 
 
+## Revisão do túnel da mina: o portão do pátio aberto, ela no lugar de cada parte (ver TUNNEL_SHOTS).
+func _setup_tunnel_shot() -> void:
+	corpse.armed = false
+	for d: Door in get_tree().get_nodes_in_group("doors"):
+		if d.room == 1:
+			d.unlock()
+	var spot := func(at: Vector3, yaw: float) -> void:
+		player.global_position = at
+		player.rotation.y = yaw
+		player.camera_rig.yaw = yaw
+		player.reset_physics_interpolation()
+	var west := PI * 0.5  # olhando para -X (para dentro do túnel)
+	var z := Tunnel.Z
+	match _shot:
+		"tunnel":
+			spot.call(Vector3(Tunnel.X_NEAR - 1.5, 0, z), west)
+		"tunnel_mid":
+			tunnel.guards[0].process_mode = Node.PROCESS_MODE_DISABLED
+			tunnel.guards[1].process_mode = Node.PROCESS_MODE_DISABLED
+			spot.call(Vector3(-75.0, 0, z), west)
+		"tunnel_far":
+			tunnel.talk_armed = false
+			spot.call(Vector3(-97.0, 0, z + 1.0), west)
+			player.crouching = true
+		"tunnel_talk":
+			spot.call(Vector3(-92.5, 0, z + 0.6), west)
+			player.crouching = true
+		"tunnel_boom":
+			tunnel.talk_armed = false
+			for i in range(2, Tunnel.GUARDS.size()):
+				var sd := tunnel.guards[i]
+				sd.take_hit(9999, Vector3.UP, sd.global_position + Vector3.UP * 1.2)
+			var dp := Tunnel.detonator_point()
+			var face := Tunnel.guard_spot(Tunnel.TALKERS[0]).rot_y as float
+			spot.call(dp, face)
+			_review_cam = Camera3D.new()
+			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			_review_cam.fov = 60.0
+			add_child(_review_cam)
+			_review_cam.current = not _player_cam
+		"lair":
+			tunnel.talk_armed = false
+			tunnel._breach()
+			spot.call(Vector3(Tunnel.LAIR_X + 0.4, 0, z), west)
+			for r in raptors:
+				r.process_mode = Node.PROCESS_MODE_DISABLED
+			# alossauro perto da entrada, para a cena caber no quadro (a ronda dele é longe)
+			allosaurus.route.clear()
+			allosaurus.global_position = Vector3(Arena.X_NEAR - 16.0, 0, z + 3.0)
+			allosaurus.rotation.y = -PI * 0.5
+			allosaurus.reset_physics_interpolation()
+	if _shot != "tunnel_mid":
+		for i in 2:
+			tunnel.guards[i].process_mode = Node.PROCESS_MODE_DISABLED  # longe dela; parados não atrapalham as outras
+
+
+func _tunnel_shot(at: Callable) -> void:
+	match _shot:
+		"tunnel_talk":
+			# anda agachada até a cena começar
+			if not cutscene.busy and tunnel.talk_armed:
+				Input.action_press("move_forward")
+			else:
+				Input.action_release("move_forward")
+		"tunnel_boom":
+			if at.call(0.3):
+				Input.action_press("interact")
+			if at.call(0.4):
+				Input.action_release("interact")
+			# corre para o meio do corredor e por ele até a câmara do meio (fora do alcance da explosão)
+			if _t >= 0.6 and _t < 4.8:
+				var goal := Vector3(-93.0, 0, Tunnel.Z)
+				var d := goal - player.global_position
+				player.rotation.y = atan2(-d.x, -d.z)
+				player.camera_rig.yaw = player.rotation.y
+				Input.action_press("move_forward")
+			if at.call(4.8):
+				Input.action_release("move_forward")
+			_review_cam.global_position = Vector3(-98.0, 2.6, Tunnel.Z + 2.4)
+			_review_cam.look_at(Vector3(-110.0, 1.4, Tunnel.Z - 0.5))
+		"lair":
+			if not cutscene.busy and tunnel.lair_armed:
+				Input.action_press("move_forward")
+			else:
+				Input.action_release("move_forward")
+
+
 ## Revisão do container trancado, da chave e da M79: põe a jogadora no lugar e aperta os botões na hora certa. As telas
 ## de inspeção pausam o jogo (e o relógio da captura): a captura é salva quando a tela termina de aparecer.
 func _setup_key_shot() -> void:
@@ -1244,6 +1428,8 @@ func _setup_key_shot() -> void:
 		"ambush": [corpse.stand_point() + Vector3(5.8, 0, -2.0), PI * 0.4],
 		# de frente para o fundo do galpão: a granada cai no chão a ~7 m
 		"fire_m79": [Vector3(-1.0, 0, 5.0), 0.0], "m79_aim": [Vector3(-2.4, 0, 1.6), 0.0],
+		"crates": [CRATES_FROM, 0.0], "crates_fire": [CRATES_FROM, 0.0], "crates_ping": [CRATES_FROM, 0.0],
+		"crates_close": [CRATES_FROM, 0.0], "crates_boom": [CRATES_FROM, 0.0],
 	}
 	player.global_position = spots[_shot][0]
 	player.rotation.y = spots[_shot][1]
@@ -1271,10 +1457,22 @@ func _setup_key_shot() -> void:
 		player.add_key(locker.lock)
 	if _shot == "pickup_m79":
 		locker.unlock()
-	if _shot in ["m79_aim", "fire_m79"]:
+	if _shot in ["m79_aim", "fire_m79", "crates", "crates_fire"]:
 		for d in dummies:
 			d.visible = false
 		player.give_weapon("m79")
+	if _shot.begins_with("crates"):
+		var to := CRATES_AIM - player.global_position
+		player.rotation.y = atan2(-to.x, -to.z)
+		player.camera_rig.yaw = player.rotation.y
+		sniper.process_mode = Node.PROCESS_MODE_DISABLED
+		sniper.visible = false
+		if _shot in ["crates_close", "crates_boom"]:
+			_review_cam = Camera3D.new()
+			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			_review_cam.fov = 50.0
+			add_child(_review_cam)
+			_review_cam.current = not _player_cam
 
 
 func _key_shot(at: Callable) -> void:
@@ -1313,6 +1511,21 @@ func _key_shot(at: Callable) -> void:
 				player.camera_rig.look_at_point(Vector3(-1.0, 0.0, -2.0))
 			if at.call(0.6):
 				player.fire()
+		"crates", "crates_fire", "crates_ping":
+			Input.action_press("aim")
+			if _t < 0.8:
+				player.camera_rig.look_at_point(CRATES_AIM)
+			if _shot != "crates" and at.call(0.8):
+				player.fire()
+		"crates_close", "crates_boom":
+			if _shot == "crates_boom" and at.call(1.0):
+				Grenade.explode(self, CRATES_AIM + Vector3(0, -0.1, 0.26), Vector3.BACK)
+			if _review_cam:
+				var a := deg_to_rad(60.0) if is_nan(_yaw) else _yaw
+				var far := "--dist=" in " ".join(OS.get_cmdline_user_args())
+				var mid := Vector3(-10.2, 1.0, -7.0) if far else Vector3(-9.6, 1.0, -11.3)
+				_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * (_dist if far else 3.6) + Vector3.UP * (2.5 if far else 1.2)
+				_review_cam.look_at(mid)
 
 
 ## Revisão dos movimentos novos: põe a jogadora na frente do obstáculo/baú e aperta os botões na hora certa.
@@ -1329,6 +1542,7 @@ func _setup_move_shot() -> void:
 		# golpes, no meio do telhado (aberto), empurrada para +Z
 		"hit_crouch": [Vector3(0, Roof.Y, 0), 0.0], "stagger": [Vector3(0, Roof.Y, 0), 0.0],
 		"getup": [Vector3(0, Roof.Y, -2.0), 0.0], "getup_fwd": [Vector3(0, Roof.Y, -2.0), PI],
+		"roll_side": [Vector3(0, Roof.Y, 0), 0.0], "jump_side": [Vector3(0, Roof.Y, 0), 0.0],
 	}
 	if _shot in spots:
 		player.global_position = spots[_shot][0]
@@ -1341,8 +1555,9 @@ func _setup_move_shot() -> void:
 		player.give_weapon("shotgun")
 	if _shot.begins_with("sniper"):
 		player.give_weapon("sniper")
-	if _shot == "pump" or _shot in HURT_SHOTS:
-		# pump: de lado, perto das mãos, para ver a telha indo e voltando; golpes: de lado, seguindo o corpo
+	if _shot == "pump" or _shot == "roll_side" or _shot == "jump_side" or _shot in HURT_SHOTS:
+		# pump: de lado, perto das mãos, para ver a telha indo e voltando; golpes: de lado, seguindo o corpo;
+		# cambalhota: de lado, parada no meio do caminho
 		_review_cam = Camera3D.new()
 		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		_review_cam.fov = 40.0
@@ -1374,18 +1589,20 @@ func _move_shot(at: Callable) -> void:
 			tap.call("jump", 1.2)
 		"pickup", "pickup_shotgun":
 			tap.call("interact", 0.3)
-		"dodge_l", "dodge_r", "dodge_back":
-			# pulinho do survival (com --mode=arcade vira cambalhota); --at escolhe o quadro
-			var side: String = {"dodge_l": "move_left", "dodge_r": "move_right"}.get(_shot, "")
-			if side and at.call(0.35):
-				Input.action_press(side)
+		"jump_side":
+			# pulo para a frente (parada) visto de lado, câmera parada no meio do caminho (do +X; --yaw gira)
+			tap.call("jump", 0.4)
+			var mid := Vector3(0, Roof.Y + 0.8, -0.7)
+			var a := PI * 0.5 + (0.0 if is_nan(_yaw) else _yaw - PI * 0.5)
+			_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * 4.2 + Vector3.UP * 0.2
+			_review_cam.look_at(mid)
+		"roll_side":
+			# cambalhota vista de lado, câmera parada no meio do caminho (do +X; --yaw gira); --at escolhe o quadro
 			tap.call("roll", 0.4)
-			if side and at.call(0.5):
-				Input.action_release(side)
-		"dodge_roll":
-			# clique duplo no X: cambalhota
-			tap.call("roll", 0.4)
-			tap.call("roll", 0.5)
+			var mid := Vector3(0, Roof.Y + 0.6, -0.85)
+			var a := PI * 0.5 + (0.0 if is_nan(_yaw) else _yaw - PI * 0.5)
+			_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * 4.2 + Vector3.UP * 0.4
+			_review_cam.look_at(mid)
 		"hit_crouch":
 			# agachada leva tiro pela frente e depois pela direita (a reação soma por cima, sem ficar em pé)
 			tap.call("crouch", 0.05)
@@ -1607,7 +1824,7 @@ func _setup_allo_shot() -> void:
 	a.route.clear()
 	for r in raptors:
 		r.process_mode = Node.PROCESS_MODE_DISABLED
-	a.global_position = Vector3(-80, 0, -3)
+	a.global_position = Vector3(-80 + Arena.DX, 0, -3)
 	a.rotation.y = -PI * 0.5
 	var fwd := Vector3.RIGHT
 	var left := Vector3.FORWARD  # olhando para +X, a esquerda dele é -Z

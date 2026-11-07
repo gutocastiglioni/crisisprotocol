@@ -1,11 +1,11 @@
 extends RefCounted
 ## Testes dos movimentos novos e do fuzil, chamados por run_tests.gd (usa check/_fresh_world/_frames de lá):
-## passos sem deslizar, andar agachada e mirando, cambalhota com projeção, pulo, pendurar/subir/soltar,
+## passos sem deslizar, andar agachada e mirando, cambalhota rente ao chão, pulo, pendurar/subir/soltar,
 ## escalar obstáculo baixo, baú com M16 (ajoelha, pega, empunha) e troca de arma.
 
 const NEW_ANIMS := [
 	"CrouchWalk", "CrouchStrafeL", "CrouchStrafeR", "Jump", "Fall", "Hang", "ClimbUp", "Mantle",
-	"RifleHold", "RifleAim", "RifleShoot", "Pickup", "DodgeL", "DodgeR", "DodgeBack",
+	"RifleHold", "RifleAim", "RifleShoot", "Pickup",
 ]
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -20,6 +20,7 @@ func run(runner: SceneTree) -> void:
 	await test_crouch_aim_strafe()
 	await test_roll_projection()
 	await test_jump()
+	await test_air_grab()
 	await test_hang_and_climb()
 	await test_hang_drop()
 	await test_low_ledge_climbs_from_jump()
@@ -77,7 +78,7 @@ func test_assets() -> void:
 		t.check(inst.find_child(n, true, false) != null, "nó " + n + " no modelo")
 	inst.free()
 	var d := Moves.data()
-	t.check(d.has("roll") and d.has("dodge") and d.has("climb") and d.has("mantle") and d.has("rifle"), "medidas dos movimentos (heroine_moves.json)")
+	t.check(d.has("roll") and not d.has("dodge") and d.has("climb") and d.has("mantle") and d.has("rifle"), "medidas dos movimentos (heroine_moves.json)")
 	var chest_rifle: Node = load("res://assets/characters/m16.glb").instantiate()
 	var rifle_mesh: MeshInstance3D = chest_rifle.find_children("*", "MeshInstance3D", true, false)[0]
 	t.check(rifle_mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV].size() > 0, "m16.glb (fuzil do baú) com UV para o atlas")
@@ -153,7 +154,7 @@ func test_crouch_walk() -> void:
 	await t._frames(60)
 	Input.action_release("move_forward")
 	t.check(p.crouching and p.model.state == "crouch_walk", "agachada + frente = anda agachada", p.model.state)
-	t.check(absf((z0 - p.global_position.z) - Moves.speed("crouch_walk")) < 0.05, "agachada anda devagar, na velocidade do ciclo", "%.2f m/s" % (z0 - p.global_position.z))
+	t.check(absf((z0 - p.global_position.z) - Moves.speed("crouch_walk") * Player.CROUCH_WALK_SCALE) < 0.05, "agachada anda na velocidade do ciclo x CROUCH_WALK_SCALE", "%.2f m/s" % (z0 - p.global_position.z))
 	await t._frames(10)
 	t.check(p.model.state == "crouch", "agachada parada")
 
@@ -193,12 +194,21 @@ func test_roll_projection() -> void:
 	var z0 := p.global_position.z
 	await _tap("roll")
 	t.check(p.rolling and p.model.state == "roll" and p.is_dodging(), "cambalhota começa e esquiva")
-	await t._frames(20)
-	t.check(p.global_position.z < z0 - 0.7, "projeção: já mergulhou para a frente no começo", "%.2f" % (p.global_position.z - z0))
-	await t._frames(60)
+	var top := {"y": p.global_position.y}
+	for i in 20:
+		await t._frames(1)
+		top.y = maxf(top.y, p.global_position.y)
+	t.check(p.global_position.z < z0 - 0.3, "já sai andando para a frente no começo", "%.2f" % (p.global_position.z - z0))
+	await t._frames(50)
 	t.check(not p.rolling, "cambalhota termina")
 	var dist := z0 - p.global_position.z
-	t.check(dist > 3.5 and dist < 4.5, "cambalhota longa (não fica num ponto só)", "%.2f m" % dist)
+	t.check(dist > 1.8 and dist < 2.3, "cambalhota contida: ~2 m, só uma projeção curta", "%.2f m" % dist)
+	t.check(top.y < 0.05, "rente ao chão: o corpo não pula", "%.2f m" % top.y)
+	var f: Dictionary = Moves.data().roll
+	var up := 0.0
+	for k in f.path:
+		up = maxf(up, absf(k[2]))
+	t.check(int(f.frames) <= 30 and up == 0.0, "caminho sem subida (sem voo)", "%d quadros" % int(f.frames))
 
 
 func test_jump() -> void:
@@ -211,6 +221,37 @@ func test_jump() -> void:
 	t.check(p.model.state == "jump", "pulo: animação", p.model.state)
 	await t._frames(60)
 	t.check(p.is_on_floor() and p.model.state == "idle", "pulo: cai de pé", p.model.state)
+	t.check(p.global_position.z < -0.9, "pulo parada vai para a frente (~1,2 m)", "%.2f" % p.global_position.z)
+
+
+## Pulo para a frente na direção de uma borda que está longe demais no começo do pulo: no ar, com a borda na altura
+## das mãos, agarra e fica pendurada.
+func test_air_grab() -> void:
+	var w := await _world()
+	_box(w, Vector3(2, 2.4, 2), Vector3(0, 1.2, -2.9))  # parede em z = -1.9 (fora do alcance parada)
+	var p := _player(w, Vector3(0, 0, 0.0))
+	await t._frames(10)
+	await _tap("jump")
+	t.check(p.moves.mode == "" and not p.is_on_floor() or p.velocity.y > 0.0, "borda longe: sai no pulo para a frente", p.moves.mode)
+	var grabbed := false
+	for i in 60:
+		await t._frames(1)
+		if p.moves.mode in ["grab", "hang"]:
+			grabbed = true
+			break
+	t.check(grabbed, "no ar, de frente para a borda na altura das mãos: agarra", str(p.global_position))
+	await t._frames(30)
+	t.check(p.moves.hanging(), "agarrou no ar: fica pendurada", p.moves.mode)
+	# soltou: cai sem agarrar de novo na mesma borda
+	await _tap("crouch")
+	await t._frames(60)
+	t.check(p.moves.mode == "" and p.is_on_floor(), "soltou: cai no chão sem agarrar de novo", p.moves.mode)
+	# caindo sem pular (de cima da caixa, de costas para outra borda) não agarra
+	var w2 := await _world()
+	_box(w2, Vector3(2, 2.4, 2), Vector3(0, 1.2, -1.6))
+	var q := _player(w2, Vector3(0, 0.8, 0.0))  # no ar, de frente para a borda (1,6 m acima dos pés), sem ter pulado
+	await t._frames(40)
+	t.check(q.moves.mode == "" and q.is_on_floor(), "caindo sem pular: não agarra a borda", q.moves.mode)
 
 
 ## Caixa de 2,4 m: pula, agarra, fica pendurada (mãos na borda), sobe e termina de pé em cima.
@@ -414,11 +455,11 @@ func test_gamepad_buttons() -> void:
 	var w := await _world()
 	var p := _player(w)
 	await t._frames(10)
-	t._joy_button(JOY_BUTTON_X, true)
+	t._joy_button(JOY_BUTTON_A, true)
 	await t._frames(2)
-	t._joy_button(JOY_BUTTON_X, false)
+	t._joy_button(JOY_BUTTON_A, false)
 	await t._frames(6)
-	t.check(not p.is_on_floor() and p.velocity.y != 0.0, "botão X (quadrado) = pular")
+	t.check(not p.is_on_floor() and p.velocity.y != 0.0 and not p.crouching, "botão A (X) = pular, sem agachar")
 	await t._frames(60)
 	p.give_weapon("m16")
 	t._joy_button(JOY_BUTTON_BACK, true)

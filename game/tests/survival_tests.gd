@@ -1,6 +1,6 @@
 extends RefCounted
 ## Testes do perfil "survival" de GameMode (câmera por cima do ombro, só atira mirando, munição limitada e itens, cada arma
-## muda o movimento, inimigos que machucam o dobro, pulinho de esquiva com intervalo no lugar da cambalhota) e conferência de que o "arcade" continua o
+## muda o movimento, inimigos que machucam o dobro, cambalhota com intervalo) e conferência de que o "arcade" continua o
 ## de antes. Chamado por run_tests.gd (usa check/_fresh_world/_frames/_spawn_player de lá); o runner volta ao "arcade" no fim.
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -19,12 +19,14 @@ func run(runner: SceneTree) -> void:
 	await test_aim_lock()
 	await test_shoulder_camera()
 	await test_back_walk()
+	await test_smart_side()
 	await test_recoil_kick()
 	await test_roll_cooldown()
-	await test_short_dodge()
-	await test_dodge_edge_cases()
-	await test_dodge_beats_charges()
-	await test_double_x_roll()
+	await test_survival_roll()
+	await test_roll_edge_cases()
+	await test_roll_beats_charges()
+	await test_raptor_bite_damage()
+	await test_pack_turns()
 	await test_arcade_unchanged()
 	GameMode.set_mode(GameMode.ARCADE)
 
@@ -82,7 +84,7 @@ func test_enemy_damage() -> void:
 	w.add_child(r)
 	await t._frames(3)
 	r._strike("tail", Vector3.BACK)
-	t.check(p.health == 100 - 2 * Raptor.DAMAGE.tail, "survival: rabada do raptor tira o dobro", str(p.health))
+	t.check(p.health == 100 - Raptor.SURVIVAL_DAMAGE.tail, "survival: rabada do raptor pela tabela do survival", str(p.health))
 	var s := Soldier.new()
 	s.position = Vector3(0, 0, -12)
 	s.target = p
@@ -369,11 +371,11 @@ func test_shoulder_camera() -> void:
 	var yaw0 := rig.yaw
 	await t._frames(60)
 	t.check(absf(angle_difference(yaw0, rig.yaw)) < 0.01, "survival: parada, a câmera fica onde o analógico a deixou", str(rig.yaw - yaw0))
-	# soltou e andou: volta para trás dela, olhando para onde ela olha, na inclinação inicial
-	Input.action_press("move_forward")
+	# andando também não gira sozinha atrás dela
+	Input.action_press("move_left")
 	await t._frames(120)
-	Input.action_release("move_forward")
-	t.check(absf(angle_difference(rig.yaw, p.rotation.y)) < 0.1 and absf(rig.pitch - CameraRig.SHOULDER.pitch) < 0.05, "survival: andou, a câmera volta para trás dela", "%f %f" % [angle_difference(rig.yaw, p.rotation.y), rig.pitch])
+	Input.action_release("move_left")
+	t.check(absf(angle_difference(yaw0, rig.yaw)) < 0.01, "survival: andando, a câmera não gira sozinha atrás dela", str(rig.yaw - yaw0))
 	# mirando, não volta sozinha
 	await t._frames(30)
 	Input.action_press("aim")
@@ -402,7 +404,7 @@ func test_shoulder_camera() -> void:
 
 
 
-## Survival: para trás ela anda de costas, sem virar, e a câmera fica atrás dela; no arcade ela vira e corre.
+## Survival: para trás ela anda de costas, sem virar; no arcade ela vira e corre.
 func test_back_walk() -> void:
 	for crouch in [false, true]:
 		var w: Node3D = await t._fresh_world()
@@ -420,9 +422,9 @@ func test_back_walk() -> void:
 		Input.action_release("move_back")
 		var label := "agachada" if crouch else "em pé"
 		t.check(absf(angle_difference(yaw0, p.rotation.y)) < 0.05, "survival %s: para trás não vira" % label, str(angle_difference(yaw0, p.rotation.y)))
-		t.check(moved > 0.8 and moved < Moves.speed("walk") * 1.6, "survival %s: anda de costas devagar" % label, "%.2f m" % moved)
+		var gait_speed := Moves.speed("crouch_walk") * Player.CROUCH_WALK_SCALE if crouch else Moves.speed("walk")
+		t.check(moved > 0.8 and moved < gait_speed * 1.6, "survival %s: anda de costas devagar" % label, "%.2f m" % moved)
 		t.check(state == ("crouch_walk" if crouch else "walk"), "survival %s: andar ao contrário" % label, state)
-		t.check(absf(angle_difference(p.camera_rig.yaw, p.rotation.y)) < 0.05, "survival %s: a câmera segue atrás dela" % label)
 		p.queue_free()
 	GameMode.set_mode(GameMode.ARCADE)
 	var w2: Node3D = await t._fresh_world()
@@ -435,6 +437,123 @@ func test_back_walk() -> void:
 	t.check(absf(angle_difference(yaw1, p2.rotation.y)) > 2.5, "arcade: para trás ela vira e corre como antes", str(angle_difference(yaw1, p2.rotation.y)))
 	p2.queue_free()
 	GameMode.set_mode(GameMode.SURVIVAL)
+
+
+
+## Survival sem mirar: ombro direito; andando não troca; só passa para o esquerdo com parede/caixa fechando a direita da
+## frente dela, e volta ao direito quando acaba; girar a câmera para o lado dela puxa quase para o centro e volta; mirando,
+## sempre o direito.
+func test_smart_side() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+	await t._frames(40)
+	var rig := p.camera_rig
+	var on_right := func() -> bool: return rig.side_goal == 1.0 and rig.spring.position.x > 0.5
+	var on_left := func() -> bool: return rig.side_goal == -1.0 and rig.spring.position.x < -0.4
+	t.check(on_right.call(), "lado: começa no ombro direito", str(rig.spring.position.x))
+	# andando para a esquerda (aberto): continua no ombro direito
+	Input.action_press("move_left")
+	var walk_min := 1.0
+	for i in 120:
+		await t._frames(1)
+		walk_min = minf(walk_min, rig.spring.position.x)
+	Input.action_release("move_left")
+	t.check(walk_min > 0.5, "lado: andando para a esquerda não troca de ombro", "%.2f" % walk_min)
+	# girando a câmera andando: também não troca
+	Input.action_press("move_forward")
+	await t._frames(20)
+	rig._look(Vector2(-0.4, 0.0))
+	await t._frames(60)
+	Input.action_release("move_forward")
+	t.check(rig.side_goal == 1.0, "lado: girar a câmera andando não troca de ombro")
+	await t._frames(30)
+	# parede colada à direita: o ombro vai para o esquerdo
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.3, 2.6, 3.0)
+	shape.shape = box
+	wall.add_child(shape)
+	w.add_child(wall)
+	var right := rig.yaw_basis().x
+	wall.global_position = p.global_position + right * 0.75 + Vector3.UP * 1.3
+	wall.global_rotation.y = rig.yaw
+	await t._frames(20)
+	t.check(rig.side_goal == 1.0, "lado: parede de passagem não troca na hora")
+	await t._frames(20)
+	t.check(rig.side < 1.0 and rig.side > -0.9, "lado: a troca sai devagar, sem pular", "%.2f" % rig.side)
+	await t._frames(110)
+	t.check(on_left.call(), "lado: parede à direita, a câmera vai para o ombro esquerdo", "%.1f %.2f" % [rig.side_goal, rig.spring.position.x])
+	# a parede saiu: volta ao ombro direito
+	wall.queue_free()
+	await t._frames(150)
+	t.check(on_right.call(), "lado: sem a parede, volta ao ombro direito", "%.1f %.2f" % [rig.side_goal, rig.spring.position.x])
+	# agachada na quina esquerda da caixa em que se esconde (caixa na frente, para a direita): abre a esquerda
+	p.crouching = true
+	var crate := StaticBody3D.new()
+	var cshape := CollisionShape3D.new()
+	var cbox := BoxShape3D.new()
+	cbox.size = Vector3(2.4, 1.5, 1.0)
+	cshape.shape = cbox
+	crate.add_child(cshape)
+	w.add_child(crate)
+	right = rig.yaw_basis().x
+	var fwd := -rig.yaw_basis().z
+	crate.global_position = p.global_position + right * 1.2 + fwd * 0.9 + Vector3.UP * 0.75
+	crate.global_rotation.y = rig.yaw
+	await t._frames(150)
+	t.check(on_left.call(), "lado: agachada na quina esquerda da caixa da frente, abre a esquerda", "%.1f %.2f" % [rig.side_goal, rig.spring.position.x])
+	# caixa da frente inteira (parede reta na frente): os dois lados fechados, fica no direito
+	crate.global_position = p.global_position + fwd * 0.9 + Vector3.UP * 0.75
+	cbox.size = Vector3(8.0, 1.5, 1.0)
+	await t._frames(150)
+	t.check(on_right.call(), "lado: parede reta na frente, fica no ombro direito", "%.1f %.2f" % [rig.side_goal, rig.spring.position.x])
+	w.remove_child(crate)
+	p.crouching = false
+	await t._frames(150)
+	# o caso da captura: agachada na quina DIREITA da caixa (caixa à esquerda dela), o corpo virado para a direita da câmera,
+	# a câmera olhando ao longo da caixa: o lado aberto é o direito, fica no ombro direito
+	p.crouching = true
+	p.rotation.y = rig.yaw - 0.6
+	var body := Basis(Vector3.UP, p.rotation.y)
+	w.add_child(crate)
+	cbox.size = Vector3(2.4, 1.5, 1.0)
+	crate.global_position = p.global_position - body.x * 1.3 + (-body.z) * 0.5 + Vector3.UP * 0.75
+	crate.global_rotation.y = p.rotation.y
+	await t._frames(150)
+	t.check(on_right.call(), "lado: caixa à esquerda dela, virada para a direita: fica no ombro direito", "%.1f %.2f" % [rig.side_goal, rig.spring.position.x])
+	crate.queue_free()
+	p.crouching = false
+	await t._frames(30)
+	# girando a câmera para a esquerda (para o lado dela na tela): a mola a puxa quase para o centro e abre o quadro
+	var min_x := 1.0
+	var max_fov := 0.0
+	for i in 40:
+		rig._look(Vector2(-0.04, 0.0))  # 2,4 rad/s
+		await t._frames(1)
+		min_x = minf(min_x, rig.spring.position.x)
+		max_fov = maxf(max_fov, rig.camera.fov)
+	t.check(min_x < 0.25 and max_fov > CameraRig.SHOULDER.fov + 4.0 and rig.side_goal == 1.0, "giro para a esquerda: quase centraliza e abre o quadro, sem trocar de ombro", "%.2f %.1f" % [min_x, max_fov])
+	await t._frames(90)
+	t.check(rig.spring.position.x > 0.5 and absf(rig.camera.fov - CameraRig.SHOULDER.fov) < 1.0, "parou de girar: volta ao ombro direito", "%.2f %.1f" % [rig.spring.position.x, rig.camera.fov])
+	# girando para a direita: fica no ombro
+	min_x = 1.0
+	for i in 40:
+		rig._look(Vector2(0.04, 0.0))
+		await t._frames(1)
+		min_x = minf(min_x, rig.spring.position.x)
+	t.check(min_x > 0.5, "giro para a direita: não puxa", "%.2f" % min_x)
+	# mirando: sem o efeito, sempre o ombro direito
+	Input.action_press("aim")
+	await t._frames(60)
+	min_x = 1.0
+	for i in 40:
+		rig._look(Vector2(-0.04, 0.0))
+		await t._frames(1)
+		min_x = minf(min_x, rig.spring.position.x)
+	Input.action_release("aim")
+	t.check(absf(min_x - CameraRig.SHOULDER.side_aim) < 0.05, "lado: mirando, sem o puxão, sempre o ombro direito", "%.2f" % min_x)
+	p.queue_free()
 
 
 func test_recoil_kick() -> void:
@@ -478,15 +597,15 @@ func test_roll_cooldown() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 10))
 	await t._frames(10)
-	await _dodge()
-	t.check(p.moves.mode == "dodge", "esquiva começa")
-	await t._frames(int(Moves.data().dodge.frames / Moves.fps() * 60.0) + 6)
-	t.check(p.moves.mode == "", "esquiva termina")
 	await _press_x()
-	t.check(p.moves.mode == "" and p._roll_cd > 0.0, "survival: não encadeia esquiva (intervalo)", str(p._roll_cd))
+	t.check(p.moves.mode == "roll" and p.rolling, "survival: o botão faz a cambalhota (sem pulinho de esquiva)", p.moves.mode)
+	await t._frames(_roll_frames())
+	t.check(p.moves.mode == "", "cambalhota termina")
+	await _press_x()
+	t.check(p.moves.mode == "" and p._roll_cd > 0.0, "survival: não encadeia cambalhota (intervalo)", str(p._roll_cd))
 	await t._frames(60)
-	await _dodge()
-	t.check(p.moves.mode == "dodge", "passado o intervalo, esquiva de novo")
+	await _press_x()
+	t.check(p.moves.mode == "roll", "passado o intervalo, rola de novo")
 	GameMode.set_mode(GameMode.ARCADE)
 	await t._frames(110)
 	await _press_x()
@@ -495,7 +614,12 @@ func test_roll_cooldown() -> void:
 	p.queue_free()
 
 
-## Um clique no X (com `dir` = ação de direção segurada junto, ou nenhuma).
+## Quadros (a 60 por segundo) da cambalhota inteira, com folga.
+func _roll_frames() -> int:
+	return int(float(Moves.data().roll.frames) / Moves.fps() * 60.0) + 6
+
+
+## Um clique no botão de rolar (com `dir` = ação de direção segurada junto, ou nenhuma).
 func _press_x(dir := "") -> void:
 	if dir:
 		Input.action_press(dir)
@@ -506,140 +630,64 @@ func _press_x(dir := "") -> void:
 		Input.action_release(dir)
 
 
-## Um X só: o pulinho sai na hora.
-func _dodge(dir := "") -> void:
-	await _press_x(dir)
-
-
-## Survival: o botão de esquiva dá um pulinho curto sem rolar: parada = para trás, com direção = de lado, sem virar.
-func test_short_dodge() -> void:
+## Survival: parada rola para a frente, com direção rola para lado pedido; curta (~2 m) e sem pulinho.
+func test_survival_roll() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 10))
 	await t._frames(10)
-	var d: Dictionary = Moves.data().dodge
-	var whole := int(float(d.frames) / Moves.fps() * 60.0) + 6
 	var p0 := p.global_position
-	await _dodge()
-	t.check(p.moves.mode == "dodge" and p.model.state == "dodge_back" and not p.rolling and p.is_dodging(), "survival: esquiva parada = pulinho para trás, sem rolar", p.model.state)
-	await t._frames(int(float(d.guard) / Moves.fps() * 60.0) + 2)
-	t.check(p.moves.mode == "dodge" and not p.is_dodging(), "invulnerável só no começo do pulinho (guard)")
-	await t._frames(whole)
-	var back := p.global_position - p0
-	t.check(p.moves.mode == "" and back.z > 1.3 and back.z < 1.8 and absf(back.x) < 0.1, "pulinho para trás: ~1,5 m", "%.2f, %.2f" % [back.x, back.z])
-	t.check(absf(p.rotation.y) < 0.05, "para trás sem girar", str(p.rotation.y))
+	await _press_x()
+	t.check(p.moves.mode == "roll" and p.model.state == "roll" and p.is_dodging(), "survival: parada, rola para a frente", p.model.state)
+	await t._frames(_roll_frames())
+	var moved := p.global_position - p0
+	t.check(p.moves.mode == "" and moved.z < -1.8 and moved.z > -2.3 and absf(moved.x) < 0.1, "cambalhota para a frente: ~2 m", "%.2f, %.2f" % [moved.x, moved.z])
 	await t._frames(90)
-	await _dodge("move_left")
-	p0 = p.global_position  # o pulinho mal saiu do lugar (ainda no impulso)
-	t.check(p.model.state == "dodge_l", "esquerda + esquiva = pulinho para a esquerda", p.model.state)
-	await t._frames(whole)
+	p0 = p.global_position
+	await _press_x("move_left")
+	await t._frames(_roll_frames())
 	var side := p.global_position - p0
-	t.check(side.x < -1.6 and side.x > -2.1 and absf(side.z) < 0.1 and absf(p.rotation.y) < 0.05, "pulinho de lado: ~1,8 m, olhando para a frente", "%.2f, %.2f" % [side.x, side.z])
-	await t._frames(90)
-	await _dodge("move_right")
-	p0 = p.global_position
-	t.check(p.model.state == "dodge_r", "direita + esquiva = pulinho para a direita", p.model.state)
-	await t._frames(whole)
-	t.check(p.global_position.x - p0.x > 1.6, "pulinho para a direita", "%.2f" % (p.global_position.x - p0.x))
-	await t._frames(90)
-	# para a frente não tem pulinho: ela vira o mínimo e pula de lado na direção pedida
-	await _dodge("move_forward")
-	p0 = p.global_position
-	t.check(p.model.state in ["dodge_l", "dodge_r"], "frente + esquiva = pulinho de lado", p.model.state)
-	await t._frames(whole)
-	t.check(p0.z - p.global_position.z > 1.6 and absf(absf(wrapf(p.rotation.y, -PI, PI)) - PI / 2.0) < 0.1, "vai para onde pediu, de lado", "%.2f %.2f" % [p0.z - p.global_position.z, p.rotation.y])
+	t.check(side.x < -1.8 and side.x > -2.3 and absf(side.z) < 0.2, "esquerda + rolar = rola para a esquerda", "%.2f, %.2f" % [side.x, side.z])
 	_release_all()
 	p.queue_free()
 
 
-## Casos de borda: no ar (não sai), agachada (sai), cancelamento por golpe/respawn, com arma longa.
-func test_dodge_edge_cases() -> void:
+## Casos de borda: no ar (não sai), agachada e mirando (sai), reinício no meio (cancela).
+func test_roll_edge_cases() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 10))
 	await t._frames(10)
-	# no ar: esquiva não sai
 	await _tap("jump")
 	await t._frames(10)
 	t.check(not p.is_on_floor(), "no ar")
-	Input.action_press("roll")
-	await t._frames(2)
-	Input.action_release("roll")
-	t.check(p.moves.mode == "" and not p.hopping, "no ar: esquiva não sai", p.moves.mode)
-	await t._frames(60)
-	# agachada: esquiva sai normalmente
+	await _press_x()
+	t.check(p.moves.mode == "" and not p.rolling, "no ar: cambalhota não sai", p.moves.mode)
+	await t._frames(90)
 	await _tap("crouch")
 	await t._frames(5)
-	await _dodge("move_left")
-	t.check(p.moves.mode == "dodge" and p.model.state == "dodge_l", "agachada: esquiva sai", p.model.state)
-	await t._frames(80)
-	# mirando: esquiva sai (a mira desliga durante moves.busy())
+	await _press_x("move_left")
+	t.check(p.moves.mode == "roll" and not p.crouching, "agachada: cambalhota sai", p.moves.mode)
+	await t._frames(_roll_frames() + 30)
 	Input.action_press("aim")
 	await t._frames(20)
 	var was_aiming := p.aiming
-	await _dodge("move_right")
-	t.check(p.moves.mode == "dodge" and was_aiming, "mirando: esquiva sai e desliga a mira", p.model.state)
-	await t._frames(80)
+	await _press_x("move_right")
+	t.check(p.moves.mode == "roll" and was_aiming, "mirando: cambalhota sai", p.moves.mode)
 	Input.action_release("aim")
-	# com arma longa (m16): esquiva sai e a pose é preservada (carregar)
-	p.give_weapon("m16")
+	await t._frames(_roll_frames() + 30)
+	await _press_x()
 	await t._frames(5)
-	await _dodge()
-	await t._frames(10)
-	var carry: float = p.model.tree.get("parameters/carry/blend_amount")
-	t.check(p.moves.mode == "dodge" and carry > 0.5, "M16: esquiva mantém a pose de carregar", "carry=%.2f" % carry)
-	await t._frames(80)
-	# golpe durante hopping: cancel() zera hopping
-	await _dodge("move_left")
-	await t._frames(int(float(Moves.data().dodge.guard) / Moves.fps() * 60.0) - 4)
-	t.check(p.hopping, "esquivando (ainda invulnerável)")
-	p.knockback(Vector3(0, 0, 4))
-	await t._frames(2)
-	t.check(not p.hopping and p.moves.mode == "", "golpe durante esquiva: cancel() zera hopping", "hopping=%s mode=%s" % [p.hopping, p.moves.mode])
-	await t._frames(60)
-	# respawn durante esquiva: cancel() é chamado
-	await _dodge()
-	await t._frames(5)
-	t.check(p.moves.mode == "dodge", "esquivando")
+	t.check(p.moves.mode == "roll", "rolando")
 	p.respawn()
 	await t._frames(2)
-	t.check(p.moves.mode == "" and not p.hopping, "respawn cancela esquiva", "mode=%s hopping=%s" % [p.moves.mode, p.hopping])
+	t.check(p.moves.mode == "" and not p.rolling, "reinício cancela a cambalhota", "mode=%s rolando=%s" % [p.moves.mode, p.rolling])
 	_release_all()
 	p.queue_free()
 
 
-## Um X = o pulinho sai na hora (sem esperar o clique duplo); um segundo X ainda no impulso (DOUBLE_TAP) vira cambalhota
-## dali mesmo; um segundo X depois da janela não faz nada.
-func test_double_x_roll() -> void:
-	var w: Node3D = await t._fresh_world()
-	var p: Player = t._spawn_player(w, Vector3(0, 0, 4))
-	await t._frames(10)
-	var p0 := p.global_position
-	await _press_x()
-	t.check(p.moves.mode == "dodge" and p.model.state == "dodge_back" and p.is_dodging(), "primeiro X: o pulinho sai na hora, invulnerável", "%s %s" % [p.moves.mode, p.model.state])
-	await t._frames(4)
-	var hop := p.global_position.distance_to(p0)
-	await _press_x()
-	t.check(p.moves.mode == "roll" and p.rolling and p.model.state == "roll", "clique duplo: o pulinho vira cambalhota", p.moves.mode)
-	t.check(hop < 0.25, "o pulinho ainda estava no impulso (quase parada) quando virou cambalhota", "%.2f m" % hop)
-	await _until(func() -> bool: return p.moves.mode == "", 120)
-	var moved := p.global_position - p0
-	t.check(moved.z > 3.5 and absf(moved.x) < 0.2, "clique duplo parada: cambalhota para trás", "%.2f, %.2f" % [moved.x, moved.z])
-	t.check(p._roll_cd > 0.0, "a cambalhota do clique duplo também conta o intervalo", str(p._roll_cd))
-	await t._frames(90)
-	await _dodge()
-	t.check(p.moves.mode == "dodge", "um X só: pulinho")
-	await t._frames(int(PlayerMoves.DOUBLE_TAP * 60.0) + 2)
-	await _press_x()
-	t.check(p.moves.mode == "dodge", "segundo X devagar (fora da janela): continua só o pulinho", p.moves.mode)
-	await _until(func() -> bool: return p.moves.mode == "", 60)
-	t.check(p.moves.mode == "", "e termina sem rolar")
-	_release_all()
-	p.queue_free()
-
-
-## O pulinho na hora certa escapa da investida do raptor e da do alossauro (que vira bote quando chega perto);
-## sem esquivar, as mesmas investidas pegam (o teste não passa à toa).
-func test_dodge_beats_charges() -> void:
-	for dodge in [false, true]:
+## A cambalhota na hora certa escapa da investida do raptor e da do alossauro (que vira bote quando chega perto);
+## sem rolar, as mesmas investidas pegam (o teste não passa à toa).
+func test_roll_beats_charges() -> void:
+	for roll in [false, true]:
 		var w: Node3D = await t._fresh_world()
 		var p: Player = t._spawn_player(w, Vector3(0, 0, 12))
 		var r := Raptor.new()
@@ -650,15 +698,15 @@ func test_dodge_beats_charges() -> void:
 		await t._frames(10)
 		r.start_charge(false)
 		await _until(func() -> bool: return r.global_position.distance_to(p.global_position) < 3.0, 120)
-		if dodge:
-			await _dodge("move_left")
+		if roll:
+			await _press_x("move_left")
 		await _until(func() -> bool: return r.state != "charge", 120)
 		await t._frames(30)
 		var hurt := p.health < 100 or p.model.is_ragdoll()
-		t.check(hurt != dodge, "raptor: investida %s" % ("esquivada com o pulinho" if dodge else "acerta sem esquiva"), "vida=%d" % p.health)
+		t.check(hurt != roll, "raptor: investida %s" % ("escapada rolando" if roll else "acerta sem rolar"), "vida=%d" % p.health)
 		r.queue_free()
 		p.queue_free()
-	for dodge in [false, true]:
+	for roll in [false, true]:
 		var w: Node3D = await t._fresh_world()
 		var p: Player = t._spawn_player(w, Vector3(0, 0, 16))
 		var a := Allosaurus.new()
@@ -670,11 +718,11 @@ func test_dodge_beats_charges() -> void:
 		a.start_charge()
 		# quem joga reage quando ele dá o bote (ou já está em cima)
 		await _until(func() -> bool: return (a.state == "bite" and a._t > 0.15) or a.global_position.distance_to(p.global_position) < 3.2, 240)
-		if dodge:
-			await _dodge("move_left")
+		if roll:
+			await _press_x("move_left")
 		await t._frames(90)
 		var hurt := p.health < 100 or p.grabbed or p.model.is_ragdoll()
-		t.check(hurt != dodge, "alossauro: investida/bote %s" % ("esquivado com o pulinho" if dodge else "pega sem esquiva"), "vida=%d estado=%s" % [p.health, a.state])
+		t.check(hurt != roll, "alossauro: investida/bote %s" % ("escapado rolando" if roll else "pega sem rolar"), "vida=%d estado=%s" % [p.health, a.state])
 		a.queue_free()
 		p.queue_free()
 	_release_all()
@@ -707,3 +755,92 @@ func test_arcade_unchanged() -> void:
 	t.check(absf(angle_difference(yaw0, rig.yaw)) > 0.2, "arcade: a câmera volta sozinha para trás dela", str(rig.yaw - yaw0))
 	p.queue_free()
 	GameMode.set_mode(GameMode.SURVIVAL)
+
+
+## Agarrão inteiro do raptor (sem se debater) tira no máximo ~1/4 da vida.
+func test_raptor_bite_damage() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 1.6))
+	var r := Raptor.new()
+	r.rotation.y = PI
+	r.target = p
+	w.add_child(r)
+	await t._frames(3)
+	r.start_bite()
+	for i in 40:
+		if p.grabbed:
+			break
+		await t._frames(1)
+	t.check(p.grabbed, "survival: mordida agarra")
+	for i in 200:
+		if not p.grabbed:
+			break
+		await t._frames(1)
+	t.check(not p.grabbed and p.health >= 100 - 4 * Raptor.SURVIVAL_DAMAGE.bite and p.health < 100, "survival: agarrão inteiro tira até 24", str(p.health))
+
+
+## Matilha: 3 raptors em volta dela atacam um de cada vez, com intervalo entre um ataque e o próximo, e os que esperam
+## ficam parados em lugares espalhados em volta dela, observando (Study), sem rodear.
+func test_pack_turns() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 0))
+	var pack: Array[Raptor] = []
+	for i in 3:
+		var r := Raptor.new()
+		var a := TAU * i / 3.0
+		r.position = Vector3(sin(a), 0, cos(a)) * 5.0
+		r.rotation.y = a
+		r.target = p
+		r.rng.seed = 11 + i
+		w.add_child(r)
+		pack.append(r)
+	await t._frames(3)
+	for r in pack:
+		r.end_ambush()
+	var most := 0
+	var starts := 0
+	var gap_min := INF
+	var last_end := -INF
+	var busy_before := false
+	var spread_min := INF
+	var pairs := 0
+	var wait_frames := 0
+	var still_frames := 0
+	var her_at := p.global_position
+	var her_still := 0.0  # há quanto tempo ela não sai do lugar (golpe que a arremessa muda os lugares deles)
+	for f in 60 * 20:
+		await t._frames(1)
+		p.health = 100  # só a coordenação importa aqui
+		var busy := pack.filter(func(r: Raptor) -> bool: return r.state in Raptor.ATTACKS)
+		most = maxi(most, busy.size())
+		var now := Raptor._now()
+		if not busy.is_empty() and not busy_before:
+			starts += 1
+			if last_end > -INF:
+				gap_min = minf(gap_min, now - last_end)
+		if busy.is_empty() and busy_before:
+			last_end = now
+		busy_before = not busy.is_empty()
+		# os que esperam a vez há um tempo: espalhados em volta dela (nenhum par colado do mesmo lado)
+		var waiting := pack.filter(func(r: Raptor) -> bool: return r._waiting and r._turn_wait > 1.5)
+		if p.global_position.distance_to(her_at) > 0.3:
+			her_at = p.global_position
+			her_still = 0.0
+		her_still += 1.0 / 60.0
+		for r: Raptor in waiting.filter(func(_r: Raptor) -> bool: return her_still > 3.0):
+			wait_frames += 1
+			if Vector2(r.velocity.x, r.velocity.z).length() < 0.15 and r.model.current == "Study":
+				still_frames += 1
+		for i in waiting.size():
+			for j in range(i + 1, waiting.size()):
+				var u: Vector3 = waiting[i].global_position - p.global_position
+				var v: Vector3 = waiting[j].global_position - p.global_position
+				u.y = 0.0
+				v.y = 0.0
+				spread_min = minf(spread_min, absf(u.signed_angle_to(v, Vector3.UP)))
+				pairs += 1
+	t.check(most == 1, "matilha: só um ataca por vez", str(most))
+	t.check(starts >= 3, "matilha: os ataques continuam vindo", str(starts))
+	t.check(gap_min >= Raptor.PACK_GAP.x - 0.6, "matilha: espera entre um ataque e o próximo", "%.2f s" % gap_min)
+	t.check(pairs > 60 and spread_min > deg_to_rad(60.0), "matilha: quem espera cerca espalhado", "%.0f° (%d)" % [rad_to_deg(spread_min), pairs])
+	t.check(wait_frames > 120 and still_frames > wait_frames * 0.9, "matilha: quem espera fica parado observando (não rodeia)", "%d/%d" % [still_frames, wait_frames])

@@ -24,19 +24,27 @@ const COLORS := {
 	"m79": Color(0.45, 1.0, 0.3), "sniper": Color(0.2, 0.8, 1.0),
 	"health": Color(1.0, 0.15, 0.12),
 }
-## onde ficam: galpão (as armas dos baús já trazem a munição delas), pátio da mata (na beira da estrada, longe das árvores)
-## e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de munição dela) ou "health".
+## onde ficam: galpão (as armas dos baús já trazem a munição delas), pátio da mata (na beira da estrada, longe das árvores),
+## túnel da mina e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de munição dela) ou "health".
 const LAYOUT := [
 	{"pos": Vector3(-11.5, 0, 3.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-18.0, 0, -3.4), "kind": "shotgun", "amount": 3},
 	{"pos": Vector3(-39.0, 0, -8.2), "kind": "pistol", "amount": 8},
 	{"pos": Vector3(-47.5, 0, -6.25), "kind": "m16", "amount": 10},
 	{"pos": Vector3(-52.0, 0, -3.0), "kind": "health", "amount": 35},
-	{"pos": Vector3(-61.0, 0, -1.0), "kind": "pistol", "amount": 8},
-	{"pos": Vector3(-72.0, 0, 0.5), "kind": "m16", "amount": 15},
-	{"pos": Vector3(-82.0, 0, -5.5), "kind": "health", "amount": 35},
-	{"pos": Vector3(-83.5, 0, -5.5), "kind": "m79", "amount": 3},
-	{"pos": Vector3(-98.0, 0, 5.5), "kind": "shotgun", "amount": 5},
+	# túnel da mina: na boca, na câmara do meio (atrás das caixas, perto dos dois guardas) e antes do fundo
+	{"pos": Vector3(-63.0, 0, Tunnel.Z + 2.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-77.0, 0, Tunnel.Z - 3.8), "kind": "m16", "amount": 10},
+	{"pos": Vector3(-81.0, 0, Tunnel.Z + 2.6), "kind": "shotgun", "amount": 3},
+	{"pos": Vector3(-82.7, 0, Tunnel.Z - 3.9), "kind": "health", "amount": 35},
+	{"pos": Vector3(-91.0, 0, Tunnel.Z + 1.5), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-96.0, 0, Tunnel.Z - 2.0), "kind": "m79", "amount": 2},
+	# pedreira (as posições de antes + Arena.DX, empurrada pelo túnel)
+	{"pos": Vector3(-61.0 + Arena.DX, 0, -1.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-72.0 + Arena.DX, 0, 0.5), "kind": "m16", "amount": 15},
+	{"pos": Vector3(-82.0 + Arena.DX, 0, -5.5), "kind": "health", "amount": 35},
+	{"pos": Vector3(-83.5 + Arena.DX, 0, -5.5), "kind": "m79", "amount": 3},
+	{"pos": Vector3(-98.0 + Arena.DX, 0, 5.5), "kind": "shotgun", "amount": 5},
 ]
 
 var kind := "pistol"

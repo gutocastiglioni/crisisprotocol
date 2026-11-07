@@ -40,14 +40,24 @@ const POSTS := [
 	{"pos": Vector3(-28, 0, -13), "route": [Vector3(-28, 0, -13), Vector3(-38, 0, -14.5), Vector3(-48, 0, -13), Vector3(-40, 0, -12)]},
 ]
 const LAMPS := [Vector3(-21, 0, -6.5), Vector3(-40, 0, -6.2), Vector3(-47.5, 0, 1.0)]
-## Guerrilheiro morto com a chave do container (Corpse), no meio da clareira, perto da estrada e de um poste; em volta,
-## CLEARING metros sem nada sólido (os raptors da emboscada entram e rodeiam ela ali). CORPSE_YAW 0: a cabeça dele para
-## o norte (+Z), a mão da chave para o leste (de onde ela vem pela estrada).
-const CORPSE := Vector3(-35.5, 0, -3.0)
+## Guerrilheiro morto com a chave do container (Corpse), numa clareira ao lado da estrada, perto de um poste, longe da porta
+## (na mesma direção de quem entra pela porta, ~28 m). Em volta, CLEARING metros sem nada sólido (os raptors da emboscada
+## entram e rodeiam ela ali; a roda tem `Cutscene.AMB_RING` m). CORPSE_YAW 0: a cabeça dele para o norte (+Z), a mão da
+## chave para o leste (de onde ela vem pela estrada).
+const CORPSE := Vector3(-40.5, 0, -1.8)
 const CORPSE_YAW := 0.0
-const CLEARING := 10.5
+const CLEARING := 7.5
 ## Onde cada raptor do pátio fica escondido até a emboscada (dentro de uma moita sem colisão, na beira da clareira).
-const LURK := [Vector3(-35.0, 0, 6.5), Vector3(-44.5, 0, -6.0), Vector3(-27.0, 0, 3.0)]
+const LURK := [Vector3(-41.0, 0, 6.0), Vector3(-48.0, 0, 2.8), Vector3(-33.0, 0, 1.8)]
+## Mata do meio do pátio numa grade (`COVER_CELL` m, cada célula com um item mexido): moita, árvore, touceira de capim
+## alto, pedra ou tronco, sem os vazios grandes do sorteio solto. Perto da estrada só cabe capim (não sólido), que
+## acompanha a beira da terra sem entrar nela: a estrada fica livre e leva ao portão.
+const COVER_CELL := 3.6
+const TREE_GAP := 4.5  # árvore só a CLEARING + isto do morto (a câmera do alto da emboscada passa por cima da beira)
+## Baú da escopeta (main): no canto sul do fundo, a boca virada para a mata (+Z); um tronco caído escora e esconde o
+## fundo dele (CHEST_LOG), então ela dá a volta para chegar na boca.
+const SHOTGUN_CHEST := Vector3(-49.5, 0, 14.0)
+const CHEST_LOG := 3.4  # comprimento do tronco atrás do baú
 ## Torres de guarda (GuardTower) dos dois lados do portão do fundo, encostadas na parede, a frente para o pátio. Em volta
 ## delas não fica árvore (TOWER_TREES m: a copa entraria no telhado) nem outra coisa sólida (TOWER_CLEAR m).
 const TOWERS := [Vector3(-54.1, 0, 1.6), Vector3(-54.1, 0, -7.6)]
@@ -115,12 +125,11 @@ static func build(parent: Node) -> void:
 	_gate(parent)
 	_mist(parent)
 	_lamps(parent)
-	for post in POSTS:
-		_grass_patch(parent, post.route[1] + Vector3(2.5, 0, 2.0), 2.2, rng)
 	for p: Vector3 in LURK:
 		_lurk_bush(parent, p, rng)
-	for c in [Vector3(-20, 0, 8), Vector3(-30, 0, 4.5), Vector3(-44, 0, 2), Vector3(-34, 0, -13), Vector3(-50, 0, 12), Vector3(-22, 0, -11), Vector3(-41, 0, 9)]:
-		_grass_patch(parent, c, rng.randf_range(2.0, 2.8), rng)
+	# tronco caído escorado no fundo do baú da escopeta (fixo: não depende do sorteio da mata)
+	var back := SHOTGUN_CHEST.z - Chest.SIZE.z * 0.5 - 0.32
+	_log(parent, Vector3(SHOTGUN_CHEST.x, 0, back), CHEST_LOG, PI * 0.5)
 
 
 static func _road(parent: Node) -> void:
@@ -207,34 +216,56 @@ static func len_x() -> float:
 	return X_NEAR - X_FAR + 1.2
 
 
-## Árvores, arbustos, samambaias, pedras e troncos soltos no meio da clareira, longe da estrada, das rotas e da porta.
+## Árvores, moitas, touceiras de capim alto, pedras e troncos no meio do pátio (grade COVER_CELL), longe da estrada,
+## das rotas, das lâmpadas, da porta, dos itens no chão, do baú e da clareira do morto.
 static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
-	var keep: Array[Vector2] = []  # pontos livres (rotas, lâmpadas, porta) com raio
+	var keep: Array[Vector2] = []  # pontos livres (rotas, lâmpadas, porta, moitas da emboscada) com raio
 	for post in POSTS:
 		for p: Vector3 in post.route:
 			keep.append(Vector2(p.x, p.z))
-	for p: Vector3 in LAMPS:
+	for p: Vector3 in LAMPS + LURK:
 		keep.append(Vector2(p.x, p.z))
 	keep.append(Vector2(-15.5, DOOR_Z))
+	var items: Array[Vector2] = [Vector2(SHOTGUN_CHEST.x, SHOTGUN_CHEST.z)]  # nem capim por cima
+	for e in Pickup.LAYOUT:
+		if e.pos.x < X_NEAR and e.pos.x > X_FAR:
+			items.append(Vector2(e.pos.x, e.pos.z))
+	keep.append_array(items)
 	var placed: Array[Vector2] = []
-	var tries := 0
+	var patches: Array[Vector3] = []  # touceiras já postas (x, z, raio): uma não entra na outra
 	var corpse := Vector2(CORPSE.x, CORPSE.z)
-	while placed.size() < 30 and tries < 600:
-		tries += 1
-		var p := Vector2(rng.randf_range(X_FAR + 3.0, X_NEAR - 3.0), rng.randf_range(-Z_HALF + 3.5, Z_HALF - 3.5))
-		if not _clear(p, placed, keep, 3.6) or p.distance_to(corpse) < CLEARING:
-			continue
-		placed.append(p)
-		var roll := rng.randf()
-		var pos := Vector3(p.x, 0, p.y)
-		if roll < 0.5:
-			_off_towers(_tree(parent, pos, rng.randf_range(5.5, 8.0), rng.randf_range(1.8, 2.6), rng, true), TOWER_TREES)
-		elif roll < 0.72:
-			_off_towers(_bush(parent, pos, rng.randf_range(0.9, 1.4), rng), TOWER_CLEAR)
-		elif roll < 0.88:
-			_off_towers(_rock(parent, pos, rng.randf_range(0.5, 1.1), rng), TOWER_CLEAR)
-		else:
-			_off_towers(_log(parent, pos, rng.randf_range(2.4, 3.6), rng.randf() * PI), TOWER_CLEAR)
+	var x := X_NEAR - 3.0
+	while x > X_FAR + 2.5:
+		var z := -Z_HALF + 3.5
+		while z < Z_HALF - 3.0:
+			var jitter := COVER_CELL * 0.35
+			var p := Vector2(x + rng.randf_range(-jitter, jitter), z + rng.randf_range(-jitter, jitter))
+			var roll := rng.randf()
+			var size := rng.randf()
+			z += COVER_CELL
+			var pos := Vector3(p.x, 0, p.y)
+			var solid_ok := _clear(p, placed, keep, 2.4) and p.distance_to(corpse) >= CLEARING
+			if roll < 0.24 or not solid_ok:
+				# touceira: fora da terra da estrada e da clareira (a roda da emboscada fica à vista), longe dos itens e da porta
+				var r := lerpf(1.5, 2.2, size)
+				if road_distance(p) < ROAD_W * 0.5 + r * 0.75 or p.distance_to(corpse) < CLEARING + r * 0.5 \
+						or p.distance_to(Vector2(-15.5, DOOR_Z)) < 4.0 or items.any(func(q: Vector2) -> bool: return p.distance_to(q) < r + 0.8) \
+						or patches.any(func(g: Vector3) -> bool: return p.distance_to(Vector2(g.x, g.y)) < r + g.z - 0.8):
+					continue
+				patches.append(Vector3(p.x, p.y, r))
+				_grass_patch(parent, pos, r, rng)
+				continue
+			placed.append(p)
+			# perto da clareira só moita (baixa): copa de árvore ali entra no plano do alto da cena da emboscada
+			if roll < 0.62 or (roll < 0.82 and p.distance_to(corpse) < CLEARING + TREE_GAP):
+				_off_towers(_bush(parent, pos, lerpf(0.9, 1.4, size), rng), TOWER_CLEAR)
+			elif roll < 0.82:
+				_off_towers(_tree(parent, pos, lerpf(5.5, 8.0, size), rng.randf_range(1.8, 2.6), rng, true), TOWER_TREES)
+			elif roll < 0.93:
+				_off_towers(_rock(parent, pos, lerpf(0.5, 1.1, size), rng), TOWER_CLEAR)
+			else:
+				_off_towers(_log(parent, pos, lerpf(2.4, 3.6, size), rng.randf() * PI), TOWER_CLEAR)
+		x -= COVER_CELL
 	# samambaias e capim ralo: de enfeite, sem colisão, também fora da estrada
 	for i in 120:
 		var p := Vector2(rng.randf_range(X_FAR + 1.5, X_NEAR - 1.0), rng.randf_range(-Z_HALF + 1.0, Z_HALF - 1.0))

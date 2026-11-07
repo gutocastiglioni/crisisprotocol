@@ -32,7 +32,7 @@ func update(delta: float) -> void:
 	var silent_move := p.moves.mode in ["assassinate", "crit_strike"]
 	var speed := Vector2(p.velocity.x, p.velocity.z).length()
 	var moving := speed > 0.3 and p.is_on_floor() and not p.grabbed and not p.dead
-	if moving and step_t <= 0.0 and not p.rolling and p.moves.mode != "dodge" and not silent_move:
+	if moving and step_t <= 0.0 and not p.rolling and not silent_move:
 		step_t = STEP_TIME
 		if p.crouching:
 			p.make_noise(2.0, 0.25)

@@ -12,10 +12,12 @@ signal shell_ejected(at: Vector3, vel: Vector3)
 const SCENE := preload("res://assets/characters/heroine.glb")
 # o atlas direto (não a cópia dentro do .glb): tem o alfa das pontas do cabelo e mipmaps para o visual PS2
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")
+const CHAR_TINT := Color(0.2, 0.17, 0.15)  # corpo carbonizado (char_body)
 
 const LOOPS := [
 	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
 	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed", "LadderUp", "LadderDown", "LadderIdle", "Console",
+	"CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR",
 ]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
@@ -23,7 +25,6 @@ const UPPER_BODY := [
 ]
 const STATES := {
 	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
-	"dodge_l": "DodgeL", "dodge_r": "DodgeR", "dodge_back": "DodgeBack",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
 	"jump": "Jump", "fall": "Fall", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
 	"pickup_pistol": "PickupPistol",
@@ -32,7 +33,12 @@ const STATES := {
 	"ladder_out": "LadderOut", "ladder_in": "LadderIn", "ladder_out_low": "LadderOutLow", "ladder_in_low": "LadderInLow",
 	"hatch_open": "HatchOpen", "shocked": "Shocked", "console": "Console",
 	"stagger_back": "StaggerBack", "stagger_fwd": "StaggerFwd", "getup_front": "GetUpFront", "getup_back": "GetUpBack",
+	# encostada de costas na cobertura (PlayerCover), olhando para a esquerda / direita dela
+	"cover_l": "CoverL", "cover_r": "CoverR", "cover_crouch_l": "CoverCrouchL", "cover_crouch_r": "CoverCrouchR",
 }
+## encostada: com arma longa só os braços vêm da pose de carregar (o tronco reclinado e a cabeça virada ficam)
+const COVER := ["cover_l", "cover_r", "cover_crouch_l", "cover_crouch_r"]
+const ARMS := ["UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R"]
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
 const SCALED := [
 	"walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "ladder_up", "ladder_down",
@@ -42,7 +48,7 @@ const SCALED := [
 const GAIT_WALK_MAX := 1.05  # set_gait: até esta fração acima da velocidade do passo ainda é andar
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
-	"jump", "fall", "dodge_l", "dodge_r", "dodge_back",
+	"jump", "fall",
 ]
 ## arma: [malha, marcador do cano]
 const WEAPONS := {
@@ -66,8 +72,8 @@ const STEP_DB := {
 }
 const AIR := ["jump", "fall"]
 const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem
-## entram mais rápido (a mistura longa com a corrida cruzava as pernas no começo do pulinho)
-const QUICK := ["dodge_l", "dodge_r", "dodge_back", "assassinate", "crit_strike", "stagger_back", "stagger_fwd"]
+## entram mais rápido
+const QUICK := ["assassinate", "crit_strike", "stagger_back", "stagger_fwd"]
 const XFADE := 0.15
 const QUICK_XFADE := 0.05
 ## levantar do chão: sem mistura com o estado de antes do ragdoll (o PoseFade parte da pose em que o corpo caiu)
@@ -77,7 +83,7 @@ const GETUP_SPEED := 1.25  # o levantar é desenhado com calma; no jogo toca um 
 const HIT_ANIMS := {"front": "HitFront", "back": "HitBack", "left": "HitL", "right": "HitR"}
 const HIT_XFADE := 0.06
 ## som ao entrar no estado
-const STATE_SOUNDS := {"roll": "roll", "dodge_l": "jump", "dodge_r": "jump", "dodge_back": "jump", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb", "ladder_out": "climb", "ladder_in": "climb", "ladder_out_low": "climb", "ladder_in_low": "climb"}
+const STATE_SOUNDS := {"roll": "roll", "jump": "jump", "climb": "climb", "mantle": "climb", "hang": "ledge_grab", "ladder_up": "climb", "ladder_down": "climb", "ladder_out": "climb", "ladder_in": "climb", "ladder_out_low": "climb", "ladder_in_low": "climb"}
 
 @export var tint := Color.WHITE
 @export var desaturate := 0.0
@@ -107,6 +113,7 @@ var _muzzles := {}
 var _aim := 0.0
 var _aim_target := 0.0
 var _carry := 0.0
+var _carry_arms := 0.0
 var _pump: Node3D
 var _pump_rest: Transform3D
 var _pump_t := -1.0  # segundos desde o tiro da escopeta (-1 = parada)
@@ -134,7 +141,8 @@ func _ready() -> void:
 		_pump_rest = _pump.transform
 	_apply_materials(inst)
 	for a in LOOPS:
-		anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+		if anim_player.has_animation(a):  # o guerrilheiro pode ter sido gerado antes das animações novas
+			anim_player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
 	_build_tree()
 	# inclinação da mira antes do ragdoll (que, ligado, manda no esqueleto)
 	aim_pitch = AimPitch.new()
@@ -194,6 +202,16 @@ func _setup_braid() -> void:
 	braid.set_enable_all_child_collisions(0, true)
 
 
+## Carbonizado (`k` 0..1, corpo que pegou fogo): todos os materiais vão do `tint` normal para CHAR_TINT.
+func char_body(k: float) -> void:
+	var c: Color = tint.lerp(CHAR_TINT, clampf(k, 0.0, 1.0))
+	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m:
+				m.set_shader_parameter("tint", c)
+
+
 func _apply_materials(root: Node) -> void:
 	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
 		for i in mi.mesh.get_surface_count():
@@ -221,7 +239,8 @@ func _build_tree() -> void:
 
 	var base := AnimationNodeTransition.new()
 	base.xfade_time = XFADE
-	for s in STATES:
+	var states := STATES.keys().filter(func(s): return anim_player.has_animation(STATES[s]))
+	for s in states:
 		base.add_input(s)
 		bt.add_node("a_" + s, _anim(STATES[s]))
 	bt.add_node("base", base)
@@ -232,7 +251,7 @@ func _build_tree() -> void:
 	bt.add_node("climb_seek", AnimationNodeTimeSeek.new())
 	bt.connect_node("climb_seek", 0, "a_climb")
 	var i := 0
-	for s in STATES:
+	for s in states:
 		var src: String = s + "_speed" if s in SCALED else ("climb_seek" if s == "climb" else "a_" + s)
 		bt.connect_node("base", i, src)
 		# rolar, pular, subir, pegar e morrer sempre começam do quadro 0
@@ -246,6 +265,12 @@ func _build_tree() -> void:
 	bt.add_node("carry", carry)
 	bt.connect_node("carry", 0, "base")
 	bt.connect_node("carry", 1, "a_carry")
+	var carry_arms := AnimationNodeBlend2.new()
+	_filter_bones(carry_arms, ARMS)
+	bt.add_node("a_carry_arms", _anim("RifleHold"))
+	bt.add_node("carry_arms", carry_arms)
+	bt.connect_node("carry_arms", 0, "carry")
+	bt.connect_node("carry_arms", 1, "a_carry_arms")
 	# mira e tiro: a pose de cada arma (0 = pistola, 1 = fuzil)
 	var aim := AnimationNodeBlend2.new()
 	var shoot := AnimationNodeOneShot.new()
@@ -274,7 +299,7 @@ func _build_tree() -> void:
 	bt.connect_node("shoot_pose", 1, "long_shoot")
 	bt.add_node("aim", aim)
 	bt.add_node("shoot", shoot)
-	bt.connect_node("aim", 0, "carry")
+	bt.connect_node("aim", 0, "carry_arms")
 	bt.connect_node("aim", 1, "aim_pose")
 	bt.connect_node("shoot", 0, "aim")
 	bt.connect_node("shoot", 1, "shoot_pose")
@@ -313,11 +338,15 @@ func _anim(name: String) -> AnimationNodeAnimation:
 
 
 func _filter_upper_body(node: AnimationNode) -> void:
+	_filter_bones(node, UPPER_BODY)
+
+
+func _filter_bones(node: AnimationNode, bones: Array) -> void:
 	node.filter_enabled = true
 	var a := anim_player.get_animation("Idle")
 	for t in a.get_track_count():
 		var path := a.track_get_path(t)
-		if path.get_concatenated_subnames() in UPPER_BODY:
+		if path.get_concatenated_subnames() in bones:
 			node.set_filter_path(path, true)
 
 
@@ -330,6 +359,9 @@ func _process(delta: float) -> void:
 	var carry := 1.0 if weapon in LONG_GUNS and not holstered and state in CARRY else 0.0
 	_carry = move_toward(_carry, carry, delta * 6.0)
 	tree.set("parameters/carry/blend_amount", _carry)
+	var arms := 1.0 if weapon in LONG_GUNS and not holstered and state in COVER else 0.0
+	_carry_arms = move_toward(_carry_arms, arms, delta * 6.0)
+	tree.set("parameters/carry_arms/blend_amount", _carry_arms)
 	_update_pump(delta)
 	_air_t = _air_t + delta if state in AIR else 0.0
 	_footsteps()

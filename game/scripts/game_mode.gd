@@ -6,13 +6,15 @@ class_name GameMode
 ## O que muda em "survival":
 ##   - câmera por cima do ombro direito, sem voltar sozinha para trás dela; mirando, chega mais perto e a mira fica lenta;
 ##   - ela anda e corre mais devagar (`move_scale`), com uma corrida forte segurando SHIFT ou o analógico (L3), mas sem ser
-##     de velocista, e a esquiva (X / espaço) é um pulinho curto para o lado ou para trás em vez da cambalhota
-##     (`short_dodge`, PlayerMoves.start_dodge; clique duplo no X = cambalhota), com intervalo (`roll_cooldown`);
+##     de velocista, e a cambalhota (bola / espaço) tem intervalo (`roll_cooldown`);
 ##   - a mira (retícula) só existe com o botão de mirar apertado, e só atira mirando (nada de tiro "do quadril");
 ##   - cada arma manda no movimento enquanto ela mira (`SURVIVAL_WEAPONS`), sem ela precisar parar: pistola corre e atira com
 ##     recuo mínimo, M16 vira andar devagar e atira com recuo médio, escopeta trava o movimento sozinha (só gira a mira);
 ##   - munição limitada por arma (`START_AMMO`, `WEAPON_AMMO`, caixas em `Pickup.LAYOUT`) e kits de vida;
-##   - os inimigos machucam o dobro (`enemy_damage`).
+##   - os inimigos machucam o dobro (`enemy_damage`);
+##     (o raptor tem a tabela própria `Raptor.SURVIVAL_DAMAGE`, mais leve);
+##   - raptors atacam um de cada vez e os outros cercam (`pack_turns`, Raptor._may_attack);
+##   - parada perto de uma caixa/parede ou andando contra ela, encosta sozinha (`cover`, PlayerCover).
 
 const ARCADE := "arcade"
 const SURVIVAL := "survival"
@@ -20,14 +22,14 @@ const MODES := [SURVIVAL, ARCADE]
 
 const PROFILES := {
 	ARCADE: {
-		"shoulder_cam": false, "move_scale": 1.0, "roll_cooldown": 0.0, "short_dodge": false, "aim_to_shoot": false,
+		"shoulder_cam": false, "move_scale": 1.0, "roll_cooldown": 0.0, "aim_to_shoot": false,
 		"weapon_handling": false, "limited_ammo": false, "enemy_damage": 1.0, "pickups": false, "sprint": false,
-		"back_walk": false,
+		"back_walk": false, "cover": false, "pack_turns": false,
 	},
 	SURVIVAL: {
-		"shoulder_cam": true, "move_scale": 0.8, "roll_cooldown": 1.4, "short_dodge": true, "aim_to_shoot": true,
+		"shoulder_cam": true, "move_scale": 0.8, "roll_cooldown": 1.4, "aim_to_shoot": true,
 		"weapon_handling": true, "limited_ammo": true, "enemy_damage": 2.0, "pickups": true, "sprint": true,
-		"back_walk": true,
+		"back_walk": true, "cover": true, "pack_turns": true,
 	},
 }
 
@@ -73,7 +75,7 @@ static func shoulder_cam() -> bool:
 	return value("shoulder_cam")
 
 
-## Direcional para trás (atrás dela) = anda de costas, sem virar; a câmera segue atrás dela.
+## Direcional para trás (atrás dela) = anda de costas, sem virar.
 static func back_walk() -> bool:
 	return value("back_walk")
 
@@ -84,11 +86,6 @@ static func move_scale() -> float:
 
 static func roll_cooldown() -> float:
 	return value("roll_cooldown")
-
-
-## Botão de esquiva = pulinho curto de lado/para trás (survival) em vez da cambalhota (arcade).
-static func short_dodge() -> bool:
-	return value("short_dodge")
 
 
 static func aim_to_shoot() -> bool:

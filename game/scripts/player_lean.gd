@@ -1,6 +1,6 @@
 class_name PlayerLean
 extends RefCounted
-## Esgueirar pela quina (ação "lean": R3 / V; em pé ou agachada, com e sem mira). Liga e desliga com um toque (não precisa
+## Esgueirar pela quina (ação "lean": L3 / V; o L3 também é a corrida forte segurando; em pé ou agachada, com e sem mira). Liga e desliga com um toque (não precisa
 ## segurar): com uma parede/caixa logo à frente da câmera (`REACH`), ela procura a beirada dessa cobertura para os dois lados (`SCAN`) e se esgueira para
 ## a mais perto: vira para a frente da câmera, inclina o tronco (LeanTilt, até `ANGLE`) e, se a beirada está longe para só
 ## inclinar, dá um passo de lado (`step`, até `STEP_MAX`) até a cabeça passar dela por `CLEAR`. A câmera vai para o lado da

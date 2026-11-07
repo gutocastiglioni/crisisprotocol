@@ -33,11 +33,15 @@ func _loop(name: String) -> AudioStreamPlayer:
 	return p
 
 
-## Quanto do pátio da mata se ouve (0 = dentro do galpão, 1 = lá fora): a parede da porta fica em Yard.X_NEAR.
+## Quanto do pátio da mata se ouve (0 = dentro do galpão, 1 = lá fora): a parede da porta fica em Yard.X_NEAR. Dentro do
+## túnel da mina volta o abafado de lugar fechado (o mesmo do galpão), com a mesma passagem nas duas bocas.
 func yard_mix() -> float:
 	if target == null:
 		return 0.0
-	return clampf((Yard.X_NEAR + FADE * 0.5 - target.global_position.x) / FADE, 0.0, 1.0)
+	var x := target.global_position.x
+	var k := clampf((Yard.X_NEAR + FADE * 0.5 - x) / FADE, 0.0, 1.0)
+	var inside := clampf(minf(Tunnel.X_NEAR + FADE * 0.5 - x, x - Tunnel.X_FAR + FADE * 0.5) / FADE, 0.0, 1.0)
+	return k * (1.0 - inside)
 
 
 func _mix() -> void:

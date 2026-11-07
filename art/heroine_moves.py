@@ -1,4 +1,4 @@
-"""Movimentos com deslocamento: cambalhota com projeção, pulo/queda, pendurar, subir da borda e escalar
+"""Movimentos com deslocamento: cambalhota, pulo/queda, pendurar, subir da borda e escalar
 obstáculos baixos, além dos ciclos de passo (heroine_gait).
 
 Quem anda é o Godot: a cápsula segue o mesmo caminho da raiz (`*_PATH`: (quadro, frente, cima) em metros,
@@ -198,41 +198,50 @@ def gaits(A, crouch_guard=None):
 
 
 
-# ------------------------------------------------------------------ cambalhota com projeção
-# já sai andando no primeiro quadro (sem preparar parada no lugar): mergulha o tronco e empurra (0-5), voa na
-# horizontal com os braços à frente (5-12), mãos no chão (13), rola encolhida sobre as costas (13-25), pés no chão
-# e levanta (28-34). O corpo gira em volta do centro do "novelo" (ROLL_C), não do quadril, e o caminho da raiz
-# acompanha o giro (centro anda giro x raio): rola sem patinar e sai lá na frente.
-ROLL_FRAMES = 34
-ROLL_PATH = [(0, 0.0, 0.0), (1, 0.1, 0.0), (2, 0.22, 0.0), (5, 0.75, 0.0), (10, 1.65, 0.0), (13, 2.1, 0.0),
-             (25, 4.0, 0.0), (28, 4.12, 0.0), (34, 4.18, 0.0)]
+# ------------------------------------------------------------------ cambalhota rente ao chão
+# Sem pulão: já sai andando, dobra os joelhos e empurra (0-3), projeção curta e baixa na diagonal até as mãos no chão
+# (3-7), encaixa o queixo e passa o peso para os ombros (7-9), rola encolhida sobre as costas (9-20), pés no chão agachada (23) e levanta (26-30).
+# O quadril nunca sobe acima do de pé. O corpo gira em volta do centro do "novelo" (ROLL_C), não do quadril, e o
+# caminho da raiz acompanha o giro (centro anda giro x raio nos quadros com as costas no chão): rola sem patinar.
+ROLL_FRAMES = 30
+ROLL_HANDS = (7, 10)  # mãos presas no chão
+ROLL_PATH = [(0, 0.0, 0.0), (3, 0.12, 0.0), (5, 0.4, 0.0), (7, 0.68, 0.0), (9, 0.93, 0.0), (13, 1.43, 0.0),
+             (15, 1.56, 0.0), (17, 1.67, 0.0), (19, 1.83, 0.0), (20, 1.92, 0.0), (23, 2.03, 0.0), (26, 2.06, 0.0),
+             (30, 2.07, 0.0)]
 ROLL_C = Vector((0.0, 0.26, 0.08))  # centro do corpo encolhido no espaço do quadril (esquerda, cima, frente)
+ROLL_STAND = 1.147  # altura desse centro de pé (pés no chão)
 
 
 def roll_keys(A, sk):
     tuck = A.merge(arms(40, -10, 95), {"Hand_L": (-20, 0, 0), "Hand_R": (-20, 0, 0)})
-    tucked_legs = legs(105, -135, 30)
+    tucked_legs = legs(110, -138, 30)
+    curl = {"Spine": (45, 0, 0), "Chest": (25, 0, 0), "Neck": (30, 0, 0), "Head": (55, 0, 0)}
     keys = [
-        (0, A.merge(A.IDLE, {"_th": 0, "_ch": 1.215, "_cf": 0.08})),
-        # mergulha o tronco já indo para a frente, braços lançando
-        (2, A.merge(arms(40, -8, 25), legs(40, -60, 10), {"Spine": (12, 0, 0), "Head": (-12, 0, 0),
-                                                         "_th": 25, "_ch": 0.98, "_cf": 0.26})),
-        (5, A.merge(arms(120, -10, 15), legs(12, -25, -20, -15, -40, -10), {"Spine": (5, 0, 0), "Head": (-30, 0, 0),
-                                                                           "_th": 52, "_ch": 1.04, "_cf": 0.44})),
-        (10, A.merge(arms(165, -8, 10), legs(-6, -10, -30, -14, -20, -30), {"Spine": (-4, 0, 0), "Head": (-45, 0, 0),
-                                                                           "_th": 85, "_ch": 0.88, "_cf": 0.55})),
-        # mãos no chão, queixo no peito: rola por cima dos ombros e das costas, nunca da cabeça
-        (13, A.merge(arms(150, -12, 45), legs(30, -60, -10), {"Spine": (25, 0, 0), "Neck": (20, 0, 0),
-                                                             "Head": (55, 0, 0), "_th": 112, "_ch": 0.66, "_cf": 0.45})),
-        (16, A.merge(tuck, tucked_legs, {"Spine": (40, 0, 0), "Chest": (20, 0, 0), "Neck": (30, 0, 0), "Head": (60, 0, 0),
-                                         "_th": 165, "_ch": 0.46, "_cf": 0.32})),
-        (21, A.merge(tuck, tucked_legs, {"Spine": (40, 0, 0), "Chest": (20, 0, 0), "Neck": (15, 0, 0), "Head": (40, 0, 0),
-                                         "_th": 245, "_ch": 0.42, "_cf": 0.18})),
-        (25, A.merge(tuck, legs(100, -130, 35), {"Spine": (35, 0, 0), "Chest": (15, 0, 0), "Head": (30, 0, 0),
-                                                 "_th": 318, "_ch": 0.5, "_cf": 0.1})),
-        (28, A.merge(A.CROUCH, {"Spine": (30, 0, 0), "_th": 362, "_ch": 0.84, "_cf": 0.08})),
-        (31, A.merge(A.CROUCH, {"loc": (0, -0.2, 0), "Spine": (14, 0, 0), "_th": 361, "_ch": 1.02, "_cf": 0.07})),
-        (34, A.merge(A.IDLE, {"_th": 360, "_ch": 1.215, "_cf": 0.08})),
+        (0, A.merge(A.IDLE, {"_th": 0, "_ch": ROLL_STAND, "_cf": 0.08})),
+        # dobra os joelhos e inclina para empurrar, braços indo para a frente
+        (3, A.merge(arms(55, -10, 20), legs(58, -92, 26), {"Spine": (16, 0, 0), "Head": (-14, 0, 0),
+                                                          "_th": 30, "_ch": 0.8, "_cf": 0.22})),
+        # projeção curta na diagonal para o chão: pernas esticando atrás, braços à frente buscando o chão
+        (5, A.merge(arms(110, -10, 15), legs(18, -25, -25, 8, -35, -20), {"Spine": (12, 0, 0), "Neck": (8, 0, 0),
+                                                                          "Head": (5, 0, 0),
+                                                                          "_th": 56, "_ch": 0.76, "_cf": 0.4})),
+        # mãos no chão, queixo indo para o peito, joelhos voltando
+        (7, A.merge(arms(100, -12, 30), legs(45, -75, 0), {"Spine": (26, 0, 0), "Neck": (22, 0, 0), "Head": (45, 0, 0),
+                                                          "_th": 78, "_ch": 0.54, "_cf": 0.34})),
+        # o peso passa para os ombros (nunca para a cabeça), as pernas empurram
+        (9, A.merge(arms(125, -12, 60), legs(85, -125, 20), curl, {"Neck": (40, 0, 0), "Head": (75, 0, 0),
+                                                                   "_th": 108, "_ch": 0.44, "_cf": 0.24})),
+        (13, A.merge(tuck, tucked_legs, curl, {"_th": 175, "_ch": 0.22, "_cf": 0.14})),
+        (15, A.merge(tuck, tucked_legs, curl, {"_th": 210, "_ch": 0.11, "_cf": 0.11})),
+        (17, A.merge(tuck, tucked_legs, curl, {"Neck": (15, 0, 0), "Head": (40, 0, 0),
+                                               "_th": 245, "_ch": 0.15, "_cf": 0.08})),
+        (19, A.merge(tuck, legs(105, -134, 32), curl, {"Neck": (10, 0, 0), "Head": (34, 0, 0),
+                                                       "_th": 282, "_ch": 0.31, "_cf": 0.07})),
+        (20, A.merge(tuck, legs(100, -130, 35), {"Spine": (35, 0, 0), "Chest": (15, 0, 0), "Head": (30, 0, 0),
+                                                 "_th": 300, "_ch": 0.34, "_cf": 0.06})),
+        (23, A.merge(A.CROUCH, {"Spine": (30, 0, 0), "_th": 357, "_ch": 0.77, "_cf": 0.08})),
+        (26, A.merge(A.CROUCH, {"Spine": (14, 0, 0), "_th": 361, "_ch": 0.97, "_cf": 0.07})),
+        (ROLL_FRAMES, A.merge(A.IDLE, {"_th": 360, "_ch": ROLL_STAND, "_cf": 0.08})),
     ]
     rest = sk.rest["Hips"]
 
@@ -247,80 +256,42 @@ def roll_keys(A, sk):
         pose["loc"] = tuple(loc)
         return pose
 
-    plants = [Plant("foot", s, 0, 1) for s in ("L", "R")]
-    plants += [Plant("palm", s, 12, 15, ground=0.0) for s in ("L", "R")]
-    plants += [Plant("foot", s, 28, 34) for s in ("L", "R")]
+    # mãos: onde a pose do quadro em que tocam as leva, baixadas até o chão
+    f0 = ROLL_HANDS[0]
+    m0 = sk.matrices(fix(interp_pose(keys, f0), f0))
+    off0 = path_offset(ROLL_PATH, f0)
+
+    def on_floor(s):
+        p = IK.palm(sk, m0, s) + off0
+        return Vector((p.x, p.y, 0.05))
+
+    # pés: pousam já onde ela fica de pé no fim
+    m1 = sk.matrices(fix(interp_pose(keys, ROLL_FRAMES), ROLL_FRAMES))
+    off1 = path_offset(ROLL_PATH, ROLL_FRAMES)
+
+    def stand(s):
+        a = sk.point(m1, f"Foot_{s}") + off1
+        return Vector((a.x, a.y, ANKLE_Z))
+
+    plants = [Plant("foot", s, 0, 4) for s in ("L", "R")]
+    plants += [Plant("palm", s, *ROLL_HANDS, target=on_floor(s)) for s in ("L", "R")]
+    plants += [Plant("foot", s, 21, ROLL_FRAMES, target=stand(s)) for s in ("L", "R")]
     return bake(sk, "Roll", keys, plants, ROLL_PATH, fix)
-
-
-# ------------------------------------------------------------------ esquiva curta (perfil survival)
-# Pulinho sem girar o corpo, para o lado ou para trás: agacha e empurra (0-5), voa baixo (5-10), aterrissa dobrando
-# os joelhos (10-13) e se ergue (13-18). A altura do pulo fica no quadril (loc), não no caminho: a cápsula não sai do
-# chão. DodgeL vai para a esquerda dela (+X no Blender), DodgeR é o espelho e DodgeBack vai para trás (+Y).
-# O jogo a deixa invulnerável até DODGE_GUARD e toca a aterrissagem em DODGE_LAND.
-DODGE_FRAMES = 18
-DODGE_LAND = 10
-DODGE_GUARD = 12
-DODGE_SIDE_PATH = [(0, 0.0, 0.0), (3, 0.06, 0.0), (5, 0.38, 0.0), (8, 1.28, 0.0), (10, 1.74, 0.0), (13, 1.81, 0.0),
-                   (18, 1.82, 0.0)]
-DODGE_BACK_PATH = [(0, 0.0, 0.0), (3, 0.05, 0.0), (5, 0.32, 0.0), (8, 1.05, 0.0), (10, 1.4, 0.0), (13, 1.52, 0.0),
-                   (18, 1.55, 0.0)]
-
-
-def _dodge_plants():
-    plants = [Plant("foot", s, 0, 3) for s in ("L", "R")]
-    return plants + [Plant("foot", s, DODGE_LAND, DODGE_FRAMES) for s in ("L", "R")]
-
-
-def dodge_side_keys(A, sk):
-    """Para a esquerda dela: a perna direita empurra, a esquerda abre e pousa primeiro; o tronco inclina para o lado
-    do salto ao empurrar e para trás dele ao frear. Braços quase simétricos (o espelho troca a mão da arma)."""
-    keys = [
-        (0, A.IDLE),
-        (3, A.merge(arms(25, 6, 50), legs(40, -72, 26, 44, -80, 28, spread=7),
-                    {"loc": (0, -0.15, 0.02), "Spine": (12, 0, -7), "Head": (-10, 0, 7)})),
-        (5, A.merge(arms(28, 18, 40, 22, 6, 50), legs(34, -58, 6, 8, -10, -28, spread=7),
-                    {"UpperLeg_L": (0, 0, 14), "UpperLeg_R": (0, 0, 16), "loc": (0, -0.02, 0),
-                     "Spine": (8, 0, -9), "Head": (-6, 0, 9)})),
-        (8, A.merge(arms(22, 30, 38, 24, 10, 52), legs(30, -38, -6, 46, -90, -12, spread=4),
-                    {"UpperLeg_L": (0, 0, 24), "loc": (0, 0.08, 0), "Spine": (6, 0, -6), "Head": (-6, 0, 6)})),
-        (10, A.merge(arms(24, 24, 42, 22, 8, 50), legs(24, -36, 10, 34, -60, 4, spread=4),
-                     {"UpperLeg_L": (0, 0, 14), "UpperLeg_R": (0, 0, -3), "loc": (0, -0.05, 0),
-                      "Spine": (8, 0, 4), "Head": (-8, 0, -4)})),
-        (13, A.merge(arms(26, 12, 50), legs(50, -92, 32, 46, -86, 30, spread=8),
-                     {"loc": (0, -0.2, 0.02), "Spine": (16, 0, 5), "Head": (-14, 0, -5)})),
-        (18, A.IDLE),
-    ]
-    return bake(sk, "DodgeL", keys, _dodge_plants(), DODGE_SIDE_PATH, along=Vector((1.0, 0.0, 0.0)))
-
-
-def dodge_back_keys(A, sk):
-    """Para trás: as duas pernas empurram juntas, braços à frente para equilibrar, os pés pousam atrás do quadril
-    e o tronco vem para a frente para frear."""
-    keys = [
-        (0, A.IDLE),
-        (3, A.merge(arms(28, 6, 50), legs(42, -76, 28, spread=5),
-                    {"loc": (0, -0.15, 0.03), "Spine": (14, 0, 0), "Head": (-12, 0, 0)})),
-        (5, A.merge(arms(42, 8, 42), legs(8, -14, -26, spread=5), {"loc": (0, -0.02, 0), "Spine": (10, 0, 0),
-                                                                   "Head": (-8, 0, 0)})),
-        (8, A.merge(arms(46, 10, 46), legs(14, -56, -14, 6, -44, -18, spread=5),
-                    {"loc": (0, 0.07, 0), "Spine": (8, 0, 0), "Head": (-6, 0, 0)})),
-        (10, A.merge(arms(40, 8, 46), legs(-4, -30, 8, -8, -24, 6, spread=5),
-                     {"loc": (0, -0.05, 0), "Spine": (12, 0, 0), "Head": (-10, 0, 0)})),
-        (13, A.merge(arms(32, 6, 52), legs(48, -90, 30, spread=6),
-                     {"loc": (0, -0.2, 0.03), "Spine": (20, 0, 0), "Head": (-16, 0, 0)})),
-        (18, A.IDLE),
-    ]
-    return bake(sk, "DodgeBack", keys, _dodge_plants(), DODGE_BACK_PATH, along=Vector((0.0, 1.0, 0.0)))
 
 
 # ------------------------------------------------------------------ pulo e queda (o Godot faz a física)
 def jump_keys(A):
-    takeoff = A.merge(A.IDLE, arms(-20, -6, 25), legs(35, -60, 18), {"loc": (0, -0.1, 0), "Spine": (10, 0, 0)})
-    stretch = A.merge(arms(50, -15, 20), legs(5, -6, -30, 0, -4, -35), {"loc": (0, 0.02, 0), "Spine": (-4, 0, 0),
-                                                                      "Head": (-6, 0, 0)})
-    tuck = A.merge(arms(30, -35, 40), legs(42, -72, -12, 26, -50, -18), {"Spine": (6, 0, 0), "Head": (4, 0, 0)})
-    return [(0, takeoff), (3, stretch), (9, tuck), (14, tuck)]
+    """Salto para a frente (o Godot dá o embalo: ~1,2 m parada, mais correndo): sai do chão empurrando com a perna
+    direita esticada para trás e o joelho esquerdo subindo, braços trocados como na corrida (direito à frente); no
+    alto a passada abre (esquerda à frente, direita dobrada atrás), tronco inclinado, cabeça olhando à frente; no fim
+    as duas pernas vêm para a frente para pousar. A Fall entra quando ela começa a descer."""
+    push = A.merge(arms(-30, -8, 30, 55, -8, 55), legs(55, -85, 5, -18, -12, -40),
+                   {"loc": (0, -0.04, 0), "Hips": (6, 0, 0), "Spine": (12, 0, 0), "Chest": (4, 0, 0), "Head": (-10, 0, 0)})
+    stride = A.merge(arms(-35, -14, 25, 65, -10, 40), legs(70, -55, 10, -32, -80, -25),
+                     {"loc": (0, 0.02, 0), "Hips": (4, 0, 0), "Spine": (10, 0, 0), "Chest": (4, 0, 0), "Head": (-12, 0, 0)})
+    land = A.merge(arms(30, -22, 35, 40, -22, 35), legs(55, -60, 5, 35, -72, 0),
+                   {"Hips": (4, 0, 0), "Spine": (8, 0, 0), "Head": (-6, 0, 0)})
+    return [(0, push), (6, stride), (13, land), (18, land)]
 
 
 def fall_keys(A):
@@ -549,8 +520,6 @@ def data(gait_defs):
         "fps": FPS,
         "speeds": {k: g.speed for k, g in gait_defs.items()},
         "roll": {"frames": ROLL_FRAMES, "path": ROLL_PATH},
-        "dodge": {"frames": DODGE_FRAMES, "land": DODGE_LAND, "guard": DODGE_GUARD, "side": DODGE_SIDE_PATH,
-                  "back": DODGE_BACK_PATH},
         "hang": {"reach": HANG_REACH, "fwd": HANG_FWD, "wall": HANG_WALL, "top": HANG_TOP},
         "climb": {"frames": CLIMB_FRAMES, "hands_until": CLIMB_HANDS_UNTIL, "path": CLIMB_PATH},
         "mantle": {"frames": MANTLE_FRAMES, "hop": list(MANTLE_HOP), "hands": list(MANTLE_HANDS), "rel": MANTLE_REL,

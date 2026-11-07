@@ -27,6 +27,7 @@ func _main() -> Node:
 
 
 func _kill_yard_raptors(main: Node) -> void:
+	main.corpse.armed = false  # como no jogo: os 3 só morrem depois da emboscada (perto do morto a cena não toca de novo)
 	for r: Raptor in main.yard_raptors:
 		r.lurking = false
 		r.take_hit(999, Vector3.FORWARD, r.global_position)
@@ -91,7 +92,9 @@ func test_towers_and_hidden_snipers() -> void:
 	t.get_root().get_tree().call_group("enemies", "hear_noise", towers[0].global_position, 30.0, 1.0)
 	await t._frames(10)
 	t.check(snipers.all(func(s: Sniper) -> bool: return s.lurking and s.state == "idle"), "fora de cena não ouvem tiro", str(snipers.map(func(s: Sniper) -> String: return s.state)))
-	# dois raptors mortos: ainda não; o terceiro: sobem nas torres
+	# dois raptors mortos: ainda não; o terceiro: sobem nas torres (como no jogo, depois da emboscada: perto do morto a cena
+	# não toca de novo, e numa cena ninguém a vê)
+	main.corpse.armed = false
 	var rs: Array[Raptor] = main.yard_raptors
 	for i in 2:
 		rs[i].lurking = false

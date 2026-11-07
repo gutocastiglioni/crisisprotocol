@@ -543,11 +543,16 @@ func _update_marker() -> void:
 	elif lv == 1: _marker.text = "?"; _marker.modulate = UiStyle.ACCENT
 
 ## Som vindo de `pos` chega aqui: mesma sala, ou salas ligadas por portas abertas (a porta fechada segura tiro e grito).
-## Do telhado não chega nada (a laje abafa).
+## Do telhado não chega nada (a laje abafa); dentro do túnel da mina, só até `Tunnel.SOUND_REACH` (a galeria abafa: a
+## briga com os guardas do meio não chega aos do fundo).
 func _reaches(pos: Vector3) -> bool:
 	if Roof.has(pos):
 		return false
-	return Level.connected(get_tree(), Level.room_of(pos.x), Level.room_of(global_position.x))
+	var a := Level.room_of(pos.x)
+	var b := Level.room_of(global_position.x)
+	if (a == 2 or b == 2) and _flat(pos - global_position).length() > Tunnel.SOUND_REACH:
+		return false
+	return Level.connected(get_tree(), a, b)
 
 func is_searching() -> bool:
 	return not in_combat() and not dead and (alert_level() == 2 or state in ["hunt", "search", "sweep", "investigate"])
@@ -790,14 +795,16 @@ func _patrol(delta: float) -> void:
 		start_look()
 
 func _sight_range() -> float:
-	var vis := target.visibility()
+	# encostada na caixa, quem está atrás dela a vê menos (Player.visibility_from)
+	var vis := target.visibility_from(global_position + Vector3.UP * eye_height)
 	if alert_t > 0.0:
 		return ALERT_SIGHT * vis
 	return sight_range * vis
 
 ## Fora do alcance de qualquer um: em cima do telhado ou na parte de cima da escada do alçapão.
+## Ela não pode ser vista: no telhado, no alto da escada ou numa cena (Player.cutscene: sem controle, ninguém a nota).
 func _target_hidden() -> bool:
-	return Roof.has(target.global_position) or target.moves.hidden_on_ladder()
+	return Roof.has(target.global_position) or target.moves.hidden_on_ladder() or target.cutscene
 
 ## Vê a presa: dentro do alcance (menor se ela anda devagar, agachada ou no capim), no cone à frente
 ## (alertado, cone mais aberto; muito perto, em volta toda) e sem nada no meio. Distraído no posto, nada.

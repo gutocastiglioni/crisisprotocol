@@ -21,12 +21,15 @@ func test_glyphs() -> void:
 	t.check(UiStyle.glyph("interact", true) == {"shape": "triangle"}, "controle: pegar = triângulo", str(UiStyle.glyph("interact", true)))
 	t.check(UiStyle.glyph("shoot", false) == {"text": "MOUSE E"} and UiStyle.glyph("shoot", true) == {"text": "R2"},
 		"atirar = MOUSE E / R2", "%s %s" % [UiStyle.glyph("shoot", false), UiStyle.glyph("shoot", true)])
-	t.check(UiStyle.glyph("lean", false) == {"text": "V"} and UiStyle.glyph("lean", true) == {"text": "R3"},
-		"esgueirar = V / R3", "%s %s" % [UiStyle.glyph("lean", false), UiStyle.glyph("lean", true)])
+	t.check(UiStyle.glyph("lean", false) == {"text": "V"} and UiStyle.glyph("lean", true) == {"text": "L3"}
+		and UiStyle.glyph("crouch_stick", true) == {"text": "R3"},
+		"esgueirar = V / L3, agachar também no R3", "%s %s" % [UiStyle.glyph("lean", false), UiStyle.glyph("lean", true)])
 	t.check(UiStyle.glyph("pause", false) == {"text": "ESC"} and UiStyle.glyph("pause", true) == {"text": "START"}, "pausa = ESC / START")
 	t.check(UiStyle.glyph("crouch", true) == {"shape": "cross"} and UiStyle.glyph("roll", true) == {"shape": "circle"}
 		and UiStyle.glyph("zoom_in", true) == {"shape": "cross"},
-		"agachar = X, esquiva = bola, aumentar zoom = X do controle")
+		"confirmar nos menus = X, esquiva = bola, aumentar zoom = X do controle")
+	t.check(UiStyle.glyph("jump", true) == {"shape": "cross"} and UiStyle.glyph("crouch_pad", true) == {"shape": "square"},
+		"pular = X, agachar no jogo = quadrado", "%s %s" % [UiStyle.glyph("jump", true), UiStyle.glyph("crouch_pad", true)])
 	t.check(UiStyle.glyph("reset", true) == {"text": "R"}, "sem botão no controle: mostra a tecla (R)", str(UiStyle.glyph("reset", true)))
 
 

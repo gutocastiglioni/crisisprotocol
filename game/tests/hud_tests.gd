@@ -147,13 +147,14 @@ func test_hud_in_game() -> void:
 	main.sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	await t._frames(10)
 	t.check(radar.seen.is_empty(), "radar: no telhado ela ainda não viu ninguém", str(radar.seen.size()))
-	# no galpão, olhando para os guardas da porta do pátio
-	p.global_position = Vector3(1.0, 0, -6.0)
+	# no galpão, olhando para os guardas da porta do pátio pelo vão da parede de caixas do leste (z = -8,4); daqui o sentinela
+	# 3 fica atrás da caixa empilhada (-3,75; -7) e, mais para -Z, atrás dos caixotes de explosivos: o 4 é o que está à vista
+	p.global_position = Vector3(-1.0, 0, -8.4)
 	p.rotation.y = PI * 0.5
 	p.camera_rig.yaw = p.rotation.y
 	p.reset_physics_interpolation()
 	await t._frames(20)
-	var door_guard: Soldier = main.soldiers[3]  # sentinela da porta do pátio, à frente dela
+	var door_guard: Soldier = main.soldiers[4]  # sentinela da porta do pátio, à frente dela, com linha livre
 	var behind: Soldier = main.soldiers[2]  # sentinela do baú da M16, às costas dela
 	t.check(radar.is_tracked(door_guard), "radar: guarda à vista aparece", str(radar.seen.size()))
 	t.check(not radar.is_tracked(behind), "radar: guarda às costas (nunca visto) não aparece")
@@ -616,7 +617,10 @@ func test_crosshair() -> void:
 	t.check(loose > far * 2.0, "mira: inimigo a 3 m bem maior que a 15 m (sem foco)", "%.1f %.1f" % [loose, far])
 	cross.update(1.0, true)
 	t.check(is_equal_approx(cross.half, cross.goal), "mira: chega ao tamanho", "%.1f %.1f" % [cross.half, cross.goal])
-	# M16 atirando seguido: a dispersão sobe e a mira abre (mesmo focada)
+	# M16 atirando seguido: a dispersão sobe e a mira abre (mesmo focada). O tiro sai pela linha da mira e o coice o leva
+	# para a cabeça (×4): o boneco aguenta, senão morre e a mira não tem em quem focar de novo
+	d.max_health = 100000
+	d.health = d.max_health
 	p.model.set_weapon("m16")
 	var calm := cross.goal
 	for i in 3:

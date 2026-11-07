@@ -352,10 +352,10 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 	var posts := 0
 	var console := 0
 	for sd: Soldier in main.soldiers:
-		if sd.distracted:
+		if sd.hold_post:
+			posts += 1  # o 7 de posto também mexe no detonador dos caixotes (distraído)
+		elif sd.distracted:
 			console += 1
-		elif sd.hold_post:
-			posts += 1
 		elif sd.route.is_empty():
 			sentinels += 1
 		else:

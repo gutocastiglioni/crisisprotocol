@@ -538,6 +538,7 @@ def blood_fx():
 
 def main():
     import drop_textures  # caixa de paraquedas e lona (usa os blocos daqui)
+    from explosive_texture import explosive  # caixote de explosivos do posto da porta do pátio
 
     OUT.mkdir(parents=True, exist_ok=True)
     for name, fn in (("concrete", concrete), ("wall", wall), ("crate", crate), ("hazard", hazard), ("chest", chest),
@@ -545,7 +546,7 @@ def main():
                      ("grass", grass), ("dirt", dirt), ("bark", bark), ("leaves", leaves), ("rock", rock),
                      ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx),
                      ("blood_fx", blood_fx), ("chest_m79", chest_m79), ("scorch", scorch),
-                     ("drop_crate", drop_textures.drop_crate), ("chute", drop_textures.chute)):
+                     ("drop_crate", drop_textures.drop_crate), ("chute", drop_textures.chute), ("explosive", explosive)):
         fn().save(OUT / f"{name}.png")
         print(OUT / f"{name}.png")
 

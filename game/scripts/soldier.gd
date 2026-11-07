@@ -29,6 +29,7 @@ const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando on
 ## Guarda de pistola (`weapon` "pistol", o do painel): tiros soltos mais espaçados e mais fortes, alcance menor.
 const PISTOL := {"damage": 9, "burst": [1, 3], "gap": 0.4, "range": 16.0}
 const COMBAT := ["alert", "engage"]
+const CHAR_TIME := 4.0  # s até o corpo que pegou fogo ficar carbonizado
 const VEST_PARTS := ["Spine", "Chest", ""]  # o colete cobre o tronco ("" = tiro na cápsula: o meio do corpo)
 const VEST_MULT := 0.5  # colete comum: tiro no tronco tira metade (braços, pernas e cabeça sem proteção)
 const FLAK_MULT := 0.12  # Flak Jacket: o tronco quase não sente, só a cabeça (ou braço/perna) resolve
@@ -44,7 +45,12 @@ const FLAK_TEXT := "FLAK JACKET"
 ## Os fixos de um portão dividem o posto ("post" = `Enemy.post`): corpo, grito ou barulho tiram no máximo metade dele
 ## (3, 4, 5, 7 = "patio": até 2; 9, 10 = "norte": 1); com ela vista (vermelho) saem todos.
 ## - 5, 7: de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
-##   raptors, atrás das paredes de caixas: colado na parede do sul olhando para leste e no canto do fundo
+##   raptors, atrás das paredes de caixas: o 5 colado na parede do sul olhando para leste (vigia o tronco da ronda 0); o 7 no
+##   canto do fundo, o mais perto do portão norte, mexendo no detonador do caixote de trabalho dos explosivos ("work" =
+##   índice em `ExplosiveCrate.STACKS`; `pos`/`rot_y` = `ExplosiveCrate.work_spot`): como o do painel, de costas e
+##   distraído não vê nada e o fuzil fica encostado no caixote; barulho, alarme ou bala no caixote (`ExplosiveCrate.ping`)
+##   o tiram de lá. As pilhas descem pela parede oeste até o 5: uma granada da M79 nelas explode tudo em cadeia e pega o
+##   posto inteiro (3, 4, 5 e 7).
 ## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
 ##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
 ## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
@@ -63,7 +69,7 @@ const GUARDS := [
 	# lado, mas as caixas tapam a vista dele para fora, para a saída do labirinto
 	{"pos": Vector3(-10.6, 0, -1.6), "rot_y": -PI * 0.5, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
-	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true, "post": "patio"},
+	{"pos": Vector3(-8.05, 0, -11.43), "rot_y": 0.0, "route": [], "hold": true, "post": "patio", "work": 5},
 	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
 	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
 	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
@@ -97,6 +103,9 @@ var damage := DAMAGE
 var fire_range := FIRE_RANGE
 var burst_shots: Array = BURST_SHOTS
 var shot_gap := SHOT_GAP
+var _stowed: Node3D  # fuzil encostado no caixote enquanto ele mexe no detonador (guarda distraído de M16)
+var burning := false  # morto pela explosão dos caixotes: o corpo pega fogo e carboniza (ignite)
+var _char_tw: Tween
 
 
 func _ready() -> void:
@@ -114,6 +123,8 @@ func _ready() -> void:
 	model.atlas = ATLAS
 	add_child(model)
 	model.set_weapon(weapon)
+	if distracted and weapon == WEAPON:
+		_stowed = _lean_rifle()
 	sight_range = 16.0
 	fov_half = deg_to_rad(62.0)
 	eye_height = 1.55
@@ -152,6 +163,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_tick(delta)
+	if _stowed:
+		_stowed.visible = is_distracted()
 	if alert_t <= 0.0 and not in_combat():
 		_lock_t = 0.0  # esqueceu dela: a próxima luta começa com o aviso de novo
 	if not _calm_state(delta):
@@ -201,6 +214,37 @@ func _clamp_to_bounds() -> void:
 			global_position.x = clampf(global_position.x, -12.4, 12.4)
 			var max_z := Catwalk.FRONT_Z - 1.0 if in_combat() and _is_target_elevated() else 12.4
 			global_position.z = clampf(global_position.z, -12.4, max_z)
+
+
+## M16 de pé encostado no caixote, à direita dele (o `m16.glb` solto, de perfil: cano em +X, coronha no chão).
+func _lean_rifle() -> Node3D:
+	var holder := Node3D.new()
+	var gun: Node3D = WeaponIcon.SCENES.m16.instantiate()
+	holder.add_child(gun)
+	var box := AABB()
+	var first := true
+	for mi in WeaponIcon._meshes(gun):
+		var m := ShaderMaterial.new()
+		m.shader = Gfx.shader()
+		m.set_shader_parameter("albedo_tex", WeaponIcon.ATLAS)
+		mi.material_override = m
+		var rel := Transform3D.IDENTITY
+		var n: Node = mi
+		while n != holder:
+			rel = (n as Node3D).transform * rel
+			n = n.get_parent()
+		var b := rel * mi.mesh.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	gun.position -= Vector3(box.position.x, box.get_center().y, box.get_center().z)  # a coronha na origem
+	# cano para cima, inclinado para o caixote (frente dele = -Z), a alça para fora
+	var up := Vector3(0, 0.96, -0.24).normalized()
+	var out := (Vector3.BACK - up * up.z).normalized()
+	holder.basis = Basis(up, out, up.cross(out))
+	holder.position = Vector3(0.48, 0.0, -0.1)
+	holder.visible = false
+	add_child(holder)
+	return holder
 
 
 func in_combat() -> bool:
@@ -548,7 +592,25 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 	killed.emit()
 
 
+## Corpo pegando fogo (explosão dos caixotes, ExplosiveCrate): fogo no peito e no quadril do ragdoll (Fire.attach) e o
+## corpo escurece até carbonizado em CHAR_TIME s.
+func ignite() -> void:
+	if burning or not model or not model.ragdoll:
+		return
+	burning = true
+	for part: String in ["Chest", "Hips"]:
+		if model.ragdoll.bodies.has(part):
+			Fire.attach(get_parent(), model.ragdoll.bodies[part], 0.3 if part == "Chest" else 0.24)
+	_char_tw = create_tween()
+	_char_tw.tween_method(model.char_body, 0.0, 1.0, CHAR_TIME)
+
+
 func reset() -> void:
+	burning = false
+	if _char_tw:
+		_char_tw.kill()
+		_char_tw = null
+	model.char_body(0.0)
 	model.stop_ragdoll()
 	model.set_weapon(weapon)
 	model.holster(false)

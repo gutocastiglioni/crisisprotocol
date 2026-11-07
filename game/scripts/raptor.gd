@@ -31,6 +31,23 @@ const DOWN_TIME := 3.0  # tempo caído no chão após abate furtivo antes de lev
 const COUNTER_REACH := 2.8  # alcance do contra-ataque ao levantar
 const MAX_HEALTH := 170
 const DAMAGE := {"leap": 22, "charge": 16, "tail": 14, "bite": 7, "counter": 18}
+## Survival: dano já na escala do perfil (no lugar de `GameMode.enemy_damage`, que dobraria o DAMAGE): agarrão inteiro
+## (4 sacudidas) = 24, golpe que arremessa ~20. O arcade segue com o DAMAGE de antes.
+const SURVIVAL_DAMAGE := {"leap": 20, "charge": 16, "tail": 14, "bite": 6, "counter": 18}
+## Vez na matilha (`GameMode` "pack_turns", survival): um ataca por vez; os outros cercam a presa em volta, espalhados, até
+## chegar a vez deles. Entre o fim de um ataque (de qualquer um) e o começo do próximo passa `PACK_GAP` s.
+const ATTACKS := ["charge", "leap_prep", "leap", "bite", "hold", "tail", "counter"]
+const PACK_GAP := Vector2(1.8, 3.0)
+## Sem rodear (jeito Dino Crisis: anda até o lugar, para e observa no Study, como o alossauro): cada um tem um lugar em volta
+## dela (`_slot`, ângulo no mundo, na faixa `SLOT_BAND`), afastado dos lugares dos outros pelo menos `PACK_SPREAD`; o lugar anda com
+## ela. Longe dele mais de `SLOT_LEAVE` m, vai andando até `SLOT_REACH` m; no lugar, só gira para continuar de frente para ela.
+const PACK_WAIT := Vector2(0.5, 0.9)  # estudo curto de quem não pôde atacar (volta a pedir a vez)
+const PACK_SPREAD := deg_to_rad(100.0)
+const SLOT_LEAVE := 1.8
+const SLOT_REACH := 0.6
+const SLOT_SPEED := 1.6  # andando até o lugar (Walk)
+const SLOT_RUN := 5.0  # lugar a mais de 4 m (ela fugiu): corre
+const SLOT_BAND := Vector2(3.4, 6.5)
 const BITE_CHANCE := 0.8  # perto e de frente: morde ou recua
 const STUDY_TIME := Vector2(0.9, 1.6)  # rodeando antes de atacar
 const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
@@ -47,6 +64,12 @@ var last_hit_at := Vector3.ZERO  # onde o último golpe pegou nela (garra no sal
 var _study_dist := STUDY_DIST
 var _ring_radius := 5.0
 var _ring_roar := false
+var _waiting := false  # estudando à espera da vez (matilha)
+var _slot := NAN  # ângulo (no mundo, em volta dela) do lugar dele na matilha; NAN = escolher de novo
+var _to_slot := false  # andando até o lugar
+var _attack_end := -INF  # relógio (`_now`) do fim do último ataque deste
+var _gap := PACK_GAP.x  # intervalo que este espera depois do último ataque da matilha
+var _turn_wait := 0.0  # tempo esperando a vez (quem espera mais passa na frente)
 
 
 func _ready() -> void:
@@ -113,6 +136,11 @@ func _on_spotted() -> void:
 
 func _on_enter() -> void:
 	_done = false
+	if state in ATTACKS:
+		_waiting = false
+		_slot = NAN
+		_turn_wait = 0.0
+		_gap = rng.randf_range(PACK_GAP.x, PACK_GAP.y)
 
 
 func _combat_state(delta: float) -> void:
@@ -147,7 +175,7 @@ func _combat_state(delta: float) -> void:
 			_counter(delta)
 		"recover":
 			_stop(delta)
-			if _t > 0.3 and _behind_close():
+			if _t > 0.3 and _behind_close() and _may_attack():
 				start_tail()
 			elif _has_target():
 				_face(_to_target(), delta, 3.0)
@@ -167,6 +195,7 @@ func start_study() -> void:
 		_enter("idle", "Idle")
 		return
 	_study_dist = STUDY_DIST + rng.randf_range(-0.5, 0.5)
+	_waiting = false
 	_enter("study", "Walk", 0.25)
 	_dur = rng.randf_range(STUDY_TIME.x, STUDY_TIME.y)
 	_circle = 1.0 if rng.randf() < 0.5 else -1.0
@@ -296,6 +325,8 @@ func end_ambush(delay := 0.0) -> void:
 
 
 func _recover(time := 0.8) -> void:
+	if state in ATTACKS:
+		_attack_end = _now()
 	_enter("recover", "Idle", 0.25)
 	_dur = time * RECOVER_SCALE
 
@@ -306,6 +337,12 @@ func choose_attack() -> void:
 		# ela sumiu enquanto ele estudava: não ataca no escuro, vai até onde a viu
 		alert_t = ALERT_TIME
 		start_hunt(_last_known)
+		return
+	if not _may_attack():
+		# não é a vez dele: segue cercando de longe e volta a pedir a vez daqui a pouco
+		start_study()
+		_waiting = true
+		_dur = rng.randf_range(PACK_WAIT.x, PACK_WAIT.y)
 		return
 	var to := _to_target()
 	var dist := to.length()
@@ -336,13 +373,20 @@ func _study(delta: float) -> void:
 		alert_t = ALERT_TIME
 		start_hunt(_last_known)
 		return
-	# ela chegou perto da traseira: rabada na hora (antes de virar de frente para ela)
-	if _behind_close():
+	# ela chegou perto da traseira: rabada na hora (antes de virar de frente para ela), se for a vez dele
+	if _behind_close() and _may_attack():
 		start_tail()
 		return
 	var to := _to_target()
 	var dist := to.length()
 	var dir := to / maxf(dist, 0.01)
+	if GameMode.value("pack_turns"):
+		if _waiting:
+			_turn_wait += delta
+		_hold_slot(delta, dir)
+		if _t >= _dur:
+			choose_attack()
+		return
 	var looking := _t > _dur * 0.6
 	var move := Vector3.ZERO
 	if not looking:
@@ -461,7 +505,7 @@ func _hold(_delta: float) -> void:
 	if tick > _ticks and not target.dead:
 		_ticks = tick
 		var side := global_basis.x * (1.0 if tick % 2 == 0 else -1.0)
-		target.take_hit(GameMode.enemy_damage(DAMAGE.bite), side, model.mouth_position())
+		target.take_hit(damage_of("bite"), side, model.mouth_position())
 	# ela se debatendo (apertando botões) solta antes; morta, ele sacode até o fim e larga
 	if _t >= maxf(0.6, HOLD_TIME - target.struggle * 0.1):
 		_release(-global_basis.z * 5.0 + global_basis.x * 3.0 + Vector3.UP * 2.0)
@@ -503,6 +547,7 @@ func _counter(delta: float) -> void:
 			var dir := to.normalized() if to.length() > 0.01 else -global_basis.z
 			_strike("counter", dir * 8.0 + Vector3.UP * 2.5, target.global_position + Vector3.UP * 1.0)
 	if _t >= model.length_of("TailWhip"):
+		_attack_end = _now()
 		start_study()
 
 
@@ -513,7 +558,7 @@ func _strike(kind: String, push: Vector3, at: Variant = null) -> void:
 		return
 	var hit: Vector3 = at if at is Vector3 else target.global_position + Vector3.UP
 	last_hit_at = hit
-	target.take_hit(GameMode.enemy_damage(DAMAGE[kind]), push.normalized(), hit)
+	target.take_hit(damage_of(kind), push.normalized(), hit)
 	if target.dead:
 		pass
 	elif kind in ["leap", "charge", "counter"]:
@@ -608,6 +653,10 @@ func reset() -> void:
 	lurking = false
 	visible = true
 	_ring_roar = false
+	_waiting = false
+	_slot = NAN
+	_attack_end = -INF
+	_turn_wait = 0.0
 	_reset_enemy()
 	health = MAX_HEALTH
 	collision_layer = 2
@@ -622,3 +671,112 @@ func _behind_close() -> bool:
 	return (global_basis.inverse() * to).z > 0.3 and to.length() < TAIL_REACH - 0.3
 
 
+
+
+## Dano do golpe `kind` na jogadora, já na escala do perfil.
+static func damage_of(kind: String) -> int:
+	return SURVIVAL_DAMAGE[kind] if GameMode.is_survival() else GameMode.enemy_damage(DAMAGE[kind])
+
+
+# ------------------------------------------------------------------ matilha
+## Relógio da física (o mesmo para todos os raptors).
+static func _now() -> float:
+	return Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
+
+
+## Os raptors vivos, fora da moita, atrás da mesma presa (ele incluído).
+func _pack() -> Array[Raptor]:
+	var out: Array[Raptor] = []
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var r := n as Raptor
+		if r and not r.dead and not r.lurking and r.target == target and r.state != "ambush":
+			out.append(r)
+	return out
+
+
+## Pode atacar agora? Sem "pack_turns" sempre. Com: ninguém da matilha no meio de um ataque, passou o intervalo desde o
+## último ataque de qualquer um e, entre os que estão rodeando com ela à vista, ele é o mais bem colocado.
+func _may_attack() -> bool:
+	if not GameMode.value("pack_turns"):
+		return true
+	var now := _now()
+	var pack := _pack()
+	for r in pack:
+		if r != self and r.state in ATTACKS:
+			return false
+		if now - r._attack_end < _gap:
+			return false
+	var mine := _turn_score()
+	for r in pack:
+		if r != self and r.state in ["study", "recover"] and r._turn_score() > mine and r._combat_sees():
+			return false
+	return true
+
+
+## Quem passa na frente: de lado/atrás dela (fora da vista) vale mais, longe demais vale menos, quem espera há mais tempo sobe.
+func _turn_score() -> float:
+	if not _has_target():
+		return -INF
+	var from_her := -_to_target()
+	var dist := from_her.length()
+	var her_fwd := -target.global_basis.z
+	var flank := 0.5 * (1.0 - her_fwd.dot(from_her / maxf(dist, 0.01)))  # 0 na frente dela, 1 nas costas
+	return 2.0 * flank - 0.35 * absf(dist - STUDY_DIST) + 0.6 * _turn_wait
+
+
+## Ângulo (no mundo) do lugar dele em volta dela: de onde ele está, empurrado para longe dos lugares dos outros.
+func _pick_slot() -> float:
+	var me := global_position - target.global_position
+	var ang := atan2(me.x, me.z)
+	var others: Array[float] = []
+	for r in _pack():
+		if r == self:
+			continue
+		var o := r.global_position - target.global_position
+		others.append(r._slot if not is_nan(r._slot) else atan2(o.x, o.z))
+	for i in 6:
+		var push := 0.0
+		for o in others:
+			var d := angle_difference(o, ang)  # > 0: ele está no sentido positivo do outro
+			if absf(d) < PACK_SPREAD:
+				push += (PACK_SPREAD - absf(d)) * (1.0 if d >= 0.0 else -1.0)
+		if absf(push) < 0.01:
+			break
+		ang += push * 0.5
+	return ang
+
+
+## Vai andando até o lugar (de frente para onde anda, nunca de lado) e lá para e observa, girando no lugar. O lugar é uma
+## faixa: no ângulo dele, de `SLOT_BAND.x` a `SLOT_BAND.y` m dela (quem para mais perto ou mais longe não recua nem avança).
+func _hold_slot(delta: float, dir: Vector3) -> void:
+	if is_nan(_slot):
+		_slot = _pick_slot()
+	var out := global_position - target.global_position
+	out.y = 0.0
+	var r := out.length()
+	var ring := clampf(r, SLOT_BAND.x, SLOT_BAND.y)
+	var spot := target.global_position + Vector3(sin(_slot), 0.0, cos(_slot)) * ring
+	var to_spot := spot - global_position
+	to_spot.y = 0.0
+	var far := to_spot.length()
+	if far > SLOT_LEAVE:
+		_to_slot = true
+	elif far < SLOT_REACH:
+		_to_slot = false
+	if _to_slot:
+		var move := to_spot / far
+		# não corta por cima dela: perto demais, abre para fora
+		if r < SLOT_BAND.x:
+			move = (move + out / maxf(r, 0.01)).normalized()
+		_face(move, delta, 4.0)
+		var fwd := -global_basis.z
+		var top := SLOT_RUN if far > 4.0 else SLOT_SPEED
+		var speed := minf(top, far * 1.5 + 0.4) * maxf(fwd.dot(move), 0.0)
+		velocity.x = fwd.x * speed
+		velocity.z = fwd.z * speed
+		var run := speed > 3.0
+		model.play("Run" if run else "Walk", 0.3, maxf(speed / RUN_ANIM_SPEED, RUN_MIN_SCALE) if run else maxf(speed, 0.4) / WALK_ANIM_SPEED)
+	else:
+		_stop(delta)
+		_face(dir, delta, 4.0)
+		model.play("Study", 0.3)

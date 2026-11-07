@@ -22,6 +22,8 @@ func run(runner: SceneTree) -> void:
 	await test_sniper_never_descends_catwalk()
 	await test_sniper_catwalk_patrol_and_lateral_look()
 	await test_rear_crates_and_ladder_discovery()
+	await test_shot_hits_what_camera_sees()
+	await test_suspended_ladder_and_climb()
 
 
 func test_sniper_weapon_and_assets() -> void:
@@ -450,3 +452,131 @@ func test_rear_crates_and_ladder_discovery() -> void:
 	var mount_pos := ladder_pos + catwalk.ladder.ladder_out * 0.45
 	var mount_info: Dictionary = catwalk.ladder.can_mount(mount_pos)
 	check(mount_info.get('can', false) and not mount_info.get('at_top', true), 'corredor atrás das caixas permite acessar e montar na escada')
+
+
+## A câmera (acima e atrás do cano) vê o sniper do mezanino por cima das pilhas do labirinto: o tiro acerta o que a
+## retícula mostra (antes o raio saía do cano e batia na quina da pilha); de dentro do labirinto a câmera sobe até ele.
+func test_shot_hits_what_camera_sees() -> void:
+	if t._world:
+		t._world.queue_free()
+		t._world = null
+		await t._frames(2)
+	GameMode.set_mode(GameMode.SURVIVAL)
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	t.get_root().add_child(main)
+	await t._frames(5)
+	var p: Player = main.player
+	var s: Sniper = main.sniper
+	for e: Node in t.get_nodes_in_group("enemies"):
+		if e != s:
+			e.process_mode = Node.PROCESS_MODE_DISABLED
+	s.set_physics_process(false)  # parado no lugar, com corpo (PROCESS_MODE_DISABLED tiraria a cápsula da física)
+	p.health = 100000
+	Input.action_press("aim")
+	# [onde ela está, onde ele está, parte]: do chão, a linha do cano passava pela quina de uma pilha do labirinto;
+	# de dentro do labirinto, ele fica acima dos 31,5° que a câmera subia
+	var cases := [[Vector3(1.0, 0.05, 3.0), Vector3(-3.5, Catwalk.FLOOR_Y, 11.7), "Chest"],
+		[Vector3(-0.8, 0.05, 8.8), Vector3(-1.5, Catwalk.FLOOR_Y, 11.7), "Chest"]]
+	for c in cases:
+		s.global_position = c[1]
+		s.health = Sniper.MAX_HEALTH
+		p.global_position = c[0]
+		p.velocity = Vector3.ZERO
+		await t._frames(30)
+		var pt: Vector3 = s.model.ragdoll.bodies[c[2]].global_position
+		for k in 30:
+			p.camera_rig.look_at_point(pt)
+			await t._frames(1)
+		var ray := p.camera_rig.aim_ray()
+		var off := rad_to_deg((pt - ray[0]).normalized().angle_to(ray[1]))
+		var info := p.aim_target_info()
+		check(off < 1.0 and info.target == s and not info.blocked, "mira no sniper do mezanino de %s: retícula nele, sem bloqueio" % [c[0]],
+			"desvio %.1f° alvo %s bloqueado %s" % [off, info.target, info.blocked])
+		p._shot_cd = 0.0
+		p._bloom = 0.0
+		p.fire()
+		await t._frames(2)
+		check(s.health < Sniper.MAX_HEALTH, "o tiro acerta o que a retícula mostra (sniper de %s)" % [c[0]], str(s.health))
+	Input.action_release("aim")
+	main.queue_free()
+	await t._frames(2)
+	GameMode.set_mode(GameMode.ARCADE)
+
+
+## Na fase a escada do mezanino fica recolhida e trancada: não monta, E embaixo dela avisa; a subida é escalando pela
+## caixa do nicho (escala a caixa, pula, fica pendurada na beira e sobe).
+func test_suspended_ladder_and_climb() -> void:
+	var w: Node3D = await t._fresh_world()
+	var catwalk := Catwalk.new()
+	catwalk.suspended = true
+	w.add_child(catwalk)
+	var player: Player = t._spawn_player(w, Vector3(Catwalk.CLIMB_CRATE.x, 0.0, 9.4))
+	player.rotation.y = PI  # de frente para o mezanino (+Z)
+	player.camera_rig.yaw = PI
+	await t._frames(10)
+	var ladder: Ladder = catwalk.ladder
+	check(ladder.locked and not ladder.can_mount(ladder.bottom_pos + ladder.ladder_out * 0.45).get("can", false),
+		"escada do mezanino recolhida: não monta")
+	check(ladder.can_mount(ladder.top_stand).is_empty() or not ladder.can_mount(ladder.top_stand).get("can", false),
+		"escada recolhida: nem de cima")
+	var said := []
+	player.ladder_locked.connect(func(l: Ladder) -> void: said.append(l))
+	check(player.pick_locked_ladder() == ladder, "na frente da caixa, embaixo da escada: aviso de escada trancada")
+	Input.action_press("interact")
+	await t._frames(2)
+	Input.action_release("interact")
+	await t._frames(2)
+	check(said.size() == 1 and said[0] == ladder and not player.moves.busy(), "E embaixo da escada recolhida: avisa, não sobe", str(said))
+	check(Catwalk.LOCKED_TEXT.begins_with("Está trancada."), "texto do aviso", Catwalk.LOCKED_TEXT)
+	# escala a caixa
+	Input.action_press("move_forward")
+	await t._frames(5)
+	Input.action_press("jump")
+	await t._frames(2)
+	Input.action_release("jump")
+	check(player.moves.mode == "mantle", "caixa do nicho: escala", player.moves.mode)
+	Input.action_release("move_forward")
+	await t._frames(90)
+	check(absf(player.global_position.y - Catwalk.CLIMB_CRATE_H) < 0.06, "de pé em cima da caixa", str(player.global_position))
+	# da caixa: pula e fica pendurada na beira do mezanino
+	Input.action_press("jump")
+	await t._frames(2)
+	Input.action_release("jump")
+	await t._frames(50)
+	check(player.moves.hanging(), "da caixa: pula e fica pendurada na beira do mezanino", "%s %s" % [player.moves.mode, player.global_position])
+	Input.action_press("jump")
+	await t._frames(2)
+	Input.action_release("jump")
+	await t._frames(150)
+	var at := player.global_position
+	check(player.moves.mode == "" and absf(at.y - Catwalk.FLOOR_Y) < 0.06 and at.z > Catwalk.FRONT_Z + 0.2, "subiu: de pé no mezanino", str(at))
+
+	# de cima da caixa as pilhas do labirinto dos lados do nicho ficam ao alcance, mas não se sobe nelas (no_climb)
+	var w2: Node3D = await t._fresh_world()
+	Level._maze(w2)
+	var cw2 := Catwalk.new()
+	cw2.suspended = true
+	w2.add_child(cw2)
+	var q: Player = t._spawn_player(w2, Catwalk.CLIMB_CRATE + Vector3(0.0, Catwalk.CLIMB_CRATE_H + 0.05, -0.1))
+	await t._frames(10)
+	var side_ledges := []
+	for dir: Vector3 in [Vector3.RIGHT, Vector3.LEFT]:
+		var l: Dictionary = q.moves.find_ledge(dir)
+		if not l.is_empty():
+			side_ledges.append([dir, l.top])
+	check(side_ledges.is_empty(), "de cima da caixa da subida: as pilhas do labirinto do lado não são borda", str(side_ledges))
+	check(not q.moves.find_ledge(Vector3.BACK).is_empty(), "de cima da caixa: a beira do mezanino à frente é borda")
+	# survival: parada em cima da caixa ela encosta na pilha do lado (PlayerCover) e fica de lado; o pulo sem direcional
+	# vai para onde a câmera olha (a beira do mezanino), não para fora da caixa
+	GameMode.set_mode(GameMode.SURVIVAL)
+	q.camera_rig.yaw = PI
+	q.rotation.y = PI
+	await t._frames(90)
+	var leaned := q.cover.active
+	Input.action_press("jump")
+	await t._frames(2)
+	Input.action_release("jump")
+	await t._frames(40)
+	check(q.moves.hanging(), "survival, encostada em cima da caixa: o pulo vai para a beira e fica pendurada",
+		"encostou %s, %s %s" % [leaned, q.moves.mode, q.global_position])
+	GameMode.set_mode(GameMode.ARCADE)

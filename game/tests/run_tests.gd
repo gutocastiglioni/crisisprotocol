@@ -15,7 +15,8 @@ const EXPECTED_ANIMS := ["Idle", "Walk", "Run", "AimIdle", "Shoot", "StrafeL", "
 const SUITES := [
 	["moves", "movimentos novos e fuzil", preload("res://tests/moves_tests.gd")],
 	["hurt", "golpes e levantar", preload("res://tests/hurt_tests.gd")],
-	["lean", "esgueirar pela quina (R3 / V)", preload("res://tests/lean_tests.gd")],
+	["lean", "esgueirar pela quina (L3 / V)", preload("res://tests/lean_tests.gd")],
+	["cover", "encostar de costas na caixa (survival)", preload("res://tests/cover_tests.gd")],
 	["weapons", "escopeta, buracos de bala e disparos", preload("res://tests/weapons_tests.gd")],
 	["key", "container trancado, chave e M79", preload("res://tests/key_tests.gd")],
 	["blood", "sangue e tiro na cabeça", preload("res://tests/blood_tests.gd")],
@@ -23,6 +24,7 @@ const SUITES := [
 	["ai", "IA, furtividade e pátio da mata", preload("res://tests/ai_tests.gd")],
 	["soldier", "guerrilheiros", preload("res://tests/soldier_tests.gd")],
 	["console", "guarda distraído no painel e caixas baixas novas", preload("res://tests/console_tests.gd")],
+	["explosive", "caixotes de explosivos do posto da porta do pátio, cadeia e fogo", preload("res://tests/explosive_tests.gd")],
 	["stealth_kill", "abate furtivo e golpe crítico", preload("res://tests/stealth_kill_tests.gd")],
 	["sniper_ladder", "sniper, passarela e escada", preload("res://tests/sniper_ladder_tests.gd")],
 	["start", "começo da fase: telhado, alçapão, labirinto, queda e sala dos clones", preload("res://tests/start_tests.gd")],
@@ -36,6 +38,7 @@ const SUITES := [
 	["tower", "torres de guarda do portão: snipers, queda do último, cartão do painel e chave 0M79",
 		preload("res://tests/tower_tests.gd")],
 	["allosaurus", "alossauro e pedreira (última sala)", preload("res://tests/allosaurus_tests.gd")],
+	["tunnel", "túnel da mina: guardas, explosivos, detonador, portão arrombado e cenas", preload("res://tests/tunnel_tests.gd")],
 	["survival", "sobrevivência: câmera, armas, munição e dano", preload("res://tests/survival_tests.gd")],
 	["gfx", "visual (PS1/PS2) e atlas", preload("res://tests/gfx_tests.gd")],
 	["sfx", "efeitos sonoros", preload("res://tests/sfx_tests.gd")],
@@ -575,20 +578,32 @@ func test_gamepad() -> void:
 	await _frames(int(Player.SHOT_COOLDOWN * 60) + 2)
 	_joy_button(JOY_BUTTON_LEFT_SHOULDER, true)
 	_joy_button(JOY_BUTTON_RIGHT_SHOULDER, true)
-	_joy_button(JOY_BUTTON_RIGHT_STICK, true)
+	_joy_button(JOY_BUTTON_LEFT_STICK, true)
 	await _frames(3)
-	check(p.aiming and p.shots_fired == shots + 1 and Input.is_action_pressed("lean"), "LB = mirar, R3 = esgueirar, RB não atira")
-	_joy_button(JOY_BUTTON_RIGHT_STICK, false)
+	check(p.aiming and p.shots_fired == shots + 1 and Input.is_action_pressed("lean") and Input.is_action_pressed("sprint"),
+		"LB = mirar, L3 = esgueirar/corrida forte, RB não atira")
+	_joy_button(JOY_BUTTON_LEFT_STICK, false)
 	_joy_button(JOY_BUTTON_RIGHT_SHOULDER, false)
 	_joy_button(JOY_BUTTON_LEFT_SHOULDER, false)
 	await _frames(40)
+	_joy_button(JOY_BUTTON_RIGHT_STICK, true)
+	await _frames(2)
+	_joy_button(JOY_BUTTON_RIGHT_STICK, false)
+	await _frames(2)
+	var r3_down := p.crouching
+	_joy_button(JOY_BUTTON_RIGHT_STICK, true)
+	await _frames(2)
+	_joy_button(JOY_BUTTON_RIGHT_STICK, false)
+	await _frames(2)
+	check(r3_down and not p.crouching and not Input.is_action_pressed("lean"), "R3 = agachar (outro toque levanta), não esgueira")
+	await _frames(20)
 	_joy_button(JOY_BUTTON_B, true)
 	await _frames(2)
 	_joy_button(JOY_BUTTON_B, false)
 	check(p.rolling, "botão B (bola/O) = rolar")
 	await _frames(int(Moves.data().roll.frames * 2) + 6)
-	_joy_button(JOY_BUTTON_A, true)
+	_joy_button(JOY_BUTTON_X, true)
 	await _frames(2)
-	_joy_button(JOY_BUTTON_A, false)
+	_joy_button(JOY_BUTTON_X, false)
 	await _frames(3)
-	check(p.crouching, "botão A (X) = agachar")
+	check(p.crouching, "botão X (quadrado) = agachar")

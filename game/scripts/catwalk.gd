@@ -14,9 +14,24 @@ const RAIL_H := 1.0
 const LADDER_X := 2.2
 const BRACE_Y := 1.95  # pé da diagonal das mãos-francesas na parede (acima da cabeça de quem passa por baixo)
 const BRACE_REACH := 1.4  # quanto a diagonal avança da parede até encontrar a longarina
+## Fase (main): a escada fica recolhida e trancada (`Ladder.locked`, degraus só de LADDER_LIFT para cima) e a subida é
+## escalando: o vão do guarda-corpo vai até a parede de caixas do nicho (CLIMB_GAP_R) e embaixo da parte livre da
+## beira fica uma caixa de CLIMB_CRATE_H (escala do chão; de cima dela pula, fica pendurada na beira e sobe).
+const LADDER_LIFT := 2.0
+const CLIMB_GAP_R := 3.18
+const CLIMB_CRATE_H := 1.0  # pendurada na beira (3,0 m) os pés ficam ~25 cm acima dela
+## centro no chão: metade direita do nicho (que vai de x 1,6 a 3,2), ao lado da escada (x 1,9 a 2,5); a beira em z = FRONT_Z
+const CLIMB_CRATE := Vector3(2.76, 0, 10.3)
+const CLIMB_CRATE_SIZE := Vector3(0.84, CLIMB_CRATE_H, 0.9)
+const LOCKED_TEXT := "Está trancada. O guarda deve gostar de privacidade.
+Não vou precisar dela de qualquer forma."
 
 var ladder: Ladder
 var floor_body: StaticBody3D
+
+
+## true = como na fase (escada recolhida e trancada, subida escalando); false = escada de subir (testes da escada).
+var suspended := false
 
 
 func _ready() -> void:
@@ -99,7 +114,7 @@ func _build_guardrails() -> void:
 	var x_min: float = -PLATFORM_W * 0.5
 	var x_max: float = PLATFORM_W * 0.5
 	var ladder_l: float = LADDER_X - ladder_gap * 0.5
-	var ladder_r: float = LADDER_X + ladder_gap * 0.5
+	var ladder_r: float = CLIMB_GAP_R if suspended else LADDER_X + ladder_gap * 0.5
 	
 	# Seção esquerda da grade frontal (de x_min até ladder_l)
 	var len_left: float = ladder_l - x_min
@@ -127,7 +142,13 @@ func _build_ladder() -> void:
 	# Escada posicionada na abertura frontal da passarela, voltada para +Z (quem sobe olha para a parede)
 	ladder.position = Vector3(LADDER_X, 0, FRONT_Z)
 	ladder.rotation.y = 0.0
+	if suspended:
+		ladder.locked = true
+		ladder.lift = LADDER_LIFT
 	add_child(ladder)
+	if suspended:
+		var c := CLIMB_CRATE
+		Level.block(self, CLIMB_CRATE_SIZE, Vector3(c.x, CLIMB_CRATE_H * 0.5, c.z), "crate", 1.0 / CLIMB_CRATE_SIZE.x, 0.02)
 
 
 func _build_lighting() -> void:

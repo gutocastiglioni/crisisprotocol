@@ -1,5 +1,5 @@
 extends RefCounted
-## Testes do esgueirar pela quina (PlayerLean, R3 / V): acha a beirada mais perto da cobertura à frente, inclina o tronco
+## Testes do esgueirar pela quina (PlayerLean, L3 / V): acha a beirada mais perto da cobertura à frente, inclina o tronco
 ## e dá o passo até a cabeça passar dela, câmera para o lado da quina; um toque liga e outro desliga (volta ao lugar),
 ## andar sai da quina, nada sem quina, agachada e mirando, e os inimigos passam a vê-la pela cabeça que ficou de fora.
 ## Chamado por run_tests.gd (usa check/_fresh_world/_frames/_spawn_player de lá; perfil "arcade").
@@ -16,6 +16,7 @@ func run(runner: SceneTree) -> void:
 	await test_no_corner()
 	await test_crouch_aim()
 	await test_enemy_sees_head()
+	await test_pad_l3_r3()
 
 
 ## Parede de 2 m de largura, 2,4 m de altura e 0,6 m de fundo, com a frente em z = WALL_FACE.
@@ -63,7 +64,7 @@ func test_lean_right() -> void:
 	await t._frames(40)
 	var head: Vector3 = await _head(p)
 	var tilt := (head.x - p.global_position.x) - (rest.x - 0.8)
-	t.check(p.lean.side == 1 and p.lean.amount > 0.99, "um toque no R3/V perto da quina: esgueira para a direita e fica, sem segurar", "%d %.2f" % [p.lean.side, p.lean.amount])
+	t.check(p.lean.side == 1 and p.lean.amount > 0.99, "um toque no L3/V perto da quina: esgueira para a direita e fica, sem segurar", "%d %.2f" % [p.lean.side, p.lean.amount])
 	t.check(head.x > 1.0 + 0.15, "a cabeça passa da beirada", "cabeça em x = %.2f (beirada em 1,0)" % head.x)
 	t.check(absf(tilt - PlayerLean.HEAD_REACH) < 0.05, "HEAD_REACH = o quanto a inclinação leva a cabeça para o lado",
 		"%.3f medido, %.3f na constante" % [tilt, PlayerLean.HEAD_REACH])
@@ -122,6 +123,38 @@ func test_no_corner() -> void:
 	t.check(p.rolling and p.lean.amount == 0.0 and p.model.lean_tilt.roll == 0.0, "rolar sai da quina na hora",
 		"rolando %s, %.2f, %.2f, lado %d" % [p.rolling, p.lean.amount, p.model.lean_tilt.roll, p.lean.side])
 	await t._frames(60)
+
+
+## Controle: L3 perto da beirada esgueira (um toque liga, outro desliga); longe dela não faz nada; R3 agacha sem esgueirar.
+func test_pad_l3_r3() -> void:
+	var w: Node3D = await _world_with_wall()
+	var p: Player = t._spawn_player(w, Vector3(0.8, 0, 0))
+	await t._frames(20)
+	t._joy_button(JOY_BUTTON_RIGHT_STICK, true)
+	await t._frames(2)
+	t._joy_button(JOY_BUTTON_RIGHT_STICK, false)
+	await t._frames(30)
+	t.check(p.crouching and p.lean.side == 0, "R3 na beirada: agacha, não esgueira", "agachada %s, lado %d" % [p.crouching, p.lean.side])
+	t._joy_button(JOY_BUTTON_LEFT_STICK, true)
+	await t._frames(2)
+	t._joy_button(JOY_BUTTON_LEFT_STICK, false)
+	await t._frames(40)
+	t.check(p.lean.side == 1 and p.lean.amount > 0.99 and p.crouching, "L3 na beirada: esgueira agachada para a quina e fica, sem segurar",
+		"lado %d, %.2f" % [p.lean.side, p.lean.amount])
+	t._joy_button(JOY_BUTTON_LEFT_STICK, true)
+	await t._frames(2)
+	t._joy_button(JOY_BUTTON_LEFT_STICK, false)
+	await t._frames(60)
+	t.check(p.lean.side == 0 and p.lean.amount == 0.0 and absf(p.global_position.x - 0.8) < 0.05, "outro toque no L3: volta ao lugar",
+		"%.2f" % p.global_position.x)
+	p.global_position = Vector3(0, 0, 3)  # nada à frente
+	await t._frames(5)
+	t._joy_button(JOY_BUTTON_LEFT_STICK, true)
+	await t._frames(2)
+	t._joy_button(JOY_BUTTON_LEFT_STICK, false)
+	await t._frames(30)
+	t.check(p.lean.side == 0 and p.model.lean_tilt.roll == 0.0, "L3 longe de beirada: não esgueira")
+	await t._frames(10)
 
 
 func test_crouch_aim() -> void:

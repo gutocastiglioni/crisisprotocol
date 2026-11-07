@@ -13,6 +13,7 @@ const TEX := {
 	"chest_m79": preload("res://assets/textures/chest_m79.png"),
 	"drop_crate": preload("res://assets/textures/drop_crate.png"),
 	"chute": preload("res://assets/textures/chute.png"),
+	"explosive": preload("res://assets/textures/explosive.png"),
 }
 const SIZE := 26.0
 const WALL_H := 5.2
@@ -21,15 +22,20 @@ const LAMPS := [
 	[Vector3(0, 3.8, 0), Color(1.0, 0.85, 0.6), 2.2],
 	[Vector3(-7, 3.5, -8), Color(0.6, 0.75, 1.0), 1.6],
 	[Vector3(8, 3.5, 7), Color(1.0, 0.55, 0.35), 1.6],
+	# luminária de trabalho em cima dos caixotes de explosivos (ExplosiveCrate): a pilha aparece de longe, do mezanino
+	[Vector3(-10.4, 3.2, -11.0), Color(1.0, 0.82, 0.55), 1.5],
 ]
 const PANEL_Y := 0.26  # painel aceso da luminária acima da lâmpada
 
 
-## Sala de um ponto no eixo X: 0 galpão, 1 pátio da mata, 2 pedreira (as divisas são as paredes das portas).
+## Sala de um ponto no eixo X: 0 galpão, 1 pátio da mata, 2 túnel da mina, 3 pedreira (as divisas são as paredes das
+## portas).
 static func room_of(x: float) -> int:
 	if x > -SIZE * 0.5:
 		return 0
-	return 1 if x > Yard.X_FAR - 0.6 else 2
+	if x > Yard.X_FAR - 0.6:
+		return 1
+	return 2 if x > Tunnel.GATE_X else 3
 
 
 ## Som e alarme passam de uma sala à outra só se todas as portas entre elas estão abertas.
@@ -77,7 +83,7 @@ static func block(parent: Node, size: Vector3, pos: Vector3, tex: String, scale 
 
 
 ## Monta o galpão, o telhado (com o alçapão por onde ela entra) e a sala dos clones atrás da plataforma de carga.
-## Devolve {"hatch": Hatch, "lab": CloneLab}.
+## Devolve {"hatch": Hatch, "lab": CloneLab, "tunnel": Tunnel}.
 static func build(parent: Node) -> Dictionary:
 	var h := SIZE * 0.5
 	block(parent, Vector3(SIZE, 0.4, SIZE), Vector3(0, -0.2, 0), "concrete", 0.35)
@@ -87,7 +93,8 @@ static func build(parent: Node) -> Dictionary:
 	# parede oeste com a porta para o pátio da mata (segunda sala) e o pátio em si
 	Yard.west_wall(parent)
 	Yard.build(parent)
-	# a pedreira, depois do portão do pátio: última sala (alossauro)
+	# o túnel da mina depois do portão do pátio e a pedreira no fim dele: última sala (alossauro)
+	var tunnel := Tunnel.build(parent)
 	Arena.build(parent)
 	# colunas
 	for p in [Vector3(-5, 0, -4), Vector3(5, 0, -4), Vector3(-5, 0, 4), Vector3(5, 0, 4)]:
@@ -104,6 +111,8 @@ static func build(parent: Node) -> Dictionary:
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
 	_dividers(parent)
+	# caixotes de explosivos no canto da porta do pátio (os guardas do posto mexem neles)
+	ExplosiveCrate.build(parent)
 	_maze(parent)
 	_console(parent)
 	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar; o portão da sala dos clones fica atrás dela)
@@ -114,7 +123,7 @@ static func build(parent: Node) -> Dictionary:
 	_lights(parent)
 	var lab := CloneLab.new()
 	parent.add_child(lab)
-	return {"hatch": Roof.build(parent), "lab": lab}
+	return {"hatch": Roof.build(parent), "lab": lab, "tunnel": tunnel}
 
 
 ## Parede do fundo (norte) com o vão do portão da sala dos clones na altura da plataforma de carga.
@@ -227,9 +236,11 @@ static func _maze(parent: Node) -> void:
 			var size := Vector3(MAZE_CELL + 0.02, 1.4, MAZE_CELL + 0.02)
 			var under := absf(at.x) - size.x * 0.5 < Catwalk.PLATFORM_W * 0.5 and at.z + size.z * 0.5 > Catwalk.FRONT_Z
 			var top_h := (Catwalk.FLOOR_Y - 0.4 if under else MAZE_STACK) - size.y
-			block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, k * 0.03)
+			# no_climb (PlayerMoves.find_ledge): de cima de alguma coisa (a caixa da subida do mezanino) ela alcançaria
+			# o alto da pilha; o labirinto não se pula por cima
+			block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, k * 0.03).set_meta("no_climb", true)
 			var top := Vector3(size.x - 0.04, top_h, size.z - 0.04)
-			block(parent, top, at + Vector3(-k * 0.02, size.y + top_h * 0.5, k * 0.02), "crate", 1.0 / top.x, -k * 0.04)
+			block(parent, top, at + Vector3(-k * 0.02, size.y + top_h * 0.5, k * 0.02), "crate", 1.0 / top.x, -k * 0.04).set_meta("no_climb", true)
 
 
 static func _dividers(parent: Node) -> void:
@@ -303,7 +314,7 @@ static func _seal(parent: Node) -> void:
 	var h := Catwalk.FLOOR_Y - 0.4
 	var depth := MAZE_Z0 + (maze_ladder_cell().y + 0.5) * MAZE_CELL - (Catwalk.FRONT_Z + 0.1)
 	var size := Vector3(MAZE_CELL + 0.02, h, depth)
-	block(parent, size, Vector3(at.x, h * 0.5, Catwalk.FRONT_Z + 0.1 + depth * 0.5), "crate", 1.0 / size.x)
+	block(parent, size, Vector3(at.x, h * 0.5, Catwalk.FRONT_Z + 0.1 + depth * 0.5), "crate", 1.0 / size.x).set_meta("no_climb", true)
 
 
 ## Detalhes sem colisão (acima do alcance ou rente à parede): vigas, canos e luminárias.

@@ -21,7 +21,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   laterais com o pé de apoio preso no chão por IK), `heroine_moves.py` (cambalhota, pulo/queda, pendurar, subir da
   borda, escalar obstáculo baixo, sair da escada pelo topo = LadderOut (mãos na beirada viradas para a frente, joelho na beira) e entrar = LadderIn (a mesma ao contrário; versões `Low` para beirada sem rebordo): poses + apoios presos + caminho da raiz), `heroine_strike.py` (golpes furtivos Assassinate/CritStrike, mesmo jeito), `heroine_rifle.py` (malha do M16, poses
   com o fuzil e a animação de pegar no baú), `heroine_shotgun.py` (malha da escopeta, telha à parte e a animação de
-  tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot), `heroine_drop.py` (PickupPistol = ajoelhada, a direita pega a pistola com silenciador na caixa de paraquedas; posição dela na caixa = `crate_frame`, exportada em `pistol_crate.glb`), `heroine_hurt.py` (golpes: HitFront/HitBack/HitL/HitR aditivas, StaggerBack/StaggerFwd, GetUpFront/GetUpBack com mãos/joelho/pés presos por IK), `heroine_cutscene.py` (HatchOpen = abrir o
+  tiro com coice e bombeamento), `heroine_m79.py` (malha do lança-granadas M79, cano octogonal, e a animação M79Shoot), `heroine_drop.py` (PickupPistol = ajoelhada, a direita pega a pistola com silenciador na caixa de paraquedas; posição dela na caixa = `crate_frame`, exportada em `pistol_crate.glb`), `heroine_hurt.py` (golpes: HitFront/HitBack/HitL/HitR aditivas, StaggerBack/StaggerFwd, GetUpFront/GetUpBack com mãos/joelho/pés presos por IK), `heroine_cover.py` (CoverL/CoverR/CoverCrouchL/CoverCrouchR = encostada de costas na parede olhando para a esquerda/direita, glúteo e omoplatas no plano a `WALL` m atrás da raiz por IK; medidas em heroine_moves.json "cover"), `heroine_cutscene.py` (HatchOpen = abrir o
   alçapão do telhado, Shocked = o susto na sala dos clones; quadros HATCH_GRAB/HATCH_UP usados pelo `hatch.gd`).
   Guerrilheiro (inimigo humano, de balaclava e colete; medidas da referência em `guerrilla_spec.py`, imagem em `art/ref/`):
   `guerrilla_body.py` (monta a pele única: tronco de moletom `BARE`, toco do ombro, união `_self_union`, braços e cabeça
@@ -55,9 +55,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   buracos de bala `bullet_holes.png`, quadros do clarão/fumaça `shot_fx.png` e do sangue `blood_fx.png`),
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
-- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
-  portas `door.gd` (galpão→pátio, pátio→pedreira), pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones e emboscada do pátio), guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`), `assets/` (gerados — não
+- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
+  portas `door.gd` (galpão→pátio, pátio→túnel, túnel→pedreira arrombável), túnel da mina `tunnel.gd`, pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones, emboscada do pátio, conversa do túnel e chegada à pedreira), guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
@@ -67,21 +67,28 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 420 s).
   Só algumas partes: `node tools/run_godot_tests.mjs raptor ai` (nome = arquivo `*_tests.gd` sem o sufixo; `core` = os
   testes de dentro do `run_tests.gd`; tabela `SUITES` no `run_tests.gd`).
+  Uma execução por vez na máquina: o runner faz fila (trava no temp do SO) e reaproveita o resultado de quem testou o mesmo
+  `game/` (a suíte inteira que passou vale para qualquer parte); não esperar outra execução à mão. Saída 75 = a fila não andou
+  em 180 s (o hook avisa "NÃO VERIFICADO" em vez de bloquear).
 - CI (`.github/workflows/ci.yml`, a cada push na main e PR): só segredos no histórico (gitleaks) e esta suíte no Godot 4.7.2
   do Linux. Nada de etapa de web/backend (RLS, DAST, responsividade, semgrep/osv): não se aplicam ao jogo.
 - Rodar o jogo: `godot --path game` (F2 alterna o visual PS1/PS2; `-- --gfx=ps2` já começa no PS2; F3 alterna o perfil SOBREVIVENCIA/ARCADE e reinicia; `-- --mode=arcade` já começa no arcade)
 - Captura do jogo: `godot --path game -- --capture=out.png --shot=idle|aim|run|crouch|roll|ragdoll|dummy [--yaw=graus] [--at=segundos]`
   Rosto: `--shot=face [--yaw=graus]`. Visual: `--gfx=ps1|ps2`.
-  Movimentos: `--shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|dodge_l|dodge_r|dodge_back|dodge_roll`.
+  Encostada na caixa: `--shot=cover|cover_crouch|cover_edge` (atrás da fileira de caixas do T, G em 0,6 s; cover_edge anda de lado até a beirada).
+  Movimentos: `--shot=walk|crouch_walk|crouch_aim|jump|hang|climb|mantle|pickup|rifle|rifle_aim|roll_side|jump_side` (roll_side/jump_side = cambalhota/pulo de lado, câmera parada, `--at` escolhe o quadro).
   Armas: `--shot=pickup_shotgun|shotgun|shotgun_aim|fire_pistol|fire_m16|fire_shotgun|pump` (tiros na pilha de caixas;
   a captura imprime `buracos=`).
   Ela e o guerrilheiro lado a lado: `--shot=idle_compare|carry_compare|walk_compare [--yaw=graus]` (sem arma / M16 parados / M16 andando).
+  Caixotes de explosivos: `--shot=crates|crates_fire|crates_ping|crates_close|crates_boom` (crates/crates_fire/crates_ping = do mezanino
+  mirando a pilha do canto com a M79 / atirando nela, `--at` pega a cadeia / pistola no caixote = HARDENED; crates_close = câmera perto
+  do guarda 7, `--yaw` gira, `--dist=m` afasta e mostra a parede oeste; crates_boom = a mesma com a granada estourando em 1 s e o fogo).
   Raptor: `--shot=raptor_roar|raptor_study|raptor_bite|raptor_tail|raptor_leap|raptor_charge|raptor_dead|raptor_idle [--playercam]`
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
   tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
   Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 a roda, ~9,6 o rugido).
-  Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder: `--at` escolhe o quadro).
+  Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|mezz_climb|ladder_locked|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder/mezz_climb: `--at` escolhe o quadro; mezz_climb = sobe pela caixa do nicho até o mezanino, câmera atrás, `--yaw` gira; ladder_locked salva no aviso da escada trancada).
   Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
   keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem o cartão; gate_open: `--at` escolhe o quadro).
   Torres do portão do pátio: `--shot=towers|tower_fall|gate_card` (towers = vistas da estrada com os snipers; tower_fall = o último
@@ -92,6 +99,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   getup_fwd = arremessada pelas costas, levanta de bruços; `--at` escolhe o quadro).
   Guarda do painel: `--shot=console` (atrás dele, só ele anda; `--pos` muda o lugar dela).
   HUD: `--shot=danger|danger_roll` (no galpão na mira dos guardas da porta do pátio; danger_roll rola em 2,6 s; `--at` escolhe o quadro).
+  Túnel da mina: `--shot=tunnel|tunnel_mid|tunnel_far|tunnel_talk|tunnel_boom|lair` (tunnel = da boca; tunnel_mid = os 2 sentinelas do
+  meio; tunnel_far = os 4 do fundo nos explosivos; tunnel_talk = cena da conversa, `--at`; tunnel_boom = arma o detonador e corre,
+  explosão e portão arrombado em ~10,3 s, `--at`; lair = passa pelo portão arrombado e a cena do alossauro toca, `--at`).
   Alossauro: `--shot=allo_idle|allo_roar|allo_roar_at|allo_stomp|allo_headbutt|allo_tail|allo_bite|allo_dead|allo_end|allo_hop [--playercam]`; pedreira: `--shot=arena`.
   Mira nas proteções: `--shot=allo_aim --part=Head|Chest|Tail2|...` (de lado para ele) e `--shot=flak --part=Chest|Head` (sentinela da
   porta da sala dos clones); ela atira em 2 s e a proteção aparece na mira por 1 s: `--at=2.3`.
@@ -140,8 +150,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Perfil de jogo (`GameMode`, padrão `survival`; F3 ou `--mode=arcade|survival`): **os dois perfis ficam vivos e testados**, nada do
   jogo de ação de antes foi apagado, para servir de base a outro jogo. `arcade` = o jogo de antes (câmera livre que volta atrás dela,
   munição infinita, tiro do quadril liga a mira temporária, inimigos com o dano base, sem itens). `survival` (RE4 Remake + Dino
-  Crisis 2): câmera por cima do ombro direito (`CameraRig.SHOULDER`; parada, analógico direito/mouse giram à vontade; soltou e ela andou pelo direcional, volta para trás dela e na inclinação inicial, `CameraRig.RECENTER_*`; mirando não volta; direcional para trás = anda de costas sem virar, `GameMode.back_walk`/`Player._backing`, a `BACK_WALK_SCALE` do andar, nunca corre: 1,35 m atrás, pivô na altura da cabeça, ela no terço esquerdo da coxa para cima; mirando 1,1 m; coice `kick`), anda/corre a 80%
-  (`move_scale`; SHIFT/L3 = corrida forte `Player.SPRINT_SPEED` 4,2 m/s, andar devagar passa para ALT; no arcade SHIFT segue sendo andar), esquiva = pulinho curto em vez da cambalhota (`GameMode.short_dodge`, `PlayerMoves.start_dodge`: parada ou direcional para trás = DodgeBack ~1,5 m, senão de lado DodgeL/DodgeR ~1,8 m virando o mínimo; invulnerável até `dodge.guard` do heroine_moves.json; poses em `heroine_moves.dodge_*_keys`; o pulinho sai na hora do primeiro X; um segundo X até `PlayerMoves.DOUBLE_TAP` = 0,2 s, com o pulinho ainda no impulso, vira cambalhota dali) com intervalo de 1,4 s, a retícula só existe com o botão de mirar apertado e só atira mirando (sem
+  Crisis 2): câmera por cima do ombro direito (`CameraRig.SHOULDER`; não volta sozinha para trás dela; direcional para trás = anda de costas sem virar, `GameMode.back_walk`/`Player._backing`, a `BACK_WALK_SCALE` do andar, nunca corre: 1,35 m atrás, pivô na altura da cabeça, ela no terço esquerdo da coxa para cima; andando não troca de ombro; sem mirar o ombro vai para o lado aberto quando um lado da frente DELA fica fechado (`CameraRig.side`/`SIDE_*`, por `SIDE_HOLD`: leque de raios `SIDE_FAN` do peito pelo giro do corpo dela, `SIDE_WALL` m, `SIDE_BLOCKED`/`SIDE_OPEN`; o lado aberto dela vira ombro pela câmera, `SIDE_ALIGN`; a caixa na frente dela para um lado conta, parede reta na frente ou corredor não) e volta ao direito depois de `SIDE_RELAX`; girando a câmera para o lado dela na tela, uma mola puxa quase para o centro, afasta e abre o campo de visão (`SWING_*`), sem trocar de ombro, e volta ao parar; mirando sempre o direito; mirando 1,1 m; coice `kick`; sobe até `CameraRig.PITCH_UP`: de dentro do labirinto mira o mezanino), anda/corre a 80%
+  (`move_scale`; SHIFT/L3 = corrida forte `Player.SPRINT_SPEED` 4,2 m/s, andar devagar passa para ALT; no arcade SHIFT segue sendo andar), sem esquiva (o pulinho DodgeL/R/Back foi tirado): o botão de rolar é a mesma cambalhota do arcade, com intervalo de 1,4 s (`roll_cooldown`), a retícula só existe com o botão de mirar apertado e só atira mirando (sem
   mira apertada não há tiro), inimigos machucam ×2 (`GameMode.enemy_damage`, usado em todo `take_hit` de inimigo na jogadora),
   munição limitada sem recarga (`Player.ammo`, HUD "PISTOLA 10", clique `dry_fire` e aviso quando acaba; `START_AMMO`/`WEAPON_AMMO`
   do baú/`AMMO_CAP`) e itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
@@ -192,6 +202,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `LOSE_TIME`, procura na passarela e esquece (`_lose_target`). Testes: `ai_tests.gd`.
 - Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), clareira de capim com estrada de terra
   até um portão, árvores/arbustos/pedras/troncos, touceiras de capim alto (grupo "cover", meta "radius"), 3 raptors em `Yard.POSTS` (rotas usadas só depois da emboscada).
+  Mata do meio numa grade (`Yard.COVER_CELL`, um item mexido por célula: sem vazios grandes); perto da estrada só capim, que
+  acompanha a beira sem entrar na terra (a estrada fica livre até o portão); a `CLEARING + TREE_GAP` do morto só moita (copa
+  de árvore entraria no plano do alto da emboscada). Baú da escopeta em `Yard.SHOTGUN_CHEST` (boca para a mata) com um tronco
+  fixo (`CHEST_LOG`) escorado no fundo: ela dá a volta para abrir.
   O portão do fundo (`Yard._gate`) é de chapa cheia (`GATE_H`) com viga de concreto até `Arena.CLIFF_H`: nem pela frente nem do
   telhado se vê a pedreira. Neblina rasteira sobre o pátio (`Yard._mist`, FogVolume; `Level` liga `volumetric_fog` com densidade 0 fora dele).
   Guerrilheiro morto (`Corpse` em `Yard.CORPSE`, clareira de `Yard.CLEARING` m sem nada sólido): `HeroineModel` do guerrilheiro com a
@@ -230,6 +244,13 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   com o antebraço esquerdo puxado para a boca (`Ragdoll.drag`) e a luta dela por cima; rolar (`is_dodging`) esquiva de tudo.
   Salto (golpe sai das garras dos pés) e investida chamam `Player.launch()`: ragdoll arremessado em C em volta do golpe
   (`Ragdoll.fling` + `_hold_c`), depois ela levanta. A morte do raptor é ragdoll (`RaptorModel.RAGDOLL`), não animação.
+  Matilha (survival, `GameMode` "pack_turns"; arcade como antes): um raptor ataca por vez (`Raptor._may_attack`: ninguém em
+  `ATTACKS`, `PACK_GAP` s desde o fim do último ataque de qualquer um, e ele é o mais bem colocado por `_turn_score`: de lado/atrás
+  dela, perto da distância de estudo, quem espera há mais tempo); no survival ninguém rodeia (jeito Dino Crisis: o raptor do DC1
+  só tem Walk/Idle_Aggressive, sem andar em volta): cada um tem um lugar em volta dela (`_slot`, a `PACK_SPREAD` dos lugares dos
+  outros, faixa `SLOT_BAND` m), vai andando até lá e para no Study de frente para ela, como o alossauro (`_hold_slot`; só anda de
+  novo se o lugar ficar a mais de `SLOT_LEAVE`, p.ex. ela arremessada ou fugindo); a rabada de reflexo também espera a vez. Dano no survival pela
+  tabela `Raptor.SURVIVAL_DAMAGE` (agarrão inteiro 24, golpes 14–20), não pelo dobro. Teste: `survival_tests.test_pack_turns`.
   Andando, o raptor só se move para a frente do corpo e a velocidade da animação acompanha (`WALK_ANIM_SPEED`/`RUN_ANIM_SPEED`).
   Pés presos (`FootPlant`, SkeletonModifier3D do `RaptorModel`, vale para o alossauro; medidas pela perna do esqueleto): o pé
   que a animação põe no chão fica onde tocou no mundo (IK de coxa/canela, metatarso e dedos como na animação) até a animação
@@ -255,7 +276,11 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   HatchOpen; a tampa sobe entre HATCH_GRAB e HATCH_UP, as palmas presas por IK na alça girando com ela (`heroine_cutscene.handle_at`, = `Hatch.HANDLE`) até HATCH_LET_GO, depois empurra); fechado, a escada dele (`Ladder.top_open`) não monta. A escada fica na beira
   do furo do lado de quem chega, presa à parede do fundo por suportes, e desce até o labirinto de caixas (`Level.MAZE`: grade de
   células de 1,6 m, pilhas de 2,7 m = acima do alcance de pendurar; frente fechada; saída única à esquerda por baixo do mezanino; a
-  escada do mezanino num beco que só abre para o corredor de cima; vigas do mezanino com colisão). Raptors não navegam no labirinto
+  escada do mezanino num beco que só abre para o corredor de cima; vigas do mezanino com colisão). Na fase a escada do mezanino
+  fica recolhida e trancada (`Catwalk.suspended` → `Ladder.locked`/`lift`: degraus só de `LADDER_LIFT` para cima, o lance de baixo
+  encaixado atrás, corrente e cadeado; não monta de baixo nem de cima; E embaixo dela = `Player.ladder_locked` → `Catwalk.LOCKED_TEXT`
+  na faixa de baixo) e a subida é escalando: vão do guarda-corpo até a parede do nicho (`CLIMB_GAP_R`) e a caixa `CLIMB_CRATE`
+  de `CLIMB_CRATE_H` embaixo dela (escala a caixa, pula, fica pendurada na beira e sobe). `Catwalk.new()` sozinho (testes da escada) segue com a escada de subir. Raptors não navegam no labirinto
   (raio da malha 0,75 m); soldados usam a malha de gente (`Yard.bake_people_nav`: raio 0,25 m, célula de 5 cm, só no galpão) e entram
   em todo corredor do labirinto e no nicho da escada do mezanino (passam debaixo das mãos-francesas do mezanino, `Catwalk.BRACE_Y` acima da cabeça); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
   Na escada, entrando/saindo pelo topo e nos `Hatch.HIDDEN_RUNGS` degraus abaixo do alto do ciclo (`Ladder.hidden_top`, `PlayerMoves.hidden_on_ladder`) fica escondida de todos, mesmo alertados; abaixo, o sniper a vê se estiver olhando para o canto: o tiro
@@ -290,14 +315,27 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   drenado, porta de vidro aberta, mangueiras soltas, luz vermelha; a plaqueta dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO") é o
   código do portão da pedreira. O console não tem mais a chave do painel: o cartão (`main.gate_card`, keycard cor de ferrugem, id
   `Yard.GATE_KEY`, "No verso: CÓDIGO = SUBJECT DO PROTÓTIPO") cai do último sniper das torres do pátio.
-- Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
+- Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 túnel da mina, 3 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
   Porta trancada: `Door.lock` = id da chave/cartão. Com leitor (`add_card_reader`, porta do galpão) abre com o cartão no bolso. Com
   teclado (`add_keypad` + `Door.code`, portão da pedreira: cartão `Yard.GATE_KEY` na fenda do lado do teclado + código
   `CloneLab.ALLO_SUBJECT`): E emite
   `Player.keypad` → `main._on_keypad` → `Inspect.keypad` (pausa, câmera no painel; sem o cartão "PAINEL DESLIGADO"; com ele o visor
   acende e ela digita 4 algarismos: 0-9 ou setas/direcional, E confirma, C sai; errado = `keypad_error` e zera; certo = `keypad_ok`,
   o cartão é gasto e a porta abre). `Inspect.auto_code` digita sozinho (testes/capturas). R tranca de novo e apaga o visor.
-- Pedreira (`Arena`): última sala, depois do portão (fechado até abrir) no fundo do pátio; paredões de pedra, ruínas e pedras grandes
+- Túnel da mina (`Tunnel`, sala 2): do portão do teclado do pátio até a pedreira, `LENGTH` m de galeria na rocha (escoras,
+  trilho, lâmpadas penduradas) em trechos `SECTIONS`: boca, câmara do meio (caixas de cobertura, itens em `Pickup.LAYOUT`, 2
+  sentinelas `GUARDS` 0 e 1 olhando para a boca: abrir o portão longe deles não alerta ninguém), corredor e câmara do fundo (pilhas
+  `Tunnel.STACKS` de `ExplosiveCrate` até o portão da pedreira e 4 guardas `GUARDS` 2..5 nos caixotes de trabalho, distraídos com
+  Console). A galeria abafa: com ponta na sala 2, `Enemy._reaches` só passa até `Tunnel.SOUND_REACH` (a briga do meio não chega ao
+  fundo; levada até eles, chega). Chegando ao fundo (`TALK_X`) com os dois `TALKERS` no trabalho: `Cutscene.play_talk` (viram um
+  para o outro e falam `TALK_LINES`; voltam ao trabalho). Detonador no caixote do `DETONATOR` (E na frente, `Player.pick_detonator`,
+  "ARMAR DETONADOR"): `FUSE` s de contagem (sinal `tick` → aviso "DETONAÇÃO EM n", bipe e luz piscando) e todas as pilhas
+  explodem; granada da M79 também detona. Caixote a `BREACH_RADIUS` do portão explodindo arromba o portão (`Door.blow`: as folhas
+  voam e caem; `Door.sealed` = sem E), um passo de física depois do estouro (o barulho não chega à pedreira). Passando pelo portão
+  arrombado (`LAIR_X`) com o alossauro calmo: `Cutscene.play_lair` (ela pensa `LAIR_LINES`, ele ruge = `Enemy.spot`; pulando, ele a vê
+  igual). Numa cena (`Player.cutscene`) ninguém a vê (`Enemy._target_hidden`). R: caixotes, portão e as duas cenas de volta.
+  Ambiente de lugar fechado dentro dele (`Soundscape.yard_mix`). Testes: `tunnel_tests.gd`.
+- Pedreira (`Arena`): última sala, no fim do túnel da mina (posições de antes + `Arena.DX`); entra pelo portão arrombado; paredões de pedra, ruínas e pedras grandes
   (cobertura que o alossauro não atravessa), capim alto, postes (`Yard.lamp`). Alossauro em `Arena.ALLO` e 2 raptors em `Arena.POSTS`.
 - Alossauro (`allosaurus.gd`, herda `Enemy`; modelo `AllosaurusModel` = `RaptorModel` com outro arquivo/atlas/ragdoll/sons graves):
   vê → ruge (`ROAR_RANGE`: `Player.daze(3 s)`, não fere; volta a rugir com `ROAR_COOLDOWN`) → persegue andando (`stalk`) e escolhe:
@@ -333,14 +371,26 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   se ela segue na mira; de `WARN` para cima pisca com "!!". Radar: centrado nela, girado com a câmera, contorno das salas
   (`Radar.ROOMS`) e portas (verde aberta/amarela fechada/vermelha trancada); inimigo só aparece depois de avistado uma vez (na tela, a
   `SPOT_RANGE` m, sem cenário no meio) e daí é rastreado (cor = `alert_level`; fora do alcance, preso na borda); morto some; R esquece.
-- Controles novos: F / quadrado = pular (com borda à frente: escala até MANTLE_MAX ou pula e fica pendurada; pendurada,
-  frente/pular sobe e trás/agachar solta), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / O (bola) = cambalhota (survival: pulinho de esquiva), C / X = agachar.
-  Atirar = botão esquerdo do mouse / R2 (o R1 deixou de atirar). V / R3 (um toque liga, outro desliga) = esgueirar pela quina (`PlayerLean`, `player_lean.gd`; em pé ou
+- Controles novos: F / X (cruz) = pular (com borda à frente: escala até MANTLE_MAX ou pula e fica pendurada; pendurada,
+  frente/pular sobe e trás/agachar solta; sem borda = pulo para a frente, `Player._jump`: para onde o direcional aponta ou a
+  frente dela, embalo mínimo `JUMP_FWD`, animação Jump = salto com passada aberta; no ar, de frente para uma borda com o alto
+  entre `PlayerMoves.AIR_GRAB_LOW`/`AIR_GRAB_HIGH` acima dos pés, agarra e fica pendurada, `try_air_grab`; depois de soltar,
+  `AIR_REGRAB` sem agarrar; derrubada da escada não agarra), E / triângulo = pegar (baú), Q/Tab / Select = trocar arma. Espaço / O (bola) = cambalhota, C / quadrado ou R3 = agachar (quadrado = `crouch_pad`, R3 = `crouch_stick`, só no jogo: nos menus o "crouch" é o X de confirmar, e no jogo o X que pula não agacha; `InputSetup.crouch_tapped`).
+  Atirar = botão esquerdo do mouse / R2 (o R1 deixou de atirar). V / L3 (um toque liga, outro desliga; L3 segurado segue sendo a corrida forte, o toque só esgueira com quina à frente) = esgueirar pela quina (`PlayerLean`, `player_lean.gd`; em pé ou
   agachada, com e sem mira): com cobertura a até `REACH` à frente da câmera, acha a beirada mais perto dos dois lados (`SCAN`, caminho do
   corpo livre), vira para a frente da câmera, inclina o tronco (`LeanTilt`, modificador depois da AimPitch, até `ANGLE`) e, se precisa,
   dá um passo de lado até a cabeça passar da beirada (`CLEAR`); a câmera vai para o lado da quina (`CAM_SIDE`, ombro esquerdo na quina
   da esquerda). Outro toque, volta ao lugar; empurrar o direcional (`WALK_OUT`) sai da quina e ela anda dali; rolar/pular/golpe saem na hora. Os inimigos olham e miram em
   `Player.sight_point()` (o peito; esgueirada, a cabeça de fora). Captura: `--shot=lean|lean_aim`. Testes: `lean_tests.gd`.
+  Encostar (`PlayerCover`, `player_cover.gd`, só no survival: `GameMode` "cover"), por comando (nunca sozinha: embolava subir/escalar):
+  G (ação "cover") ou dois empurrões do analógico direito para cima (`DOUBLE_FLICK`); com caixa/parede a até `REACH` (qualquer lado,
+  a mais perto) vai até ela, vira de costas e escora (`Moves.cover().wall` do plano; a parede tem que
+  existir atrás do glúteo e das omoplatas, `back_stand`/`back_crouch`: a caixa de 1,5 m serve em pé, a de 1 m só agachada);
+  olha para a beirada mais perto; direcional para os lados anda colada (passos laterais, cabeça para onde vai, `HeadLook`) e
+  para na beirada (`EDGE_MARGIN`, `at_edge`; empurrando mais `EDGE_HOLD`, contorna); o mesmo comando solta; para longe da parede sai;
+  mirar/esgueirar/rolar/pular/golpe saem. A depuração do guerrilheiro em ragdoll passou do G para o J. Com arma longa só
+  os braços vêm do RifleHold (`HeroineModel.COVER`, nó `carry_arms`). Ocultação: `Player.visibility_from(olho)` = ×`HIDE_MULT`
+  para quem está do outro lado do plano da parede (`Enemy._sight_range`); do lado aberto, normal. Testes: `cover_tests.gd`.
   ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO; árvore pausada, não abre por
   cima de tela de inspeção nem no game over; volta ao jogo dois passos de física depois para o botão não chegar nela).
   TELA CHEIA: SIM/NÃO troca na hora e salva em `Settings` (`settings.gd`, `user://settings.cfg`); o `main` aplica ao abrir
@@ -358,6 +408,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   numa roda na velocidade do jogo; GIRANDO = vira no lugar a `TURN_RATE`), ESPAÇO/X a velocidade (1x, 1/2, 1/4, parado),
   ESC/START/C/bola volta ao menu. Captura: `--shot=showroom [--creature=raptor|allosaurus] [--anim=Walk]
   [--move=lugar|circulo|girando] [--yaw=graus] [--at=s]` (o `--at` conta num relógio que roda com o jogo pausado).
+- Cambalhota (`heroine_moves.roll_keys`): ~2 m em 1 s, sem pulão: empurra, projeção curta e baixa na diagonal até as mãos
+  no chão (pés ~10 cm no ar num quadro), rola pelos ombros e costas, levanta agachada; o centro do novelo (`ROLL_C`) fica na altura em que as costas encostam no chão e o caminho anda giro x raio.
 - Movimentos com deslocamento (cambalhota, subir, escalar, pegar): o caminho da raiz sai do Blender (`*_PATH` em
   `heroine_moves.py`, gravado em heroine_moves.json) e o Godot segue o mesmo caminho (`Moves.hermite`, igual ao Python).
   Mudou pose/caminho: regerar a arte e rodar os testes (conferem mãos na borda e pé sem deslizar).
@@ -381,6 +433,18 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   armada explode (`Grenade.explode`: dano em área até `RADIUS`, só em quem está à vista — parede/porta protegem —, empurra corpos,
   arremessa a jogadora perto e ela leva `PLAYER_SHARE` do dano; barulho `NOISE`; `Fx.explosion` + mancha `Fx.scorch`, que conta em
   `MAX_DECALS` e some com o R). Survival: 4 granadas no baú, caixa verde em `Pickup.LAYOUT`.
+- Caixotes de explosivos (`ExplosiveCrate`, jeito Syphon Filter; textura `explosive.png` de `make_level_textures.py`, UV 0..1 por
+  face): pilhas `STACKS` na parede norte do canto da porta do pátio, uma no meio do canto e uma atrás do guarda 5 (a passagem dos
+  raptors rente à parede oeste fica livre: ai_tests `test_yard_nav`);
+  luminária própria em `Level.LAMPS`. Só o guarda 7 mexe neles (`Soldier.GUARDS` "work" = índice da pilha, `work_spot`; distraído como o
+  do painel, animação Console no detonador, fuzil encostado `Soldier._stowed`); 3 e 4 na porta, 5 vigiando a ronda 0. Bala comum
+  (`Player._pellet_hit`) só bate no metal: mossa, a mira escreve HARDENED (`armor_hit`) e `ping` = `on_alarm` em quem está a
+  `PING_RANGE` na mesma sala (o 7 larga o detonador). Explosão perto (`Grenade.explode` → `shockwave`, ou outro caixote a
+  `CHAIN_RADIUS`) detona com atraso pela distância: cada um é um `Grenade.blast` (`RADIUS`/`DAMAGE`, os outros caixotes não protegem,
+  empurrão `BODY_PUSH` pequeno: são muitos), some e deixa o chão pegando fogo (`Fire.burn`: chamas, luz, fumaça, machuca quem fica
+  dentro); guarda morto perto pega fogo (`Soldier.ignite`: `Fire.attach` no peito/quadril do ragdoll, `HeroineModel.char_body`
+  carboniza). A granada na pilha do canto mata o posto inteiro (3, 4, 5, 7). R: caixotes de volta, fogo apagado (`Fire.clear`).
+  Testes: `explosive_tests.gd`.
 - Container trancado e chave (jeito RE/Dino Crisis): `Chest.lock` = id da chave (ferrolho + cadeado na frente). A M79 fica no
   container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está na mão do guerrilheiro
   morto no meio do pátio (`Corpse`, ver Pátio da mata); `TargetDummy.loot` (cai do alvo morto, brilhando) segue valendo para
@@ -397,6 +461,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `UiStyle.Hint` (fileira "<glifo> VERBO"; glifo do mapa do `InputSetup` pelo último aparelho, `UiStyle.pad` via `UiStyle.Watcher`:
   tecla numa moldura ou triângulo/bola/X/quadrado/direcional desenhados). Prompt de ação (`main._prompt`) junta pegar/abrir e o
   abate furtivo (atirar). Captura com os glifos do controle: `--pad`. O teste `ui_style_tests.gd` barra cor/tamanho solto nos scripts.
+- Tiro pela linha da câmera: o raio sai de `Player.shot_origin` (o ponto da linha da retícula mais perto do cano; cano encostado
+  em cenário = do cano) na direção da retícula, então acerta o que ela mostra (antes, olhando por cima de uma pilha, o raio do
+  cano batia na quina); `aim_target_info` (mira cinza = bloqueada) usa a mesma origem. Teste: `sniper_ladder_tests.test_shot_hits_what_camera_sees`.
 - Tiros: `Player.WEAPON_STATS` (cadência, dano por projétil, chumbos, dispersão/abertura em rajada, alcance com queda
   de dano, tremida, cápsula); chumbos no mesmo alvo somam num `take_hit` só. Efeitos em `Fx` por arma e por superfície
   (meta "surface" do corpo = textura do `Level.block`); buraco de bala (`Fx.decal`) só em cenário, preso ao corpo,

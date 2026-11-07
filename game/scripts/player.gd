@@ -33,6 +33,8 @@ signal notice(text: String)
 signal locked(chest: Node)
 ## interagiu com o teclado de uma porta trancada por código (o main abre o painel)
 signal keypad(door: Door)
+## E embaixo da escada recolhida do mezanino (Ladder.locked): o main mostra Catwalk.LOCKED_TEXT
+signal ladder_locked(ladder: Ladder)
 ## interagiu com a plaqueta de um tubo da sala dos clones (o main mostra de perto)
 signal read_plate(plate: SubjectPlate)
 
@@ -40,10 +42,12 @@ signal read_plate(plate: SubjectPlate)
 const RUN_SPEED := 4.4
 const SPRINT_SPEED := 4.2  # corrida forte do survival (SHIFT / L3): acima da corrida normal (3,5), longe de velocista
 const JUMP_SPEED := 4.6  # pulo normal (~0,6 m)
+const JUMP_FWD := 2.4  # embalo mínimo do pulo para a frente (parada: ~1,2 m)
 const AIR_CONTROL := 2.0
 const COYOTE := 0.12  # sem chão por menos que isso ainda conta como no chão (degraus, quinas)
 const TURN_RATE := 12.0
 const BACK_WALK_SCALE := 0.8  # andando de costas (survival): fração da velocidade do andar
+const CROUCH_WALK_SCALE := 1.3  # andar agachado: acima da velocidade do ciclo, com a animação mais rápida junto (o pé não escorrega)
 const GRAVITY := 18.0
 const SHOT_COOLDOWN := 0.28  # pistola
 const SHOT_RANGE := 60.0
@@ -98,7 +102,6 @@ var crouching := false
 var aiming := false
 var dead := false
 var rolling := false
-var hopping := false  # pulinho de esquiva (survival), na parte invulnerável
 var shots_fired := 0
 var sniper_zoom_index := 0
 var weapons: Array[String] = ["pistol"]
@@ -146,7 +149,8 @@ var _knock := Vector3.ZERO
 var _stun := 0.0
 var _daze := 0.0  # > 0: atordoada pelo rugido do alossauro (sem controle, mãos nos ouvidos)
 var stealth: PlayerStealth
-var lean: PlayerLean  # esgueirar pela quina (R3 / V)
+var lean: PlayerLean  # esgueirar pela quina (L3 / V)
+var cover: PlayerCover  # encostada de costas na caixa/parede (survival, automático)
 var _trail := Blood.Trail.new()
 
 
@@ -171,6 +175,7 @@ func _ready() -> void:
 	moves = PlayerMoves.new(self)
 	stealth = PlayerStealth.new(self)
 	lean = PlayerLean.new(self)
+	cover = PlayerCover.new(self)
 	model.shell_ejected.connect(func(at: Vector3, vel: Vector3) -> void: Fx.casing(get_parent(), at, vel, "shell"))
 	_spawn = global_transform
 
@@ -181,6 +186,7 @@ func _physics_process(delta: float) -> void:
 		_trail.update(self, delta, 1.0 - health / 100.0)
 	if grabbed or dead or cutscene or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
 		lean.cancel()
+		cover.cancel()
 	if grabbed:
 		_held(delta)
 		return
@@ -251,18 +257,14 @@ func _physics_process(delta: float) -> void:
 				zoom_in()
 			elif Input.is_action_just_pressed("zoom_out"):
 				zoom_out()
-		elif Input.is_action_just_pressed("crouch") and _respawn_t <= 0.0:
+		elif InputSetup.crouch_tapped() and _respawn_t <= 0.0:
 			crouching = not crouching
 		if not is_sniper_zoomed() and Input.is_action_just_pressed("roll") and _roll_cd <= 0.0:
 			make_noise(7.0, 0.7)
 			_roll_cd = GameMode.roll_cooldown()
-			if GameMode.short_dodge():
-				# pulinho na hora para onde o direcional aponta (parado, para trás); clique duplo vira cambalhota
-				moves.start_dodge(wish.normalized() if wish.length() > 0.1 else global_basis.z)
-			else:
-				moves.start_roll(wish.normalized() if wish.length() > 0.1 else -global_basis.z)
+			moves.start_roll(wish.normalized() if wish.length() > 0.1 else -global_basis.z)
 			return
-		if Input.is_action_just_pressed("jump") and _jump(wish):
+		if not is_sniper_zoomed() and Input.is_action_just_pressed("jump") and _jump(wish):
 			return
 		if Input.is_action_just_pressed("interact"):
 			var hatch := pick_hatch()
@@ -275,6 +277,10 @@ func _physics_process(delta: float) -> void:
 				if info.get("can", false):
 					moves.start_ladder(lad, info.get("at_top", false), true)
 					return
+			var shut := pick_locked_ladder()
+			if shut:
+				ladder_locked.emit(shut)
+				return
 			var chest := pick_target()
 			if chest and chest.is_locked():
 				locked.emit(chest)
@@ -294,6 +300,10 @@ func _physics_process(delta: float) -> void:
 			if plate:
 				read_plate.emit(plate)
 				return
+			var det := pick_detonator()
+			if det:
+				det.arm()
+				return
 			var door := pick_door()
 			if door:
 				if door.is_locked() and door.code != "":
@@ -310,26 +320,38 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
 
+	# encosta sozinha na caixa/parede (PlayerCover): parada perto dela ou andando contra ela
+	var covering := cover.update(delta, wish) if grounded and not leaning and not aiming and not is_sniper_zoomed() else false
+	if not covering and cover.active:
+		cover.cancel()
+
 	var hv := Vector3.ZERO
 	if not grounded:
 		# no ar: mantém o embalo, pouco controle
-		hv = Vector3(velocity.x, 0.0, velocity.z).lerp(wish * Moves.speed("walk"), AIR_CONTROL * delta * wish.length())
+		# (empurrar para a frente não freia o pulo: o alvo é o embalo atual, se for maior que o andar)
+		var flat := Vector3(velocity.x, 0.0, velocity.z)
+		hv = flat.lerp(wish * maxf(Moves.speed("walk"), flat.length()), AIR_CONTROL * delta * wish.length())
+		if _jumping and moves.try_air_grab(delta):  # só no pulo dela: caindo de um buraco ou da beira, não agarra
+			return
 		model.set_state("jump" if _jumping and velocity.y > -1.0 else "fall")
 	elif leaning:
 		if aiming:
 			_aim_at(delta)
 		hv = lean.locomotion(delta)
+	elif covering:
+		hv = cover.locomotion(delta, wish)
 	elif aiming:
 		_aim_at(delta)
 		hv = _aim_locomotion(wish)
 	elif _backing(wish):
 		# survival: para trás anda de costas, sem virar (o andar ao contrário), em pé ou agachada; nunca corre
 		var gait := "crouch_walk" if crouching else "walk"
-		var speed := Moves.speed(gait) * GameMode.move_scale() * clampf(wish.length() / 0.6, 0.3, 1.0) * BACK_WALK_SCALE
+		var speed := Moves.speed(gait) * GameMode.move_scale() * clampf(wish.length() / 0.6, 0.3, 1.0) * BACK_WALK_SCALE \
+				* (CROUCH_WALK_SCALE if crouching else 1.0)
 		hv = wish.normalized() * speed
 		model.set_state(gait, -speed / Moves.speed(gait))
 	elif crouching:
-		var speed := Moves.speed("crouch_walk") * GameMode.move_scale() * minf(1.0, wish.length() / 0.6)
+		var speed := Moves.speed("crouch_walk") * CROUCH_WALK_SCALE * GameMode.move_scale() * minf(1.0, wish.length() / 0.6)
 		hv = wish.normalized() * speed
 		if wish.length() > 0.1:
 			_face(wish, delta)
@@ -373,6 +395,12 @@ func visibility() -> float:
 	return stealth.visibility
 
 
+## O quanto ela aparece para quem olha de `eye`: encostada na caixa, quem está atrás dela (do outro lado da parede) a vê
+## menos (PlayerCover.hides_from); do lado aberto, igual a `visibility()`.
+func visibility_from(eye: Vector3) -> float:
+	return stealth.visibility * (PlayerCover.HIDE_MULT if cover.hides_from(eye) else 1.0)
+
+
 ## Para onde os inimigos olham e miram: o peito; esgueirada pela quina, a cabeça que ficou de fora (PlayerLean).
 func sight_point() -> Vector3:
 	return lean.sight_point()
@@ -404,15 +432,23 @@ func move_wish() -> Vector3:
 	return camera_rig.yaw_basis() * Vector3(input.x, 0.0, input.y)
 
 
-## Pulo: com borda à frente, escala/agarra (PlayerMoves); senão, pulo normal mantendo o embalo.
+## Pulo: com borda à frente, escala/agarra (PlayerMoves); senão, pulo para a frente (para onde o direcional aponta, ou
+## para a frente dela; encostada na parede, para onde a câmera olha), com pelo menos JUMP_FWD de embalo. No ar, borda na altura das mãos = agarra (`try_air_grab`).
 func _jump(wish: Vector3) -> bool:
 	crouching = false
-	if moves.try_ledge(wish if wish.length() > 0.1 else -global_basis.z):
+	var fwd := wish.normalized() if wish.length() > 0.1 else -global_basis.z
+	if wish.length() <= 0.1 and cover.active:
+		fwd = -camera_rig.yaw_basis().z  # encostada ela está de costas para a parede: sem direcional, para onde a câmera olha
+	fwd = Vector3(fwd.x, 0.0, fwd.z).normalized()
+	if moves.try_ledge(fwd):
 		return true
 	_jumping = true
-	velocity.y = JUMP_SPEED
+	rotation.y = atan2(-fwd.x, -fwd.z)
+	var along := maxf(Vector3(velocity.x, 0.0, velocity.z).dot(fwd), JUMP_FWD)
+	velocity = fwd * along + Vector3.UP * JUMP_SPEED
 	model.play("jump")
-	return false
+	move_and_slide()
+	return true
 
 
 ## Direcional puxado para trás (mais para trás que para o lado) e apontando para trás dela, sem mirar: anda de costas
@@ -677,6 +713,16 @@ func pick_drop() -> SupplyDrop:
 	return null
 
 
+## Detonador do túnel da mina ao alcance para armar (ela na frente do caixote dele), ou null.
+func pick_detonator() -> Tunnel:
+	if dead or grabbed or moves.busy():
+		return null
+	for t: Tunnel in get_tree().get_nodes_in_group("tunnels"):
+		if t.can_arm(global_position):
+			return t
+	return null
+
+
 ## Plaqueta de tubo ao alcance (ela na frente dela), ou null.
 func pick_plate() -> SubjectPlate:
 	if dead or grabbed or moves.busy():
@@ -753,11 +799,12 @@ func fire() -> void:
 	var cam_q := PhysicsRayQueryParameters3D.create(ray[0], ray[0] + ray[1] * float(stats.range), SHOT_MASK, exclude)
 	var cam_hit := space.intersect_ray(cam_q)
 	var target_pt: Vector3 = cam_hit.position if cam_hit else ray[0] + ray[1] * float(stats.range)
-	var to_target := target_pt - muzzle
-	var base_dir: Vector3 = to_target.normalized() if (target_pt - muzzle).dot(ray[1]) > 0.1 and to_target.length() > 0.1 else ray[1]
+	var origin := shot_origin(ray, exclude)
+	var to_target := target_pt - origin
+	var base_dir: Vector3 = ray[1] if origin != muzzle else (to_target.normalized() if to_target.dot(ray[1]) > 0.1 and to_target.length() > 0.1 else ray[1])
 	for i in int(stats.pellets):
 		var dir := _spread_dir(base_dir, cone)
-		var q := PhysicsRayQueryParameters3D.create(muzzle, muzzle + dir * float(stats.range), SHOT_MASK, exclude)
+		var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * float(stats.range), SHOT_MASK, exclude)
 		q.hit_from_inside = true
 		var hit := space.intersect_ray(q)
 		var end: Vector3 = hit.position if hit else muzzle + dir * float(stats.range)
@@ -771,6 +818,9 @@ func fire() -> void:
 	for who: Node in hits:
 		if is_instance_valid(who) and not who.get("dead"):
 			var h: Dictionary = hits[who]
+			if h.has("crate"):
+				armor_hit.emit(who, ExplosiveCrate.TEXT)
+				continue
 			if h.head and who.has_method("take_headshot"):
 				who.take_headshot(h.damage, h.dir, h.at)
 				headshot.emit(who)
@@ -778,6 +828,19 @@ func fire() -> void:
 				who.take_hit(h.damage, h.dir, h.at)
 				if h.armor != "":
 					armor_hit.emit(who, h.armor)
+
+
+## De onde o tiro sai: o ponto da linha da câmera (`ray` = aim_ray) mais perto do cano, para o tiro acertar o que a
+## retícula mostra (a câmera fica acima e atrás do cano: olhando por cima de uma pilha, o raio do cano batia na quina
+## dela). Se há cenário entre o cano e esse ponto (cano encostado numa parede), sai do cano mesmo.
+func shot_origin(ray: Array[Vector3], exclude: Array[RID]) -> Vector3:
+	var muzzle := model.muzzle_position()
+	var on_ray: Vector3 = ray[0] + ray[1] * maxf(0.0, (muzzle - ray[0]).dot(ray[1]))
+	if muzzle.distance_to(on_ray) < 0.01:
+		return muzzle
+	var q := PhysicsRayQueryParameters3D.create(muzzle, on_ray, 1, exclude)
+	q.hit_from_inside = true
+	return muzzle if get_world_3d().direct_space_state.intersect_ray(q) else on_ray
 
 
 ## Abertura (graus) do cone em que o próximo tiro sai: a da arma + a dos tiros seguidos + andando. A mira (Crosshair) mostra.
@@ -829,6 +892,10 @@ func _pellet_hit(hit: Dictionary, dir: Vector3, stats: Dictionary, hits: Diction
 	else:
 		Fx.impact(parent, hit.position, false, hit.normal, (col as Node).get_meta("surface", "concrete"))
 		Fx.decal(col, hit.position, hit.normal, float(stats.hole) * randf_range(0.85, 1.15), int(stats.pellets) > 1)
+		if col is ExplosiveCrate and not hits.has(col):
+			# caixote de explosivos: bala só bate no metal (a mira escreve HARDENED) e o barulho alerta quem está perto
+			(col as ExplosiveCrate).ping(hit.position)
+			hits[col] = {"crate": true}
 	if who:
 		var h: Dictionary = hits.get(who, {"damage": 0, "dir": dir, "at": hit.position, "head": false, "armor": ""})
 		# na cabeça o headshot; no resto, a proteção da parte atingida (colete, casco do alossauro)
@@ -927,12 +994,12 @@ func aim_target_info() -> Dictionary:
 	info.target = target_node
 	info.target_pos = target_pos
 
-	# 2. Interpreta se a trajetória do tiro da heroína (a partir do cano) vai acertar a parede/pilastra
-	var muzzle := model.muzzle_position()
-	var to_target := target_pos - muzzle
+	# 2. Interpreta se a trajetória do tiro da heroína (de onde ele sai, `shot_origin`) vai acertar a parede/pilastra
+	var origin := shot_origin(ray, exclude)
+	var to_target := target_pos - origin
 	var dist := to_target.length()
 	if dist > 0.1:
-		var q_traj := PhysicsRayQueryParameters3D.create(muzzle, target_pos - to_target.normalized() * 0.05, 1, exclude)
+		var q_traj := PhysicsRayQueryParameters3D.create(origin, target_pos - to_target.normalized() * 0.05, 1, exclude)
 		q_traj.hit_from_inside = true
 		var traj_hit := space.intersect_ray(q_traj)
 		if not traj_hit.is_empty():
@@ -1132,7 +1199,7 @@ func _hold_c() -> void:
 
 ## Na cambalhota (ou caída, levantando, ou executando golpe furtivo/crítico) ela não leva outro golpe.
 func is_dodging() -> bool:
-	return rolling or hopping or _down_t > 0.0 or _rising or moves.mode in ["assassinate", "crit_strike"]
+	return rolling or _down_t > 0.0 or _rising or moves.mode in ["assassinate", "crit_strike"]
 
 
 func grab(by: Node3D) -> void:
@@ -1325,6 +1392,7 @@ const RESPAWN_ROLL_GRACE := 0.1  # s sem rolar logo depois de renascer
 func respawn() -> void:
 	moves.cancel()
 	lean.cancel()
+	cover.cancel()
 	model.stop_ragdoll()
 	dead = false
 	crouching = false
@@ -1366,6 +1434,17 @@ func respawn() -> void:
 
 
 ## Encontra a escada mais próxima que pode ser montada
+## Escada recolhida e trancada logo acima dela (no chão, na frente; a caixa da subida fica embaixo dela): E avisa (`ladder_locked`).
+func pick_locked_ladder(reach := 1.8) -> Ladder:
+	if dead or grabbed or moves.busy():
+		return null
+	for node in get_tree().get_nodes_in_group("ladders"):
+		var lad := node as Ladder
+		if lad and lad.locked_below(global_position, reach):
+			return lad
+	return null
+
+
 func pick_ladder(reach := 1.2) -> Ladder:
 	if dead or grabbed or moves.busy():
 		return null

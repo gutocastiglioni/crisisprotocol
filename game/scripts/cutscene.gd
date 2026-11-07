@@ -18,6 +18,17 @@ extends Node
 ##   4. do alto, girando devagar: ela no meio e os três rodeando (Raptor.start_ambush);
 ##   5. por cima do ombro dela, o da frente ruge (Raptor.ambush_roar).
 ## No fim (ou pulando) os raptors largam a roda já em luta (Raptor.end_ambush, um de cada vez) e ela está de arma na mão.
+##
+## Conversa no fundo do túnel da mina (`play_talk`, Tunnel.talk_speakers: ela chega sem ser vista):
+##   1. atrás dela, agachada no corredor, a câmara dos explosivos à frente;
+##   2. o primeiro larga o detonador, vira para o outro e fala TALK_LINES[0];
+##   3. o outro vira e responde TALK_LINES[1];
+##   4. de trás dela outra vez, eles voltando ao trabalho (Soldier: distraídos de novo, não a veem).
+## Chegada à pedreira (`play_lair`, Tunnel.lair_ready: passou pelo portão arrombado):
+##   1. atrás dela, entrando na pedreira;
+##   2. o rosto dela, pensando (LAIR_LINES);
+##   3. o alossauro a vê e ruge (Enemy.spot: chama os raptors da pedreira), por cima do ombro dela e depois perto da
+##      cabeça dele. Pulando antes do rugido, ele a vê do mesmo jeito.
 
 signal finished
 
@@ -45,12 +56,30 @@ const AMB_END_AT := 10.4
 const AMB_RING := 5.0  # raio da roda dos raptors em volta dela
 const AMB_CIRCLE := 1.0  # sentido da roda: o mesmo para os três (matilha rodeando junta, nenhum na contramão)
 const AMB_STAGGER := 0.9  # s entre um raptor e o próximo sair da roda para atacar
+const TALK_LINES := ["ISSO É MAIS QUE O SUFICIENTE PRA EXPLODIR AQUELE BICHO AGORA. EU CANSEI DESSE LUGAR.",
+	"NOSSO SALÁRIO NÃO COBRE ESSA INSANIDADE."]
+const TALK_A_AT := 2.2  # o primeiro vira e fala
+const TALK_SUB1 := [2.7, 6.2]
+const TALK_B_AT := 6.4  # o outro vira e responde
+const TALK_SUB2 := [6.9, 9.6]
+const TALK_WIDE_AT := 9.8  # voltam ao trabalho
+const TALK_END_AT := 11.2
+const TALK_TURN := 4.0  # rapidez com que eles viram um para o outro
+const LAIR_LINES := ["ELES QUERIAM EXPLODIR ALGO?",
+	"COM ESSE TANTO DE EXPLOSIVO, TENHO CERTEZA QUE ISSO NÃO VEM COISA BOA POR AÍ..."]
+const LAIR_WALK := 1.8
+const LAIR_WALK_SPEED := 1.2
+const LAIR_SUB1 := [2.0, 3.8]
+const LAIR_SUB2 := [3.8, 6.6]
+const LAIR_ROAR_AT := 6.6
+const LAIR_CLOSE_AT := 7.1  # câmera vai para perto da cabeça dele (o rugido)
+const LAIR_END_AT := 9.6
 
 var player: Player
 var lab: CloneLab
 var hud: CanvasLayer  # HUD do jogo, escondido durante a cena
 var busy := false
-var scene := ""  # "clones" ou "ambush"
+var scene := ""  # "clones", "ambush", "talk" (túnel) ou "lair" (pedreira)
 var t := 0.0
 var layer: CanvasLayer
 var _cam: Camera3D
@@ -69,6 +98,10 @@ var _from := Vector3.ZERO  # onde ela começa a andar até o morto
 var _emerged := false
 var _stood := false
 var _roared := false
+var speakers: Array[Soldier] = []  # conversa do túnel: quem fala primeiro e quem responde
+var _talk_yaw := {}  # giro de cada um enquanto a cena o vira (por cima do que a IA dele faz)
+var _talk_home := {}  # giro de trabalho de cada um (virado para o caixote): volta a ele no fim
+var allo: Allosaurus  # chegada à pedreira
 
 
 func _ready() -> void:
@@ -86,6 +119,7 @@ func _ready() -> void:
 	_sub.text = SUBTITLE
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_sub.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # fala comprida quebra em duas linhas dentro da faixa
 	_sub.add_theme_color_override("font_color", UiStyle.INK)
 	_sub.add_theme_color_override("font_outline_color", Color.BLACK)
 	layer.add_child(_sub)
@@ -142,6 +176,30 @@ func play_ambush(p: Player, body: Corpse, raptors: Array[Raptor]) -> void:
 	_place_camera()
 
 
+## Conversa dos guardas do fundo do túnel: `who` = [quem fala primeiro, quem responde].
+func play_talk(p: Player, who: Array[Soldier]) -> void:
+	if busy or who.size() < 2:
+		return
+	speakers = who
+	_talk_yaw.clear()
+	_talk_home.clear()
+	for sd in speakers:
+		_talk_yaw[sd] = sd.rotation.y
+		_talk_home[sd] = sd.rotation.y
+	_begin(p, "talk", TALK_LINES[0])
+	_place_camera()
+
+
+## Chegada à pedreira pelo portão arrombado: ela pensa e o alossauro `a` ruge.
+func play_lair(p: Player, a: Allosaurus) -> void:
+	if busy or a == null:
+		return
+	allo = a
+	_roared = false
+	_begin(p, "lair", LAIR_LINES[0])
+	_place_camera()
+
+
 func _begin(p: Player, which: String, subtitle: String) -> void:
 	player = p
 	scene = which
@@ -168,11 +226,19 @@ func _physics_process(delta: float) -> void:
 		return
 	# o pulo fica para o passo de física seguinte ao aperto: a jogadora (que roda antes) já ignorou aquele E
 	if _skip:
+		if scene == "lair" and not _roared:
+			_lair_roar()  # pulou antes do rugido: ele a vê do mesmo jeito
 		stop()
 		return
 	t += delta
 	if scene == "ambush":
 		_ambush_step(delta)
+		return
+	if scene == "talk":
+		_talk_step(delta)
+		return
+	if scene == "lair":
+		_lair_step(delta)
 		return
 	if t < WALK_TIME:
 		player.cutscene_walk = Vector3(0, 0, -WALK_SPEED)
@@ -228,6 +294,81 @@ func _ambush_step(delta: float) -> void:
 		_finish()
 
 
+## Linha do tempo da conversa no túnel (ver o cabeçalho).
+func _talk_step(delta: float) -> void:
+	player.cutscene_walk = Vector3.ZERO
+	player.model.set_state("crouch")
+	if t >= TALK_A_AT and t < TALK_WIDE_AT:
+		_turn_speaker(speakers[0], speakers[1], delta)
+	if t >= TALK_B_AT and t < TALK_WIDE_AT:
+		_turn_speaker(speakers[1], speakers[0], delta)
+	if t >= TALK_WIDE_AT:
+		for sd in speakers:
+			_turn_home(sd, delta)
+	if t >= TALK_SUB1[0] and t < TALK_SUB1[1]:
+		_sub.text = TALK_LINES[0]
+		_sub.visible = true
+	elif t >= TALK_SUB2[0] and t < TALK_SUB2[1]:
+		_sub.text = TALK_LINES[1]
+		_sub.visible = true
+	else:
+		_sub.visible = false
+	if t >= TALK_END_AT:
+		_finish()
+
+
+## `who` vira para `other` (a cena manda no giro dele por cima da IA, que o puxaria de volta ao caixote).
+func _turn_speaker(who: Soldier, other: Soldier, delta: float) -> void:
+	if not is_instance_valid(who) or who.dead or not is_instance_valid(other):
+		return
+	var to := other.global_position - who.global_position
+	var yaw: float = _talk_yaw.get(who, who.rotation.y)
+	yaw = lerp_angle(yaw, atan2(-to.x, -to.z), 1.0 - exp(-TALK_TURN * delta))
+	_talk_yaw[who] = yaw
+	who.rotation.y = yaw
+
+
+## `who` volta a ficar virado para o caixote dele (o guarda distraído só trabalha virado para lá: `Enemy.is_distracted`).
+func _turn_home(who: Soldier, delta: float) -> void:
+	if not is_instance_valid(who) or who.dead:
+		return
+	var yaw: float = _talk_yaw.get(who, who.rotation.y)
+	yaw = lerp_angle(yaw, _talk_home.get(who, yaw), 1.0 - exp(-TALK_TURN * 1.5 * delta))
+	_talk_yaw[who] = yaw
+	who.rotation.y = yaw
+
+
+## Linha do tempo da chegada à pedreira (ver o cabeçalho).
+func _lair_step(delta: float) -> void:
+	if t < LAIR_WALK:
+		player.cutscene_walk = Vector3(-LAIR_WALK_SPEED, 0, 0)
+		player.model.set_state("walk", LAIR_WALK_SPEED / Moves.speed("walk"))
+	else:
+		player.cutscene_walk = Vector3.ZERO
+		player.model.set_state("idle")
+		if t >= LAIR_ROAR_AT and is_instance_valid(allo) and not allo.dead:
+			_turn_to(allo.global_position, delta, 2.0)
+	if t >= LAIR_ROAR_AT and not _roared:
+		_lair_roar()
+	if t >= LAIR_SUB1[0] and t < LAIR_SUB1[1]:
+		_sub.text = LAIR_LINES[0]
+		_sub.visible = true
+	elif t >= LAIR_SUB2[0] and t < LAIR_SUB2[1]:
+		_sub.text = LAIR_LINES[1]
+		_sub.visible = true
+	else:
+		_sub.visible = false
+	if t >= LAIR_END_AT:
+		_finish()
+
+
+## O alossauro a vê: ruge virado para ela e chama os raptors da pedreira.
+func _lair_roar() -> void:
+	_roared = true
+	if is_instance_valid(allo) and not allo.dead and not allo.in_combat():
+		allo.spot()
+
+
 ## Chegou ao fim sem pular: a cena fica vista (da próxima vez dá para pular).
 func _finish() -> void:
 	Settings.mark_cutscene_seen(scene)
@@ -272,10 +413,16 @@ func _process(_delta: float) -> void:
 	var h := roundf(vp.y * BAR)
 	_top.position = Vector2.ZERO
 	_top.size = Vector2(vp.x, h)
-	_bottom.position = Vector2(0, vp.y - h)
-	_bottom.size = Vector2(vp.x, h)
-	_sub.position = Vector2(0, vp.y - h)
-	_sub.size = Vector2(vp.x, h)
+	# a legenda fica longe das bordas e do "PULAR" (que vai no canto direito da faixa); fala de duas linhas sobe a faixa
+	var pad := h * 0.5 + (_hint.size.x * _hint.scale.x if skippable else 0.0)
+	_sub.size = Vector2(vp.x - pad * 2.0, h)
+	var hb := h
+	if _sub.visible:
+		hb = maxf(h, roundf(_sub.get_line_count() * _sub.get_line_height() + h * 0.3))
+	_sub.position = Vector2(pad, vp.y - hb)
+	_sub.size = Vector2(vp.x - pad * 2.0, hb)
+	_bottom.position = Vector2(0, vp.y - hb)
+	_bottom.size = Vector2(vp.x, hb)
 	# "PULAR" no canto direito da faixa de baixo, só quando já dá para pular
 	_hint.visible = skippable and t > SKIP_AFTER
 	var hs := _hint.size * _hint.scale
@@ -286,6 +433,12 @@ func _process(_delta: float) -> void:
 func _place_camera() -> void:
 	if scene == "ambush":
 		_ambush_camera()
+		return
+	if scene == "talk":
+		_talk_camera()
+		return
+	if scene == "lair":
+		_lair_camera()
 		return
 	var her := player.get_global_transform_interpolated().origin
 	var head := her + Vector3.UP * 1.55
@@ -365,6 +518,68 @@ func _ambush_camera() -> void:
 		_cam.look_at(aim.lerp(her + Vector3.UP * 1.2, 0.3))
 
 
+func _talk_camera() -> void:
+	var her := player.get_global_transform_interpolated().origin
+	var chamber := Vector3((Tunnel.SECTIONS[3][0] + Tunnel.SECTIONS[3][1]) * 0.5, 1.1, Tunnel.Z)
+	if t < TALK_A_AT or t >= TALK_WIDE_AT:
+		# atrás dela, baixo, a câmara dos explosivos à frente
+		var k := t / TALK_A_AT if t < TALK_A_AT else (t - TALK_WIDE_AT) / (TALK_END_AT - TALK_WIDE_AT)
+		var ahead := Vector3(chamber.x - her.x, 0.0, chamber.z - her.z).normalized()
+		var side := ahead.cross(Vector3.UP)
+		_cam.fov = 50.0
+		_cam.global_position = her - ahead * (2.2 - 0.3 * k) + side * 0.6 + Vector3.UP * (1.25 + 0.1 * k)
+		_cam.look_at(chamber)
+		return
+	# o rosto de quem fala, do lado para onde ele vira (o outro, no meio da câmara)
+	var who: Soldier = speakers[0] if t < TALK_B_AT else speakers[1]
+	var other: Soldier = speakers[1] if t < TALK_B_AT else speakers[0]
+	var k := (t - TALK_A_AT) / (TALK_B_AT - TALK_A_AT) if t < TALK_B_AT else (t - TALK_B_AT) / (TALK_WIDE_AT - TALK_B_AT)
+	var head := who.global_position + Vector3.UP * 1.6
+	var f := Vector3(other.global_position.x - who.global_position.x, 0.0, other.global_position.z - who.global_position.z).normalized()
+	var side := f.cross(Vector3.UP)
+	_cam.fov = 40.0
+	_cam.global_position = head + f * (2.0 - 0.3 * k) + side * 0.7 + Vector3.UP * -0.1
+	_cam.look_at(head + Vector3.UP * -0.05)
+
+
+func _lair_camera() -> void:
+	var her := player.get_global_transform_interpolated().origin
+	var head := her + Vector3.UP * 1.55
+	var front := -player.global_basis.z
+	var right := player.global_basis.x
+	if t < LAIR_WALK:
+		# atrás dela, baixo, entrando na pedreira
+		var k := t / LAIR_WALK
+		_cam.fov = 55.0
+		_cam.global_position = her - front * (2.4 - 0.4 * k) + right * 0.6 + Vector3.UP * 1.2
+		_cam.look_at(her + front * 10.0 + Vector3.UP * 1.6)
+	elif t < LAIR_ROAR_AT:
+		# o rosto dela, pensando
+		var k := (t - LAIR_WALK) / (LAIR_ROAR_AT - LAIR_WALK)
+		_cam.fov = 38.0
+		_cam.global_position = head + front * (1.7 - 0.2 * k) + right * 0.3 + Vector3.UP * -0.1
+		_cam.look_at(head)
+	elif not is_instance_valid(allo):
+		return
+	elif t < LAIR_CLOSE_AT:
+		# por cima do ombro dela, ele lá na frente
+		var aim := allo.model.mouth_position()
+		var dir := Vector3(aim.x - her.x, 0.0, aim.z - her.z).normalized()
+		var side := dir.cross(Vector3.UP)
+		_cam.fov = 45.0
+		_cam.global_position = her - dir * 1.6 + side * 0.6 + Vector3.UP * 1.7
+		_cam.look_at(aim.lerp(her + Vector3.UP * 1.4, 0.15))
+	else:
+		# perto da cabeça dele, rugindo
+		var k := (t - LAIR_CLOSE_AT) / (LAIR_END_AT - LAIR_CLOSE_AT)
+		var m := allo.model.mouth_position()
+		var to_her := Vector3(her.x - m.x, 0.0, her.z - m.z).normalized()
+		var side := to_her.cross(Vector3.UP)
+		_cam.fov = 50.0
+		_cam.global_position = m + to_her * (7.0 - 1.0 * k) + side * 2.5 + Vector3.UP * 0.4
+		_cam.look_at(m + Vector3.DOWN * 0.6)
+
+
 ## Acaba a cena (ou pula, ou reinício): controle e câmera de volta para ela, atrás dela e olhando para onde ela olha
 ## (dentro da sala dos clones; na emboscada, o raptor que rugiu), nunca na inclinação que o mouse deixou.
 func stop() -> void:
@@ -379,6 +594,11 @@ func stop() -> void:
 		for i in ambushers.size():
 			if is_instance_valid(ambushers[i]) and not ambushers[i].dead:
 				ambushers[i].end_ambush(AMB_STAGGER * i)
+	if scene == "talk":
+		# no fim (ou pulando) eles ficam de novo virados para os caixotes, no trabalho
+		for sd in speakers:
+			if is_instance_valid(sd) and not sd.dead and _talk_home.has(sd):
+				sd.rotation.y = _talk_home[sd]
 	if hud:
 		hud.visible = true
 	if is_instance_valid(player):

@@ -16,7 +16,8 @@ FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
 LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
-         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle", "Console")
+         "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle", "Console",
+         "CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR")
 
 
 def merge(*poses):
@@ -389,6 +390,7 @@ def ladder_actions(sk):
 
 def actions(sk):
     """nome -> lista de (frame, pose). Caminhadas, cambalhota, escalada e fuzil saem por IK (sk = esqueleto)."""
+    import heroine_cover as CV
     import heroine_cutscene as CS
     import heroine_drop as DR
     import heroine_gait as G
@@ -415,7 +417,6 @@ def actions(sk):
     crouch_strafe = G.solve_cycle(sk, g["crouch_strafe"], "CrouchStrafeL")
     hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
-    dodge_l = M.dodge_side_keys(A, sk)
     ladder_up_keys, ladder_down_keys, ladder_idle_keys = ladder_actions(sk)
     # sair pelo topo: beirada do alçapão (rebordo) ou do mezanino (piso); entrar = o mesmo ao contrário
     ladder_out = M.ladder_out_keys(A, sk, ladder_idle_keys[0][1], M.LADDER_LIP)
@@ -433,9 +434,6 @@ def actions(sk):
         "CrouchStrafeL": crouch_strafe,
         "CrouchStrafeR": G.mirror_lateral(crouch_strafe),
         "Roll": M.roll_keys(A, sk),
-        "DodgeL": dodge_l,
-        "DodgeR": [(f, mirror(p)) for f, p in dodge_l],
-        "DodgeBack": M.dodge_back_keys(A, sk),
         "Jump": M.jump_keys(A),
         "Fall": M.fall_keys(A),
         "Hang": M.hang_keys(A, sk),
@@ -465,6 +463,7 @@ def actions(sk):
         "GetUpBack": HU.getup_back_keys(A, sk),
         "Dazed": dazed_keys(),
         "Console": console_keys(sk),
+        **CV.cover_keys(A, sk),
         "HatchOpen": CS.hatch_open_keys(A, sk),
         "Shocked": CS.shocked_keys(A),
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],

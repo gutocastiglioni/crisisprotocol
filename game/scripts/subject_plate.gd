@@ -10,6 +10,9 @@ const PLATE := Vector3(0.44, 0.27, 0.025)
 const TILT := 50.0  # graus para trás: virada para cima e para quem lê, como um painel de leitura
 const VIEW_DIST := 0.95
 const INK := UiStyle.ACCENT
+const TEXT_PX := 0.0016  # metros por pixel da fonte
+const LINE_W := PLATE.x - 0.05  # largura máxima de uma linha (respiro nas bordas)
+const TITLE_W := PLATE.x - 0.11  # o título fica longe do LED do canto
 
 var number := "0000"
 var species := ""
@@ -50,9 +53,9 @@ func _ready() -> void:
 	plate.material_override = pm
 	_face.add_child(plate)
 	var z := PLATE.z * 0.5 + 0.002
-	_text("SUBJECT " + number, 40, Vector3(0, 0.06, z), INK)
-	_text(species, 22, Vector3(0, -0.02, z), UiStyle.INK)
-	_text(status, 22, Vector3(0, -0.08, z), UiStyle.DANGER if empty else UiStyle.ACTION)
+	_text("SUBJECT " + number, 40, Vector3(0, 0.06, z), INK, TITLE_W)
+	_text(species, 22, Vector3(0, -0.02, z), UiStyle.INK, LINE_W)
+	_text(status, 22, Vector3(0, -0.08, z), UiStyle.DANGER if empty else UiStyle.ACTION, LINE_W)
 	# LED de estado no canto
 	var led := MeshInstance3D.new()
 	var lb := BoxMesh.new()
@@ -66,11 +69,14 @@ func _ready() -> void:
 	_face.add_child(led)
 
 
-func _text(s: String, size: int, at: Vector3, color: Color) -> void:
+func _text(s: String, size: int, at: Vector3, color: Color, max_w: float) -> void:
 	var l := Label3D.new()
 	l.text = s
 	l.font_size = size
-	l.pixel_size = 0.0016
+	l.pixel_size = TEXT_PX
+	var w := ThemeDB.fallback_font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x * TEXT_PX
+	if w > max_w:  # linha comprida encolhe para não vazar da plaqueta
+		l.pixel_size = TEXT_PX * max_w / w
 	l.outline_size = 0
 	l.modulate = color
 	l.shaded = false

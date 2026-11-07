@@ -16,3 +16,9 @@ art/*.blend
 
 # modelos extraídos de jogos comerciais: só referência local, nunca no repositório
 possible_models/
+
+# Builds e Instaladores
+INSTALADOR/
+dist/
+*.exe
+*.x86_64

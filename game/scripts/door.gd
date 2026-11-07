@@ -1,9 +1,9 @@
 class_name Door
 extends StaticBody3D
-## Porta fechada entre duas salas (galpão -> pátio, pátio -> pedreira). Fechada, bloqueia o corpo (camada 1: tiro,
+## Porta fechada entre duas salas (galpão -> pátio, pátio -> túnel da mina, túnel -> pedreira). Fechada, bloqueia o corpo (camada 1: tiro,
 ## visão e passo dos inimigos) e o barulho/alarme não passa (ver Level.connected). Ela chega perto e aperta interagir
 ## (E / triângulo, `Player.pick_door`): as folhas (`add_panel`) se movem e a colisão some. `room` = a sala de baixo da
-## porta (a porta liga `room` e `room + 1`; 0 = galpão, 1 = pátio, 2 = pedreira).
+## porta (a porta liga `room` e `room + 1`; 0 = galpão, 1 = pátio, 2 = túnel, 3 = pedreira).
 
 const OPEN_TIME := 0.9
 const REACH := 2.6  # distância no chão até o centro da porta para poder abrir
@@ -15,6 +15,7 @@ var verb := "ABRIR PORTA"
 var lock := ""  # id da chave/keycard necessária para abrir
 var is_locked_door := false
 var code := ""  # código do teclado (add_keypad); vazio = abre só com a chave/cartão
+var sealed := false  # sem fechadura nem maçaneta: não abre com E, só arrombado (`blow`, portão da pedreira no túnel)
 var _col: CollisionShape3D
 var _panels: Array[Dictionary] = []
 var _tween: Tween
@@ -204,7 +205,7 @@ func add_panel(node: Node3D, open_pos: Vector3, open_rot_y: float) -> void:
 
 ## Está ao alcance de quem está em `p` (para o aviso e para abrir).
 func can_open(p: Vector3) -> bool:
-	if opened:
+	if opened or sealed:
 		return false
 	var d := p - global_position
 	if absf(d.y) > REACH_DY:
@@ -233,6 +234,28 @@ func open() -> void:
 		Sfx.play(self, "chest_open", global_position + Vector3.UP * 1.2, 2.0, 0.6)
 
 
+## Arrombada por explosão: abre na hora (sem tranca) e as folhas voam para `push` (mundo) e caem deitadas no chão.
+func blow(push: Vector3) -> void:
+	if opened:
+		return
+	opened = true
+	is_locked_door = false
+	collision_layer = 0
+	_col.set_deferred("disabled", true)
+	if _tween:
+		_tween.kill()
+	var local := (global_basis.inverse() * push).normalized()
+	var tip := PI * 0.5 * (1.0 if local.x < 0.0 else -1.0)  # +Z gira o alto da folha para -X
+	_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	for i in _panels.size():
+		var pn: Dictionary = _panels[i]
+		var land: Vector3 = pn.pos + local * (0.8 + 0.5 * i) + Vector3(0, 0.06, 0)
+		_tween.tween_property(pn.node, "position", land, 0.55)
+		_tween.tween_property(pn.node, "rotation", Vector3(0, pn.rot + (0.35 if i % 2 == 0 else -0.3), tip), 0.55)
+	if is_inside_tree():
+		Sfx.play(self, "impact_metal", global_position + Vector3.UP * 1.5, 6.0, 0.5)
+
+
 ## Fecha de novo, de uma vez (ao reiniciar).
 func reset() -> void:
 	if _tween:
@@ -249,7 +272,7 @@ func reset() -> void:
 	_col.set_deferred("disabled", false)
 	for pn in _panels:
 		pn.node.position = pn.pos
-		pn.node.rotation.y = pn.rot
+		pn.node.rotation = Vector3(0, pn.rot, 0)
 
 
 ## A porta que liga a sala `a` à sala `a + 1` está aberta?
