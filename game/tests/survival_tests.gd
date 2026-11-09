@@ -791,8 +791,8 @@ func test_pack_turns() -> void:
 		r.position = Vector3(sin(a), 0, cos(a)) * 5.0
 		r.rotation.y = a
 		r.target = p
-		r.rng.seed = 11 + i
 		w.add_child(r)
+		r.rng.seed = 11 + i  # depois do add_child: o _ready do Enemy sorteia a semente (rng.randomize())
 		pack.append(r)
 	await t._frames(3)
 	for r in pack:
