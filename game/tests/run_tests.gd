@@ -46,6 +46,7 @@ const SUITES := [
 	["survival", "sobrevivência: câmera, armas, munição e dano", preload("res://tests/survival_tests.gd")],
 	["gfx", "visual (PS1/PS2) e atlas", preload("res://tests/gfx_tests.gd")],
 	["sfx", "efeitos sonoros", preload("res://tests/sfx_tests.gd")],
+	["voice", "falas dos guerrilheiros", preload("res://tests/voice_tests.gd")],
 ]
 
 var _failures: Array[String] = []

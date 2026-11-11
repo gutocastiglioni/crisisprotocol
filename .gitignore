@@ -25,3 +25,6 @@ INSTALADOR/
 dist/
 *.exe
 *.x86_64
+
+# modelos de voz do Piper (make_voices.py): baixados do rhasspy/piper-voices, dataset CC0
+art/voice_models/

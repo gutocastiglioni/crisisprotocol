@@ -62,7 +62,7 @@ func _physics_process(delta: float) -> void:
 		if lv == 1 and before == 0:
 			if e is Raptor:
 				Sfx.play(e, "raptor_suspicious", e.model.mouth_position())
-			if _suspicious_t <= 0.0:
+			if _suspicious_t <= 0.0 and not e.get("voice"):  # quem fala diz o "Ahn?" (Voice); o toque é só dos bichos
 				_suspicious_t = SUSPICIOUS_GAP
 				Sfx.ui(self, "suspicious")
 	_levels = now

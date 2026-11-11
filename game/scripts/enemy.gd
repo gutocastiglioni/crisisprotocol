@@ -51,6 +51,7 @@ var sight_range := SIGHT_RANGE
 var fov_half := deg_to_rad(75.0)  # meio cone de visão (raptor: olhos nas laterais da cabeça)
 var eye_height := 1.3
 var marker_height := 2.4
+var voice := ""  # voz das falas (`Voice.VOICES`; "" = não fala: bichos)
 var turn_rate := 6.0
 var patrol_speed := 1.4
 var investigate_speed := 2.4
@@ -174,7 +175,11 @@ func _on_spotted() -> void: pass
 func _on_enter() -> void: pass
 
 func _enter(s: String, anim: String, blend := 0.15) -> void:
+	var old := state
+	var was_combat := in_combat()
 	state = s
+	if voice != "":
+		_voice_on(old, was_combat)
 	_t = 0.0
 	_stuck_t = 0.0
 	_stuck_n = 0
@@ -208,6 +213,8 @@ func _tick(delta: float) -> void:
 	if _shout_t > 0.0:
 		_shout_t -= delta
 		if _shout_t <= 0.0:
+			if voice != "":
+				Voice.say(self, "corpse" if _shout_about else "hit")
 			broadcast_alarm(_shout_at, true, false, _shout_about)
 	if state == "down":
 		return
@@ -261,6 +268,8 @@ func _calm_state(delta: float) -> bool:
 		"search":
 			_search_look(delta)
 			if _t >= _dur and not _start_sweep():
+				if voice != "":
+					Voice.say(self, "giveup" if active_search else "nothing")
 				alert_t = 0.0
 				aware = 0.0
 				_resume()
@@ -272,6 +281,25 @@ func _calm_state(delta: float) -> bool:
 		_:
 			return false
 	return true
+
+## Fala da troca de estado (`Voice`): viu ela = "spot"; perdeu no meio da luta = "lost"; desconfiou = "huh"; foi ver
+## sozinho = "check", saiu para o alarme de outro = "ack"; chegou ao lugar da busca ativa = "search". O fim da busca
+## ("nothing"/"giveup") e os gritos ("corpse"/"hit") falam de onde acontecem. A rendição (standoff) tem as falas dela.
+func _voice_on(old: String, was_combat: bool) -> void:
+	if old == "standoff" or state in ["standoff", "dead", "down", "idle"]:
+		return
+	var now_combat := in_combat()
+	if now_combat and not was_combat:
+		Voice.say(self, "spot")
+	elif was_combat and not now_combat:
+		if state in ["hunt", "search", "sweep", "investigate"]:
+			Voice.say(self, "lost")
+	elif state == "suspicious" and old in ["patrol", "look", "guard", "idle"]:
+		Voice.say(self, "huh")
+	elif state == "investigate" and not old in ["investigate", "hunt", "search", "sweep"]:
+		Voice.say(self, "ack" if active_search else "check")
+	elif state == "search" and (old == "hunt" or (old == "investigate" and active_search)):
+		Voice.say(self, "search")
 
 ## Levou `amount` de dano vindo de `dir`, acertando em `at` (`head` = na cabeça). Quem herda implementa.
 func take_hit(_amount: int, _dir: Vector3, _at: Vector3, _head := false) -> void:

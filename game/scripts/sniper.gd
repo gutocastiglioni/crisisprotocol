@@ -141,6 +141,7 @@ func _ready() -> void:
 	arrival_dist = 0.5
 	search_sweeps = 0
 	shouts = true
+	voice = Voice.assign()
 	_enemy_ready()
 
 

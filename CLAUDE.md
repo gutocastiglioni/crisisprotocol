@@ -5,7 +5,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 
 ## Stack
 - Arte gerada por código: Blender 4.5 LTS (`bpy`, sem interface) + Pillow (`requirements.txt`) para as texturas.
-- Sons gerados por código: numpy (`requirements.txt`), WAV mono 16 bits a 22050 Hz.
+- Sons gerados por código: numpy (`requirements.txt`), WAV mono 16 bits a 22050 Hz. Falas por TTS local (Piper), sem rede no jogo.
 - `art/heroine.blend` e `art/raptor.blend` são gerados pelo build e ficam fora do git (guardavam caminhos absolutos da máquina).
 - Jogo: Godot 4.7 (GDScript, Forward+, física Jolt). Projeto em `game/`.
 - Sem backend, sem rede, sem dados pessoais.
@@ -56,14 +56,17 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   buracos de bala `bullet_holes.png`, quadros do clarão/fumaça `shot_fx.png` e do sangue `blood_fx.png`),
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`; as vozes do raptor são trechos de gravação real CC0 de `art/ref_sounds/` (T-rex = jacaré + leão + alce, fora do
-  git, fonte em `LEIAME.txt`) com o tom subido por `sound_samples.py` e volume por RMS; sem a pasta vale a voz sintética de reserva), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
+  git, fonte em `LEIAME.txt`) com o tom subido por `sound_samples.py` e volume por RMS; sem a pasta vale a voz sintética de reserva),
+  `make_voices.py` (falas dos guerrilheiros em `game/assets/voices/<voz>_<fala>_<n>.wav` por TTS local Piper, `pip install
+  piper-tts`; vozes pt_BR cadu/faber/jeff, dataset CC0, em `art/voice_models/` fora do git, comando de baixar no cabeçalho;
+  abafa como balaclava, satura as gritadas, volume por RMS; `LINES` tem que bater com `Voice.LINES`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
 - `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd` + trilha em S dele `forest_trail.gd` (trechos de raptors, portões de grade por seção),
   portas `door.gd` (galpão→pátio, pátio→túnel, túnel→pedreira arrombável), túnel da mina `tunnel.gd`, pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones, emboscada do pátio, rendição aos snipers das torres, conversa do túnel e chegada à pedreira), mira laser do sniper `sniper_laser.gd` (+ `shaders/sniper_laser`/`laser_dot`), checkpoints `checkpoint.gd`, guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`), `assets/` (gerados — não
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`, `voice_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
-- Regerar arte: `python tools/make_textures.py && python tools/make_sounds.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_guerrilla_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py && blender --background --factory-startup --python art/build_guerrilla.py`
+- Regerar arte: `python tools/make_textures.py && python tools/make_sounds.py && python tools/make_voices.py && python tools/make_level_textures.py && python tools/make_raptor_texture.py && python tools/make_allosaurus_texture.py && python tools/make_guerrilla_texture.py && blender --background --factory-startup --python art/build_heroine.py && blender --background --factory-startup --python art/build_raptor.py && blender --background --factory-startup --python art/build_allosaurus.py && blender --background --factory-startup --python art/build_guerrilla.py`
   (Blender em `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`)
 - Prévia no Blender: `blender --background art/heroine.blend --python art/preview.py -- <pasta> turntable|anims|Acao:f1,f2` (ou `art/raptor.blend`)
 - Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 420 s).
@@ -580,9 +583,16 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`HeroineModel`: tiro da arma da mão, telha, troca, pancada, queda, cambalhota/pulo/aterrissagem/borda e passos quando o osso
   Foot_* desce até o chão; `RaptorModel`: voz/golpe de cada animação em `ANIM_SOUNDS`, passos pelos Toe_*, piados), `Fx` toca
   impacto por superfície e cápsula no chão, `Chest` a tampa. Chão com meta "step" = "grass" = passos na grama. `Soundscape`
-  (criado no main): ambiente do galpão/pátio misturado pela posição dela e o aviso "?" pelo `alert_level` dos inimigos (caça/combate
-  sem som de aviso). O "?"/"!" sobre a cabeça (`Enemy._update_marker`) só pisca quando o nível sobe: cresce, fica
-  `MARKER_HOLD` e some (`MARKER_*`), nunca fica preso.
+  (criado no main): ambiente do galpão/pátio misturado pela posição dela e o toque "?" dos bichos que desconfiam (caça/combate
+  sem som de aviso; quem fala diz o seu "Ahn?"). O "?"/"!" sobre a cabeça (`Enemy._update_marker`) só pisca quando o nível
+  sobe: cresce, fica `MARKER_HOLD` e some (`MARKER_*`), nunca fica preso.
+- Falas dos guerrilheiros (`Voice`, `voice.gd`; soldado e sniper têm `Enemy.voice` de `Voice.assign()`, as 3 vozes em rodízio;
+  bicho = ""): `Enemy._voice_on` na troca de estado = "spot" (viu ela), "lost" (sumiu na luta), "huh" (desconfiou), "check"
+  (foi ver sozinho) / "ack" (saiu pelo alarme de outro), "search" (chegou ao lugar da busca ativa); fim da busca no estado
+  "search" = "giveup" (ativa) / "nothing" (amarela); grito do `SHOUT_DELAY` = "corpse" / "hit". Uma fala por vez no jogo
+  todo (`PRIORITY`: a mais alta corta a que toca; igual ou mais baixa se perde), intervalo por tipo (`GAP`), sem repetir a
+  frase seguida, só se ela ouviria (`_reaches`, até `MAX_DIST`), nada na cena nem na rendição. Relógio = passos de física.
+  `Voice.reset()` no `_reset_world`. Testes: `voice_tests.gd`.
 - Depois de mudar arte/animação: renderizar prévia e olhar; depois de mudar o jogo: capturar e olhar.
 - Sangue (`Blood`, jeito Dino Crisis): esguicho vermelho sem luz no golpe + gotas que viram respingo onde caem, respingo
   na parede/chão atrás (`SPATTER_RANGE`), rastro de gotas de quem está ferido (`Blood.Trail`, pelo `wound()` 0..1) e poça

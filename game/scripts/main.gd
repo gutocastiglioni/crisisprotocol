@@ -936,6 +936,7 @@ func _reset_world() -> void:
 	for g in get_tree().get_nodes_in_group("grenades"):
 		g.queue_free()
 	cutscene.stop()
+	Voice.reset()
 	player.respawn()
 	hatch.reset()
 	lab.reset()

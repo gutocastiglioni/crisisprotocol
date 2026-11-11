@@ -173,6 +173,7 @@ func _ready() -> void:
 	alarm_walks = true
 	search_sweeps = 3
 	shouts = true
+	voice = Voice.assign()
 	alert_time = ALERT_TIME * TIME_SCALE
 	lose_time = LOSE_TIME * TIME_SCALE
 	search_time = SEARCH_TIME * TIME_SCALE
