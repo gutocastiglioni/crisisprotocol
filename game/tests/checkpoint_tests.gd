@@ -133,7 +133,7 @@ func test_standoff_live_second_time() -> void:
 	var snipers: Array[Sniper] = main.tower_snipers
 	p.health = 100
 	main.corpse.armed = false
-	p.global_position = Vector3(-43.0, 0, -4.0)
+	p.global_position = Vector3(-48.5, 0, 9.0)  # já na trilha da faixa oeste
 	p.rotation.y = PI * 0.5
 	p.reset_physics_interpolation()
 	await t._frames(3)
@@ -141,7 +141,7 @@ func test_standoff_live_second_time() -> void:
 		r.lurking = false
 		r.take_hit(999, Vector3.FORWARD, r.global_position)
 	await t._frames(2)
-	t.check(main.checkpoint.get("id", "") == "standoff", "os 3 raptors mortos: checkpoint", str(main.checkpoint.get("id")))
+	t.check(main.checkpoint.get("id", "") == "standoff", "a mata limpa: checkpoint", str(main.checkpoint.get("id")))
 	for i in 150:
 		await t._frames(1)
 		if cs.busy:
@@ -150,10 +150,15 @@ func test_standoff_live_second_time() -> void:
 	cs.stop()
 	await t._frames(2)
 	await _die_and_continue(main, p)
-	t.check(_near(p.global_position, Checkpoint.SPAWNS.standoff[0]), "renasce na clareira do morto")
-	t.check(main.yard_raptors.all(func(r: Raptor) -> bool: return r.dead and r.cleared), "os 3 raptors seguem mortos")
-	t.check(snipers.all(func(s: Sniper) -> bool: return not s.dead and not s.lurking and s.visible), "os snipers estão nas torres")
+	t.check(_near(p.global_position, Checkpoint.SPAWNS.standoff[0]), "renasce no fim de S3, na frente do último portão de grade")
+	t.check(main.yard_raptors.all(func(r: Raptor) -> bool: return r.dead and r.cleared), "os raptors da mata seguem mortos")
+	t.check(main.trail.gates.all(func(g: Door) -> bool: return not g.held), "os portões de grade seguem destravados")
+	t.check(snipers.all(func(s: Sniper) -> bool: return not s.dead and s.lurking), "as torres esperam ela descer a trilha da faixa oeste")
 	t.check(main.key.shine and main.key.state == "held", "a chave brilha na mão do morto")
+	p.global_position = Vector3(-48.5, 0, 9.0)
+	p.reset_physics_interpolation()
+	await t._frames(3)
+	t.check(snipers.all(func(s: Sniper) -> bool: return not s.dead and not s.lurking and s.visible), "desceu: os snipers estão nas torres")
 	var started := false
 	for i in 150:
 		await t._frames(1)

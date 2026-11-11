@@ -438,7 +438,7 @@ func test_main_scene_patrols() -> void:
 	check(main.soldiers.size() == Soldier.GUARDS.size(), "cena principal: soldados de guarda no galpão", str(main.soldiers.size()))
 	for sd: Soldier in main.soldiers:
 		check(absf(sd.global_position.x) < 13.0 and absf(sd.global_position.z) < 13.0, "soldado começa dentro do galpão", str(sd.global_position))
-	check(rs.size() == Yard.POSTS.size() + Arena.POSTS.size(), "cena principal: um raptor por posto (pátio e pedreira)", str(rs.size()))
+	check(rs.size() == Yard.POSTS.size() + Arena.POSTS.size() + Yard.WAVES.reduce(func(n: int, w: Dictionary) -> int: return n + w.entries.size(), 0) + Yard.CLIFF_RAPTORS.size(), "cena principal: um raptor por posto (emboscada, trechos e barranco da trilha, pedreira)", str(rs.size()))
 	var start := []
 	for r: Raptor in rs:
 		start.append(r.global_position)
@@ -680,8 +680,10 @@ func test_doors_seal_rooms() -> void:
 	t.get_root().add_child(main)
 	await t._frames(3)
 	var doors := t.get_nodes_in_group("doors")
-	check(doors.size() == 4, "quatro portas: galpão-pátio, pátio-túnel, túnel-pedreira (arrombável) e o portão da sala dos clones",
-		str(doors.size()))
+	var grates := doors.filter(func(d: Door) -> bool: return d.solid_layer == Yard.GRATE_LAYER)
+	check(doors.size() - grates.size() == 4 and grates.size() == Yard.GRATES.size(),
+		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + os portões de grade da trilha",
+		str([doors.size(), grates.size()]))
 	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
 	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2 and Level.room_of(-140.0) == 3,
 		"quatro salas: galpão, pátio, túnel da mina e pedreira")

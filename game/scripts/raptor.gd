@@ -5,7 +5,9 @@ extends Enemy
 ## ou, às vezes, mordida que segura e sacode. Rolar na hora certa esquiva de qualquer ataque.
 ## Emboscada (Cutscene.play_ambush): `lurk` o esconde na mata (sem corpo nem IA); `start_ambush` o faz sair correndo e
 ## rodear a presa a `radius` dela sem atacar (estado "ambush", a cena manda); `ambush_roar` para e ruge; `end_ambush`
-## solta a luta já alertado (estuda e ataca).
+## solta a luta já alertado (estuda e ataca). Com `circle` 0 ele não rodeia: chega à roda e para de frente para ela.
+## Trechos da trilha do pátio (`ForestTrail`): `emerge` o tira da moita num pulo na direção dela (estado "emerge"), já em luta.
+## Escondido, nem o modelo anima (são muitos na mata).
 
 signal killed
 signal attacked(kind: String)
@@ -52,6 +54,12 @@ const BITE_CHANCE := 0.8  # perto e de frente: morde ou recua
 const STUDY_TIME := Vector2(0.9, 1.6)  # rodeando antes de atacar
 const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
 const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover"]
+## Saindo da moita (`emerge`): agacha EMERGE_PREP s, pula e cai a EMERGE_GAP m dela (no máximo EMERGE_MAX m de onde
+## estava), sem golpe; no chão, estuda e entra na vez da matilha.
+const EMERGE_PREP := 0.35
+const EMERGE_UP := 3.6
+const EMERGE_GAP := 4.5
+const EMERGE_MAX := 6.0
 
 var model: RaptorModel
 var health := MAX_HEALTH
@@ -74,7 +82,7 @@ var _turn_wait := 0.0  # tempo esperando a vez (quem espera mais passa na frente
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | Yard.GRATE_LAYER  # portões de grade da trilha seguram o corpo dele
 	# patas/corpo (movimento) + tronco e cabeça (alvo dos tiros)
 	var legs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -102,8 +110,14 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if lurking:
 		return
+	if model.process_mode == Node.PROCESS_MODE_DISABLED:
+		model.process_mode = Node.PROCESS_MODE_INHERIT  # saiu da moita por fora do `emerge`/`start_ambush` (testes, capturas)
 	if state == "ambush":
 		_ambush(delta)
+		move_and_slide()
+		return
+	if state == "emerge_prep" or state == "emerge":
+		_emerge(delta)
 		move_and_slide()
 		return
 	_tick(delta)
@@ -244,6 +258,7 @@ func start_counter() -> void:
 func lurk(at: Vector3) -> void:
 	lurking = true
 	visible = false
+	model.process_mode = Node.PROCESS_MODE_DISABLED
 	collision_layer = 0
 	velocity = Vector3.ZERO
 	global_position = at
@@ -256,6 +271,7 @@ func lurk(at: Vector3) -> void:
 func start_ambush(radius: float, circle: float) -> void:
 	lurking = false
 	visible = true
+	model.process_mode = Node.PROCESS_MODE_INHERIT
 	collision_layer = 2
 	_ring_radius = radius
 	_circle = circle
@@ -292,6 +308,12 @@ func _ambush(delta: float) -> void:
 		return
 	var move: Vector3
 	var speed: float
+	if _circle == 0.0 and dist <= _ring_radius + 1.0:
+		# sem roda: chegou ao lugar dele, para de frente para ela e observa
+		_stop(delta)
+		_face(dir, delta, 5.0)
+		model.play("Study", 0.3)
+		return
 	if dist > _ring_radius + 1.0:
 		move = dir
 		speed = minf(4.2, (dist - _ring_radius) * 2.0 + 1.5)
@@ -306,6 +328,54 @@ func _ambush(delta: float) -> void:
 	velocity.z = fwd.z * v
 	var run := v > 3.0
 	model.play("Run" if run else "Walk", 0.25, maxf(v / RUN_ANIM_SPEED, RUN_MIN_SCALE) if run else maxf(v, 0.4) / WALK_ANIM_SPEED)
+
+
+## Sai da moita onde está escondido (`ForestTrail`): visível, com corpo, já sabendo onde ela está; agacha e pula na direção
+## dela (EMERGE_*), sem golpe. No chão, estuda e entra na vez da matilha.
+func emerge(from: Vector3) -> void:
+	if dead:
+		return
+	lurking = false
+	visible = true
+	collision_layer = 2
+	model.process_mode = Node.PROCESS_MODE_INHERIT
+	global_position = from
+	velocity = Vector3.ZERO
+	if _has_target():
+		var to := _flat(target.global_position - from)
+		if to.length() > 0.1:
+			rotation.y = atan2(-to.x, -to.z)
+		_last_known = target.global_position
+	reset_physics_interpolation()
+	alert_t = ALERT_TIME
+	aware = 1.0
+	_lost_t = 0.0
+	_alarm_delay = -1.0
+	_enter("emerge_prep", "LeapPrep", 0.05)
+
+
+func _emerge(delta: float) -> void:
+	_t += delta
+	if state == "emerge_prep":
+		_stop(delta)
+		if _has_target():
+			_face(_to_target(), delta, 12.0)
+		if not is_on_floor():
+			velocity.y -= GRAVITY * delta
+		if _t >= EMERGE_PREP:
+			var to := _flat(_to_target()) if _has_target() else -global_basis.z * EMERGE_MAX
+			var hop := clampf(to.length() - EMERGE_GAP, 1.5, EMERGE_MAX)
+			var dir := to.normalized() if to.length() > 0.01 else -global_basis.z
+			var flight := 2.0 * EMERGE_UP / GRAVITY
+			velocity = dir * (hop / flight) + Vector3.UP * EMERGE_UP
+			_face(dir, 1.0, 100.0)
+			_enter("emerge", "LeapAir", 0.05)
+		return
+	velocity.y -= GRAVITY * delta
+	if _t > 0.15 and is_on_floor():
+		velocity.x = 0.0
+		velocity.z = 0.0
+		start_study()
 
 
 ## Fim da cena da emboscada: já sabe onde ela está e avisou os outros; estuda um tempo (`delay` a mais) e ataca.
@@ -652,6 +722,7 @@ func reset() -> void:
 	model.stop_ragdoll()
 	lurking = false
 	visible = true
+	model.process_mode = Node.PROCESS_MODE_INHERIT
 	_ring_roar = false
 	_waiting = false
 	_slot = NAN

@@ -35,6 +35,8 @@ const SUITES := [
 	["ui_style", "design system dos textos: glifos dos botões e caixa de texto", preload("res://tests/ui_style_tests.gd")],
 	["supply_drop", "caixa de paraquedas, pistola com silenciador e neblina do telhado", preload("res://tests/supply_drop_tests.gd")],
 	["ambush", "guerrilheiro morto, chave e emboscada no pátio", preload("res://tests/ambush_tests.gd")],
+	["trail", "trilha em S do pátio: portões de grade, raptors por trechos, barranco e planalto da escopeta",
+		preload("res://tests/trail_tests.gd")],
 	["tower", "torres de guarda do portão: snipers, queda do último, cartão do painel e chave 0M79",
 		preload("res://tests/tower_tests.gd")],
 	["allosaurus", "alossauro e pedreira (última sala)", preload("res://tests/allosaurus_tests.gd")],

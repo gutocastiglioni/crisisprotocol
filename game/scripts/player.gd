@@ -176,7 +176,7 @@ var _trail := Blood.Trail.new()
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | Yard.GRATE_LAYER  # portões de grade e bordas do planalto da trilha do pátio
 	add_to_group("player")
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()

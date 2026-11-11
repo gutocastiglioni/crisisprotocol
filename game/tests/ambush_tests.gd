@@ -44,7 +44,8 @@ func test_corpse_and_ambush() -> void:
 	var corpse: Corpse = main.corpse
 	var key: KeyItem = main.key
 	var cs: Cutscene = main.cutscene
-	var rs: Array[Raptor] = main.yard_raptors
+	var rs: Array[Raptor] = []
+	rs.assign(main.trail.sections[0])  # os 3 da emboscada (S1 da trilha)
 	# o morto no meio do pátio, com a chave do container na mão
 	t.check(Level.room_of(corpse.global_position.x) == 1 and corpse.global_position.distance_to(Yard.CORPSE) < 0.01, "guerrilheiro morto no meio do pátio da mata", str(corpse.global_position))
 	t.check(key.id == main.locker.lock and key.state == "held" and key.visible, "a chave do container está na mão dele", key.state)
@@ -67,7 +68,7 @@ func test_corpse_and_ambush() -> void:
 			blocked.append(Yard.LURK[i])
 		t.check(rs[i].global_position.distance_to(Yard.LURK[i]) < 0.3, "raptor %d na moita dele" % i, str(rs[i].global_position))
 	t.check(blocked.is_empty(), "da moita até ela, nada sólido no caminho", str(blocked))
-	p.global_position = corpse.global_position + Vector3(9.0, 0, -6.0)
+	p.global_position = corpse.global_position + Vector3(-3.0, 0, 9.0)  # na trilha, antes da clareira
 	await t._frames(3)
 	main.soldiers[0].spot()
 	p.make_noise(26.0, 2.2)
@@ -103,17 +104,19 @@ func test_corpse_and_ambush() -> void:
 	for r in rs:
 		ring.append(snappedf(Vector2(r.global_position.x - p.global_position.x, r.global_position.z - p.global_position.z).length(), 0.1))
 	t.check(rs.all(func(r: Raptor) -> bool: return not r.lurking and r.visible and r.collision_layer == 2 and r.state == "ambush"), "saíram das moitas", _where(rs))
-	t.check(ring.all(func(d: float) -> bool: return d > Cutscene.AMB_RING - 1.5 and d < Cutscene.AMB_RING + 1.5), "rodeando ela a uns %.0f m" % Cutscene.AMB_RING, str(ring))
-	t.check(rs.all(func(r: Raptor) -> bool: return r.alert_level() == 0), "na roda, sem aviso de alerta ainda")
-	# os três rodam no mesmo sentido em volta dela (nenhum na contramão) e andam para a frente do corpo
-	var ang0 := rs.map(func(r: Raptor) -> float: return atan2(r.global_position.x - p.global_position.x, r.global_position.z - p.global_position.z))
+	t.check(ring.all(func(d: float) -> bool: return d > Cutscene.AMB_RING - 1.5 and d < Cutscene.AMB_RING + 1.5), "em volta dela a uns %.0f m" % Cutscene.AMB_RING, str(ring))
+	t.check(rs.all(func(r: Raptor) -> bool: return r.alert_level() == 0), "em volta, sem aviso de alerta ainda")
+	# sem roda (jeito Dino Crisis): cada um sai do canto dele e para de frente para ela, longe um do outro
 	await t._frames(20)
-	var turns := []
+	var still := rs.all(func(r: Raptor) -> bool: return Vector2(r.velocity.x, r.velocity.z).length() < 0.3)
+	var face_her := rs.all(func(r: Raptor) -> bool:
+		var to := p.global_position - r.global_position
+		return Vector2(-r.global_basis.z.x, -r.global_basis.z.z).dot(Vector2(to.x, to.z).normalized()) > 0.8)
+	var apart := true
 	for i in rs.size():
-		var a := atan2(rs[i].global_position.x - p.global_position.x, rs[i].global_position.z - p.global_position.z)
-		turns.append(snappedf(angle_difference(ang0[i], a), 0.01))
-	var ahead := rs.all(func(r: Raptor) -> bool: return Vector2(r.velocity.x, r.velocity.z).normalized().dot(Vector2(-r.global_basis.z.x, -r.global_basis.z.z)) > 0.9)
-	t.check(turns.all(func(d: float) -> bool: return signf(d) == signf(turns[0]) and absf(d) > 0.02) and ahead, "rodam no mesmo sentido, de frente para onde andam", str(turns))
+		for j in range(i + 1, rs.size()):
+			apart = apart and rs[i].global_position.distance_to(rs[j].global_position) > 3.0
+	t.check(still and face_her and apart, "parados de frente para ela, cada um no seu canto (sem rodear)", _where(rs))
 	t.check(not p.model.holstered, "ela de arma na mão")
 	await t._frames(int((Cutscene.AMB_END_AT - Cutscene.AMB_WIDE_AT - 1.2) * 60) - 10)
 	t.check(not cs.busy and not p.cutscene and main._hud.visible and p.camera_rig.camera.current, "fim da cena: controle de volta")

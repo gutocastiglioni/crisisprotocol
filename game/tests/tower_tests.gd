@@ -30,12 +30,14 @@ func _main() -> Node:
 	return main
 
 
+## A mata limpa (os da emboscada e dos trechos da trilha mortos) e ela chegou à faixa oeste: os snipers sobem nas torres.
 func _kill_yard_raptors(main: Node, standoff := false) -> void:
 	main.corpse.armed = false  # como no jogo: os 3 só morrem depois da emboscada (perto do morto a cena não toca de novo)
 	main.standoff_armed = standoff  # a rendição só no teste dela
 	for r: Raptor in main.yard_raptors:
 		r.lurking = false
 		r.take_hit(999, Vector3.FORWARD, r.global_position)
+	main.wake_towers()
 
 
 ## Maior dobra de joelho (graus) do ragdoll.
@@ -97,26 +99,36 @@ func test_towers_and_hidden_snipers() -> void:
 	t.get_root().get_tree().call_group("enemies", "hear_noise", towers[0].global_position, 30.0, 1.0)
 	await t._frames(10)
 	t.check(snipers.all(func(s: Sniper) -> bool: return s.lurking and s.state == "idle"), "fora de cena não ouvem tiro", str(snipers.map(func(s: Sniper) -> String: return s.state)))
-	# dois raptors mortos: ainda não; o terceiro: sobem nas torres (como no jogo, depois da emboscada: perto do morto a cena
-	# não toca de novo, e numa cena ninguém a vê)
+	# raptor vivo na última seção da trilha (S3): ninguém nas torres; S3 limpa: ainda não (ela longe, na mata); ela desce a
+	# trilha da faixa oeste: sobem nas torres (como no jogo, depois da emboscada: perto do morto a cena não toca de novo)
 	main.corpse.armed = false
 	main.standoff_armed = false  # a rendição tem o teste dela (test_standoff)
 	var rs: Array[Raptor] = main.yard_raptors
-	for i in 2:
-		rs[i].lurking = false
-		rs[i].take_hit(999, Vector3.FORWARD, rs[i].global_position)
-	await t._frames(2)
-	t.check(snipers.all(func(s: Sniper) -> bool: return s.lurking), "com raptor vivo, ninguém nas torres")
-	rs[2].lurking = false
-	rs[2].take_hit(999, Vector3.FORWARD, rs[2].global_position)
+	var last: Raptor = main.trail.sections[2][-1]
+	for r in rs:
+		if r != last:
+			r.lurking = false
+			r.take_hit(999, Vector3.FORWARD, r.global_position)
+	main.player.global_position = Vector3(-48.5, 0, 9.0)
+	main.player.reset_physics_interpolation()
 	await t._frames(3)
-	t.check(snipers.all(func(s: Sniper) -> bool: return not s.lurking and s.visible and s.collision_layer == 2), "com os 3 raptors mortos, os snipers aparecem")
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.lurking) and not main.trail.section_done(2), "com raptor vivo na mata, ninguém nas torres")
+	main.player.global_position = Vector3(-36.0, 0, 36.0)
+	main.player.reset_physics_interpolation()
+	last.lurking = false
+	last.take_hit(999, Vector3.FORWARD, last.global_position)
+	await t._frames(3)
+	t.check(main.trail.section_done(2) and snipers.all(func(s: Sniper) -> bool: return s.lurking), "mata limpa com ela ainda em S3: as torres esperam", str(main.trail.done))
+	main.player.global_position = Vector3(-48.5, 0, Yard.STANDOFF_Z - 1.0)
+	main.player.reset_physics_interpolation()
+	await t._frames(3)
+	t.check(snipers.all(func(s: Sniper) -> bool: return not s.lurking and s.visible and s.collision_layer == 2), "descendo a trilha da faixa oeste: os snipers aparecem")
 	for i in 2:
 		var s := snipers[i]
 		var on := s.perch.grow(0.01).has_point(Vector2(s.global_position.x, s.global_position.z)) and absf(s.global_position.y - (GuardTower.FLOOR_Y)) < 0.05
 		t.check(on and (-s.global_basis.z).dot(Vector3.RIGHT) > 0.95, "sniper %d em cima da torre, olhando para o pátio" % i, str(s.global_position))
 	# ela parada na estrada a uns 12 m da torre: ele a vê e mira (laser)
-	main.player.global_position = Vector3(towers[0].global_position.x + 12.0, 0, -3.0)
+	main.player.global_position = Vector3(towers[0].global_position.x + 7.0, 0, -3.0)
 	main.player.reset_physics_interpolation()
 	var aimed := false
 	for i in 240:
@@ -134,7 +146,7 @@ func test_towers_and_hidden_snipers() -> void:
 
 
 ## Sniper fora de cena (invisível, mas o ragdoll segue a animação) não vira alvo nem leva tiro; do telhado (onde
-## ninguém a percebe) ela também não alcança ninguém, nem com eles em cena. Da estrada, sim.
+## ninguém a percebe) ela também não alcança ninguém, nem com eles em cena. Da trilha da faixa oeste, sim.
 func test_no_shot_from_roof_or_offstage() -> void:
 	var main: Node = await _main()
 	var p: Player = main.player
@@ -156,16 +168,18 @@ func test_no_shot_from_roof_or_offstage() -> void:
 	Input.action_press("aim")
 	var roof_edge := Vector3(-Roof.EDGE + 1.0, Roof.Y, clampf(s.global_position.z, -Roof.EDGE + 1.0, Roof.EDGE - 1.0))
 	t.check(Roof.has(roof_edge), "ponto de teste na beira oeste do telhado")
-	var info: Dictionary = await aim_at.call(roof_edge)
+	# na praça das torres, de frente para a primeira (a mata ainda com raptors: as torres não acordam)
+	var trail_pt := Vector3(main.towers[0].global_position.x + 7.5, 0, s.global_position.z)
+	var info: Dictionary = await aim_at.call(trail_pt)
 	t.check(info.target != s, "sniper fora de cena: a mira não acusa nada", str(info))
-	# sem a regra do telhado (ela fora da laje, mas a câmera no mesmo lugar) a mira pega o ragdoll dele: a linha está livre
+	# a linha até o ragdoll dele está livre (o teste mira de verdade)
 	var ray: Array = p.camera_rig.aim_ray()
 	var space := t.get_root().get_world_3d().direct_space_state
 	var own: Array[RID] = [p.get_rid()]
 	own.append_array(p.model.ragdoll.body_rids())
 	var bare := space.intersect_ray(PhysicsRayQueryParameters3D.create(ray[0], ray[0] + ray[1] * 80.0, Player.SHOT_MASK, own))
 	t.check(bare and bare.collider is PhysicalBone3D and Ragdoll.owner_of(bare.collider) == s,
-		"do telhado a linha até o sniper está livre (o teste mira de verdade)", str(bare.get("collider")))
+		"da trilha a linha até o sniper está livre (o teste mira de verdade)", str(bare.get("collider")))
 	var hp := s.health
 	p.fire()
 	await t._frames(2)
@@ -417,7 +431,7 @@ func test_standoff() -> void:
 ## Ela na estrada do pátio, de frente para o portão (perto do morto: a emboscada já passou).
 func _to_yard(main: Node, p: Player) -> void:
 	main.corpse.armed = false
-	p.global_position = Vector3(-43.0, 0, -4.0)
+	p.global_position = Vector3(-48.5, 0, 6.0)  # na trilha da faixa oeste, na praça das torres
 	p.rotation.y = PI * 0.5
 	p.reset_physics_interpolation()
 	await t._frames(3)
@@ -446,7 +460,7 @@ func test_tower_zone() -> void:
 	t.check(snipers.all(func(s: Sniper) -> bool: return s.flak and is_equal_approx(s.armor, Soldier.FLAK_MULT) and s.armor_name == Soldier.FLAK_TEXT),
 		"snipers das torres de Flak Jacket")
 	t.check(not main.sniper.flak and main.sniper.armor_name == "", "o do mezanino segue de colete comum")
-	t.check(not main.in_tower_zone(Vector3(-43.0, 0, -4.0)), "da estrada: longe do portão")
+	t.check(not main.in_tower_zone(Vector3(-47.0, 0, 9.0)), "da trilha: longe do portão")
 	p.health = 100000
 	var hp := p.health
 	p.global_position = main.towers[0].global_position + Vector3(0.5, 0, 0.4)

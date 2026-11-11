@@ -120,6 +120,13 @@ var _visited: Array[Vector3] = []
 var _best_left := INF  # menor resto de caminho até o destino desde que entrou no estado
 var _progress_t := 0.0
 var _marker: Label3D
+var _marker_lv := 0  # nível do último "?"/"!" mostrado: só pisca de novo quando o alerta sobe
+var _marker_tween: Tween
+## "?"/"!" sobre a cabeça: só um aviso curto quando a atenção sobe (cresce em `MARKER_POP`, fica `MARKER_HOLD`, some em
+## `MARKER_FADE`), nunca preso o tempo todo: com muitos inimigos em luta virava poluição.
+const MARKER_POP := 0.12
+const MARKER_HOLD := 0.8
+const MARKER_FADE := 0.35
 var _known_dead: Array[Enemy] = []  # corpos que já foi ver (ou deu o alarme): não chamam mais a atenção dele
 var _corpse: Enemy  # corpo que viu e está indo ver (`_corpse_at`)
 var _note_t := 0.0  # em luta: relógio da olhada nos corpos à vista (`_note_corpses`)
@@ -146,7 +153,7 @@ var _trail := Blood.Trail.new()
 func _enemy_ready() -> void:
 	_marker = Label3D.new()
 	_marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_marker.pixel_size = 0.012
+	_marker.pixel_size = 0.008
 	_marker.font_size = 64
 	_marker.outline_size = 16
 	_marker.position = Vector3(0, marker_height, 0)
@@ -598,10 +605,26 @@ func _melee_threat(strikes: Array, reach: float, rush: Array = []) -> float:
 func _update_marker() -> void:
 	if _marker == null: return
 	var lv := alert_level()
-	_marker.visible = lv > 0
+	var rose := lv > _marker_lv
+	_marker_lv = lv
 	if lv == 3: _marker.text = "!"; _marker.modulate = UiStyle.DANGER
 	elif lv == 2: _marker.text = "!"; _marker.modulate = UiStyle.WARN
 	elif lv == 1: _marker.text = "?"; _marker.modulate = UiStyle.ACCENT
+	if lv == 0:
+		if _marker_tween: _marker_tween.kill()
+		_marker.visible = false
+		return
+	if not rose or not is_inside_tree():
+		return
+	if _marker_tween: _marker_tween.kill()
+	_marker.visible = true
+	_marker.scale = Vector3.ONE * 0.4
+	_marker.transparency = 0.0
+	_marker_tween = create_tween()
+	_marker_tween.tween_property(_marker, "scale", Vector3.ONE, MARKER_POP).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_marker_tween.tween_interval(MARKER_HOLD)
+	_marker_tween.tween_property(_marker, "transparency", 1.0, MARKER_FADE)
+	_marker_tween.tween_callback(func() -> void: _marker.visible = false)
 
 ## Som vindo de `pos` chega aqui: mesma sala, ou salas ligadas por portas abertas (a porta fechada segura tiro e grito).
 ## Do telhado não chega nada (a laje abafa); dentro do túnel da mina, só até `Tunnel.SOUND_REACH` (a galeria abafa: a

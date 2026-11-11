@@ -16,6 +16,10 @@ var lock := ""  # id da chave/keycard necessária para abrir
 var is_locked_door := false
 var code := ""  # código do teclado (add_keypad); vazio = abre só com a chave/cartão
 var sealed := false  # sem fechadura nem maçaneta: não abre com E, só arrombado (`blow`, portão da pedreira no túnel)
+## Travado até a seção acabar (portões de grade da trilha do pátio: `ForestTrail` destrava com `set_held(false)`); sem E.
+var held := false
+## Camada em que a porta fechada fica: 1 (cenário) ou `Yard.GRATE_LAYER` (grade: segura corpo, não segura tiro nem vista).
+var solid_layer := 1
 var blown := false  # arrombada (`blow`): as folhas estão deitadas no chão
 var _push := Vector3.LEFT  # para onde a explosão jogou as folhas
 var _col: CollisionShape3D
@@ -100,6 +104,35 @@ func add_card_reader(local_pos: Vector3, rot_y: float = 0.0) -> void:
 	_reader_light.omni_range = 1.2
 	_reader_light.position = local_pos + Vector3(0.05, 0.07, 0)
 	add_child(_reader_light)
+
+
+## Lampião de trava em cima do vão (`local_pos` no espaço da porta): vermelho travado (`held`), verde destravado. Usa o
+## mesmo LED/luz do leitor de cartão (`_reader_color`).
+func add_status_lamp(local_pos: Vector3) -> void:
+	var box := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.16, 0.16, 0.16)
+	box.mesh = bm
+	_reader_mat = StandardMaterial3D.new()
+	_reader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	box.material_override = _reader_mat
+	box.position = local_pos
+	add_child(box)
+	_reader_light = OmniLight3D.new()
+	_reader_light.light_energy = 1.4
+	_reader_light.omni_range = 3.5
+	_reader_light.position = local_pos
+	add_child(_reader_light)
+	_reader_color(Color(1.0, 0.15, 0.15) if held else Color(0.2, 1.0, 0.3))
+
+
+## Trava (`on`) ou destrava o portão de grade da trilha; destravar toca o estalo da tranca.
+func set_held(on: bool, quiet := false) -> void:
+	var was := held
+	held = on
+	_reader_color(Color(1.0, 0.15, 0.15) if on else Color(0.2, 1.0, 0.3))
+	if was and not on and not quiet and is_inside_tree():
+		Sfx.ui(self, "unlock")
 
 
 ## Teclado numérico com leitor de cartão ao lado do vão (`local_pos` no espaço da porta; +Z local do painel = para quem
@@ -207,7 +240,7 @@ func add_panel(node: Node3D, open_pos: Vector3, open_rot_y: float) -> void:
 
 ## Está ao alcance de quem está em `p` (para o aviso e para abrir).
 func can_open(p: Vector3) -> bool:
-	if opened or sealed:
+	if opened or sealed or held:
 		return false
 	var d := p - global_position
 	if absf(d.y) > REACH_DY:
@@ -319,7 +352,7 @@ func reset() -> void:
 		if _reader_light:
 			_reader_light.light_color = Color(1.0, 0.15, 0.15)
 	keypad_power(false)
-	collision_layer = 1
+	collision_layer = solid_layer
 	_col.set_deferred("disabled", false)
 	for pn in _panels:
 		pn.node.position = pn.pos

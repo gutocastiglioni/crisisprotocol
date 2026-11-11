@@ -247,7 +247,7 @@ func test_soundscape() -> void:
 	r.start_suspicious()
 	await t._frames(2)
 	check(_count("suspicious") == 1 and _count("raptor_suspicious") == 1, "desconfiado: aviso \"?\" e o piado do raptor", str(Sfx.played))
-	# os dois entram em combate (um vê, o outro ouve o alarme): o acorde de "visto!" toca uma vez só
+	# os dois entram em combate (um vê, o outro ouve o alarme): sem acorde de "visto!" (só o "!" curto na cabeça)
 	r.spot()
 	await t._frames(90)
-	check(_count("alert") == 1, "visto: um acorde só, mesmo com dois inimigos alertados", str(Sfx.played))
+	check(_count("alert") == 0, "visto: nenhum acorde de aviso", str(Sfx.played))

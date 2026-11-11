@@ -384,7 +384,7 @@ func test_end_screen() -> void:
 	await t._frames(3)
 	var a: Allosaurus = main.allosaurus
 	check(a != null and a.global_position.x < Arena.X_NEAR, "cena principal: alossauro na pedreira", str(a.global_position) if a else "-")
-	check(main.raptors.size() == Yard.POSTS.size() + Arena.POSTS.size(), "cena principal: raptors do pátio e da pedreira", str(main.raptors.size()))
+	check(main.raptors.size() == Yard.POSTS.size() + Arena.POSTS.size() + Yard.WAVES.reduce(func(n: int, w: Dictionary) -> int: return n + w.entries.size(), 0) + Yard.CLIFF_RAPTORS.size(), "cena principal: raptors do pátio (trilha) e da pedreira", str(main.raptors.size()))
 	check(not main.ended and not main.game_over, "jogo começa sem a tela de fim ou game over")
 	a.take_hit(Allosaurus.MAX_HEALTH, Vector3.BACK, a.global_position + Vector3.UP * 2.5)
 	await t._frames(int((main.END_DELAY + 0.3) * 60.0))

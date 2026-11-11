@@ -15,7 +15,7 @@ extends Node
 ##   1. atrás dela, chegando ao guerrilheiro morto (AMB_WALK);
 ##   2. perto da mão dele: segura alguma coisa (a chave) e a legenda AMB_SUBTITLE; ela agachada olhando;
 ##   3. o rosto dela levantando (os raptors saem das moitas em AMB_EMERGE_AT, o grito em AMB_LOOK_AT);
-##   4. do alto, girando devagar: ela no meio e os três rodeando (Raptor.start_ambush);
+##   4. do alto, girando devagar: ela no meio e os três saindo dos cantos e parando em volta dela (Raptor.start_ambush);
 ##   5. por cima do ombro dela, o da frente ruge (Raptor.ambush_roar).
 ## No fim (ou pulando) os raptors largam a roda já em luta (Raptor.end_ambush, um de cada vez) e ela está de arma na mão.
 ##
@@ -60,7 +60,7 @@ const AMB_WIDE_AT := 6.0
 const AMB_ROAR_AT := 8.4
 const AMB_END_AT := 10.4
 const AMB_RING := 5.0  # raio da roda dos raptors em volta dela
-const AMB_CIRCLE := 1.0  # sentido da roda: o mesmo para os três (matilha rodeando junta, nenhum na contramão)
+const AMB_CIRCLE := 0.0  # sem roda: cada um sai do canto dele, para a AMB_RING m de frente para ela e observa
 const AMB_STAGGER := 0.9  # s entre um raptor e o próximo sair da roda para atacar
 const TALK_LINES := ["ISSO É MAIS QUE O SUFICIENTE PRA EXPLODIR AQUELE BICHO AGORA. EU CANSEI DESSE LUGAR.",
 	"NOSSO SALÁRIO NÃO COBRE ESSA INSANIDADE."]
@@ -570,11 +570,12 @@ func _ambush_camera() -> void:
 		_cam.global_position = head + front * (1.8 + 0.3 * k) + player.global_basis.x * 0.4 + Vector3.UP * -0.15
 		_cam.look_at(head)
 	elif t < AMB_ROAR_AT:
-		# do alto, girando devagar em volta dela: os três na roda
+		# do alto, do lado de onde ela veio (a trilha: aberta, sem copa no caminho), girando devagar: os três em volta
 		var k := (t - AMB_WIDE_AT) / (AMB_ROAR_AT - AMB_WIDE_AT)
-		var ang := corpse.rotation.y + 0.6 + 0.7 * k
+		var back := Vector3(_from.x - her.x, 0.0, _from.z - her.z)
+		var ang := atan2(back.x, back.z) - 0.25 + 0.5 * k
 		_cam.fov = 60.0
-		_cam.global_position = her + Vector3(sin(ang), 0.0, cos(ang)) * 8.5 + Vector3.UP * 9.0
+		_cam.global_position = her + Vector3(sin(ang), 0.0, cos(ang)) * 8.0 + Vector3.UP * 8.5
 		_cam.look_at(her)
 	else:
 		# por cima do ombro dela, no que ruge

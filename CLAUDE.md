@@ -57,9 +57,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `make_sounds.py` (efeitos sonoros em `game/assets/sounds/`; blocos de síntese em `sound_dsp.py`, vozes do raptor/avisos/
   ambientes em `sound_creatures.py`; as vozes do raptor são trechos de gravação real CC0 de `art/ref_sounds/` (T-rex = jacaré + leão + alce, fora do
   git, fonte em `LEIAME.txt`) com o tom subido por `sound_samples.py` e volume por RMS; sem a pasta vale a voz sintética de reserva), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
-- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd`,
+- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd` + trilha em S dele `forest_trail.gd` (trechos de raptors, portões de grade por seção),
   portas `door.gd` (galpão→pátio, pátio→túnel, túnel→pedreira arrombável), túnel da mina `tunnel.gd`, pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones, emboscada do pátio, rendição aos snipers das torres, conversa do túnel e chegada à pedreira), mira laser do sniper `sniper_laser.gd` (+ `shaders/sniper_laser`/`laser_dot`), checkpoints `checkpoint.gd`, guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`), `assets/` (gerados — não
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
@@ -91,7 +91,10 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Sangue: `--shot=soldier_headshot|soldier_wounded|raptor_blood [--playercam]`.
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
   tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
-  Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 a roda, ~9,6 o rugido).
+  Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 do alto, ~9,6 o rugido).
+  Trilha do pátio: `--shot=trail_map` (planta de cima, ortográfica, sul em cima e galpão à direita) e `--shot=yard --pos=x,z[,graus[,altura]]`
+  (na altura dela; passar das linhas dos trechos solta os raptors; `--pos=-25,-4,180,3.5` = em cima do planalto); trecho saindo da mata:
+  `--shot=walk --pos=-31.5,-38.2,180 --playercam --at=4.5`.
   Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|mezz_climb|ladder_locked|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder/mezz_climb: `--at` escolhe o quadro; mezz_climb = sobe pela caixa do nicho até o mezanino, câmera atrás, `--yaw` gira; ladder_locked salva no aviso da escada trancada).
   Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
   keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem o cartão; gate_open: `--at` escolhe o quadro).
@@ -166,7 +169,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`move_scale`; SHIFT/L3 = corrida forte `Player.SPRINT_SPEED` 4,2 m/s, andar devagar passa para ALT; no arcade SHIFT segue sendo andar), sem esquiva (o pulinho DodgeL/R/Back foi tirado): o botão de rolar é a mesma cambalhota do arcade, com intervalo de 1,4 s (`roll_cooldown`), a retícula só existe com o botão de mirar apertado e só atira mirando (sem
   mira apertada não há tiro), inimigos machucam ×2 (`GameMode.enemy_damage`, usado em todo `take_hit` de inimigo na jogadora),
   munição limitada sem recarga (`Player.ammo`, HUD "PISTOLA 10", clique `dry_fire` e aviso quando acaba; `START_AMMO`/`WEAPON_AMMO`
-  do baú/`AMMO_CAP`) e itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
+  do baú/`AMMO_CAP`, escopeta até 25) e itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
   o teste confere que estão em chão livre). Cada arma manda no movimento enquanto o botão de mirar está apertado, sem a jogadora
   precisar parar (`aim_speed`/`lock`/`lock_slow` em `GameMode.SURVIVAL_WEAPONS`, `Player._armed_locomotion`): pistola corre e atira
   (coice mínimo; de lado, acima de `Player.FAST_STRAFE_AT` x o passo lateral curto, toca o passo largo StrafeFastL/R, ciclo "strafe_fast" de 1,35 m/s em `heroine_moves.gaits`, em vez do curto acelerado), M16 vira andar devagar e atira (coice médio, o tiro a desacelera mais), escopeta trava o movimento sozinha (só gira
@@ -186,7 +189,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Ar pesado do galpão (`Haze`, grupo "haze"): debaixo de cada luminária de `Level.LAMPS` um feixe de luz falso (cone aberto somado à
   cena, `shaders/light_shaft.gdshader`, da cor da lâmpada) e um halo no painel, e névoa rala no galpão inteiro (`Haze.air`, FogVolume `AIR_DENSITY`, acesa só pelas lâmpadas); sem corpo, luz, sombra nem partículas (a poeira em
   partículas foi tentada e recusada: virava quadradinhos de luz). Igual no PS1 e no PS2 (fora da troca do `Gfx`).
-- Camadas de física: 1 cenário, 2 personagens (cápsulas; o raptor também, com caixa no tronco para os tiros), 4 ragdoll (só colide com o cenário).
+- Camadas de física: 1 cenário, 2 personagens (cápsulas; o raptor também, com caixa no tronco para os tiros), 4 ragdoll (só colide com o cenário),
+  5 barra da frente das torres (`GuardTower.RAIL_LAYER`), 6 grade (`Yard.GRATE_LAYER`: portões de grade e bordas do planalto da trilha; seguram
+  ela e os raptors, que têm a camada na máscara, e deixam passar tiro, vista, câmera e a malha de navegação).
 - IA e furtividade (`enemy.gd` = base de `Raptor` e `Soldier`; `Player.visibility()/make_noise()`): o inimigo patrulha `route` e percebe pela visão (cone de 150°, alcance
   `SIGHT_RANGE * Player.visibility()`; raptor 20 m, guerrilheiro `sight_range` 23 m, alertado `ALERT_SIGHT` 32 m: parada 0,7, andando 0,75, correndo/rolando/atirando 1, agachada 0,3 / andando 0,39 (guerrilheiro: 7 m / 9 m) só com algo baixo entre o olho dele e o quadril dela, `PlayerStealth.exposed_to`; agachada no aberto `OPEN_CROUCH` 0,65 / andando 0,7, capim alto ×0,5 agachada)
   e pelo barulho (`hear_noise`: passos de corrida 10 m, andando 4 m, agachada 2 m, tiro 26 m). A atenção (`aware`) sobe → `suspicious`
@@ -225,21 +230,43 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   os `alarm_responders` mais perto saem (soldado: 2, andando = `alarm_walks`, `search_sweeps` 3; raptors: a matilha toda, correndo); os
   outros param, olham para o lugar (`_heed`) e seguem alertados. Sniper: mira e atira só com ela à vista (`SEES_GRACE`); sem vê-la por
   `LOSE_TIME`, procura na passarela e esquece (`_lose_target`). Testes: `ai_tests.gd`.
-- Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), clareira de capim com estrada de terra
-  até um portão, árvores/arbustos/pedras/troncos, touceiras de capim alto (grupo "cover", meta "radius"), 3 raptors em `Yard.POSTS` (rotas usadas só depois da emboscada).
-  Mata do meio numa grade (`Yard.COVER_CELL`, um item mexido por célula: sem vazios grandes); perto da estrada só capim, que
-  acompanha a beira sem entrar na terra (a estrada fica livre até o portão); a `CLEARING + TREE_GAP` do morto só moita (copa
-  de árvore entraria no plano do alto da emboscada). Baú da escopeta em `Yard.SHOTGUN_CHEST` (boca para a mata) com um tronco
-  fixo (`CHEST_LOG`) escorado no fundo: ela dá a volta para abrir.
+- Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), uma trilha de terra em S por mata
+  fechada (jeito Dino Crisis 2 / RE4: ela segue um caminho e a luta vem da frente, não de todos os lados): três faixas norte-sul separadas
+  por paredes de mata (`WALL_A`/`WALL_B`, `_bands`: parede invisível de `WALL_H` 10 m, alta para ninguém escalar nem do planalto, com
+  árvores/moitas de enfeite por cima), `Z_HALF` 45 m. S1 = faixa leste, da porta para o sul até a clareira do morto (emboscada); S2 = faixa do
+  meio para o norte (7 raptors); S3 = a mesma faixa depois da parede que a cruza em z = 0 (9 raptors); L3 = faixa oeste para o sul, só capim
+  (nada sólido: a rendição é de longe), até a praça das torres (`PLAZA_Z`; ao sul dela mata fechada) e o portão de ferro do fundo (boca do túnel
+  = último ponto de `ROAD`, que túnel e pedreira usam). Portões de grade (`Yard.GRATES`, `_grate`: `Door` de barras com `solid_layer` = a
+  camada da grade, room -1, lampião de trava em cima = `Door.add_status_lamp`) entre as seções: travados (`Door.held`, sem E) até a seção de
+  antes acabar; aí destravam (`set_held(false)`: estalo, lampião verde) e ela abre com E. O de trás fica aberto (dá para voltar; eles vão atrás).
+  Trilha (`ForestTrail`, `forest_trail.gd`, criado pelo main; seções 0/1/2 = S1/S2/S3): os 3 da emboscada são a seção 0; os de S2/S3 ficam
+  escondidos em moitas sem colisão (`Yard.WAVES`: cada trecho tem uma linha `z` e as moitas `entries`, sempre 6 m ou mais à frente dela) e,
+  quando ela passa da linha na faixa do meio no chão (`Yard.in_mid`), saem um `ForestTrail.STAGGER` depois do outro (`Raptor.emerge`: agacha,
+  pula na direção dela e cai a `EMERGE_GAP` m, já em luta, e entra na vez da matilha). S2 = trechos de 2, 2, 2, 1; S3 = 3, 3, 3. Passou
+  correndo: os trechos seguintes soltam os seus e todos a perseguem (vão se juntando). Escondido, o raptor nem anima (`lurk` desliga o
+  modelo; são 21 na mata). Seção limpa → `cleared` → `main._on_trail_cleared`: S1 = a chave brilha + checkpoint "trail"; S2 = "trail2"; S3 =
+  "standoff" e as torres ficam prontas (`towers_armed`). R (`reset`): todos às moitas, trechos armados, portões travados; checkpoint
+  (`restore`): vivo volta à moita e o trecho arma de novo, seção sem vivo = portão destravado.
+  Barranco e planalto da escopeta: no fim de S2, meio escondido atrás de samambaias, o degrau `ROCK1` (`ROCK1_H` 1,2 m, raso: de cima dele a
+  beira fica ao alcance) e a beira `SHELF` do planalto (`PLATEAU`, `PLATEAU_Y` 3,5 m, faixa leste ao norte de S1, por cima da `WALL_A`): escala,
+  pula, fica pendurada e sobe. Lá em cima o baú da escopeta (`SHOTGUN_CHEST`, boca para o norte, tronco `CHEST_LOG` no fundo), munição e kit,
+  e os 2 raptors de `CLIFF_RAPTORS` (fora das seções) que saem das moitas quando ela chega (`Yard.on_plateau`). As bordas do planalto (menos a
+  do barranco) têm grade invisível (camada da grade): da beira sobre S3 a vista e o tiro descem, ninguém pula.
+  Lâmpadas `LAMPS` (só as `SHADOW_LAMPS` primeiras fazem sombra), touceiras de capim alto (grupo "cover", meta "radius"); a faixa do meio é
+  mais rala de coisa sólida (espaço para a luta). Os 3 raptors da emboscada em `Yard.POSTS` (rotas usadas só depois dela).
+  Mata das faixas numa grade (`Yard.COVER_CELL`, um item mexido por célula: sem vazios grandes); perto da trilha só capim, que
+  acompanha a beira sem entrar na terra; a `CLEARING + TREE_GAP` do morto só moita (copa de árvore entraria no plano do alto da emboscada).
   O portão do fundo (`Yard._gate`) é de chapa cheia (`GATE_H`) com viga de concreto até `Arena.CLIFF_H`: nem pela frente nem do
   telhado se vê a pedreira. Neblina rasteira sobre o pátio (`Yard._mist`, FogVolume; `Level` liga `volumetric_fog` com densidade 0 fora dele).
+  Testes: `trail_tests.gd`.
   Guerrilheiro morto (`Corpse` em `Yard.CORPSE`, clareira de `Yard.CLEARING` m sem nada sólido): `HeroineModel` do guerrilheiro com a
   árvore de animação desligada e `Corpse.POSE` posta no esqueleto (convenção do heroine_anims; deitado, X>0 = para o céu, Z<0 abre
   braço/perna), sangue por `Blood.splat` (refeito no R), chave do container presa na mão direita (`KeyItem.hold`, estado "held").
-  Emboscada: os 3 raptors do pátio começam escondidos nas moitas sem colisão de `Yard.LURK` (`Raptor.lurk`: `Enemy.lurking` = sem
-  corpo, sem IA, não ouvem nem recebem alarme). Ela a `Corpse.NOTICE_RANGE` do morto, com linha livre → `Cutscene.play_ambush`
-  (anda até a mão, close do punho com a chave + "ELE ESTÁ SEGURANDO ALGUMA COISA...", eles saem e rodeiam a `AMB_RING` m
-  (`start_ambush`, estado "ambush", os três no mesmo sentido `AMB_CIRCLE`), o da frente ruge; E pula, ver Cenas). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
+  Emboscada: os 3 raptors da emboscada (S1) começam escondidos nas moitas sem colisão dos cantos da clareira, `Yard.LURK` (`Raptor.lurk`:
+  `Enemy.lurking` = sem corpo, sem IA, não ouvem nem recebem alarme). Ela a `Corpse.NOTICE_RANGE` do morto, com linha livre →
+  `Cutscene.play_ambush` (só com `trail.sections[0]`; anda até a mão, close do punho com a chave + "ELE ESTÁ SEGURANDO ALGUMA COISA...",
+  eles saem dos cantos e param a `AMB_RING` m de frente para ela sem rodear (`start_ambush` com `AMB_CIRCLE` 0, estado "ambush"; o plano do alto
+  vem do lado da trilha por onde ela chegou), o da frente ruge; E pula, ver Cenas). No fim `end_ambush` = em luta, um de cada vez (`AMB_STAGGER`).
   A chave fica sem brilho (`KeyItem.shine` falso) até os 3 morrerem; dá para pegá-la antes. R: moitas, chave e cena de volta.
   A etiqueta vermelha da chave tem "0M79" escrito (`KeyItem.tag`, Label3D na etiqueta, também na tela do item): parece um código e
   engana (não é o do portão).
@@ -248,16 +275,16 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`RAIL_H` 1,1 = abdome) só segura o corpo mole (`RAIL_LAYER`, a cápsula viva não encosta), telhado e lâmpada; sem escada
   (ninguém sobe). Em volta delas `Yard._off_towers` tira árvore (`TOWER_TREES`) e o resto sólido (`TOWER_CLEAR`) depois de montar a
   mata (o sorteio do resto fica igual). Um sniper em cada (`main._build_towers`: `Sniper.perch` = retângulo da plataforma,
-  `floor_y`, `home_yaw` = vigia o pátio, `ledge` = alto da barra), fora de cena (`Sniper.lurk`) até os 3 raptors da emboscada
-  morrerem (`appear`). Morreu um: o outro fica com o cartão do painel (`main.gate_card`, `loot`) e `falls`. O que cai: morto ainda
+  `floor_y`, `home_yaw` = vigia o pátio, `ledge` = alto da barra), fora de cena (`Sniper.lurk`) até a mata limpa (S3 da trilha) e ela descer a trilha da faixa oeste até `Yard.STANDOFF_Z`
+  (`main.wake_towers` → `appear`). Morreu um: o outro fica com o cartão do painel (`main.gate_card`, `loot`) e `falls`. O que cai: morto ainda
   em pé toca StaggerFwd e cambaleia até a barriga bater na barra (`_stagger_to_rail`), amolece com o embalo num corpo firme
   (`_firm`: juntas a `FIRM_JOINTS` do normal e giro amortecido em `FIRM_DAMP`, sem chacoalho de boneco mole; só a coluna vai a
   `SLUMP_WAIST`), o quadril fica na altura da barra, atrás dela, enquanto o tronco pende para fora (`_tip_over`: dobra no
   abdome, pernas esticadas), depois passa por cima e a gravidade leva; o fuzil fica na mão até o corpo parar no chão e só então
   o fuzil (pickup) e o cartão aparecem um de cada lado do corpo (`_drop_when_landed`, `DROP_SIDE`). O que morre lá em cima (não cai) fica com o fuzil na mão e não larga nada. R: snipers fora de
   cena de novo, cartão escondido. Testes: `tower_tests.gd`.
-  Rendição (`main._update_standoff`): `main.STANDOFF_DELAY` s depois do último raptor da emboscada morrer, com ela no pátio, de pé e
-  com controle, e os dois snipers vivos, `Cutscene.play_standoff` (uma vez: `main.standoff_armed`, o R arma de novo): eles erguem o
+  Rendição (`main._update_standoff`): `main.STANDOFF_DELAY` s depois das torres acordarem (`wake_towers`), com ela na faixa oeste
+  (`Yard.in_west`), de pé e com controle, e os dois snipers vivos, `Cutscene.play_standoff` (uma vez: `main.standoff_armed`, o R arma de novo): eles erguem o
   fuzil, os lasers acendem (`Sniper.hold_at_gunpoint`, estado "standoff": laser firme nela, sem tiro, ameaça 0) e cruzam no peito
   dela, ela levanta as mãos (Surrender) e as falas `STAND_LINES` ("PARADA AÍ!" / "É O FIM DA LINHA." / "NÃO SE MOVA OU
   ATIRAREMOS.", a última "NÃO FAÇA MOVIMENTOS BRUSCOS OU ATIRAREMOS."). No fim (ou pulando) `Player.surrender`: mãos ao alto
@@ -346,7 +373,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o galpão (o alçapão aparece do começo) e
   `LAB_FOG_DENSITY` a mais sobre o anexo (a caixa só aparece a poucos metros).
 - Checkpoints (`Checkpoint`, `checkpoint.gd`; `main.reach_checkpoint`, só andam para a frente, aviso "CHECKPOINT"): "yard" = abriu o
-  portão do galpão para o pátio (`main.yard_door`), "standoff" = os 3 raptors da emboscada mortos, "tunnel" = abriu o portão do teclado
+  portão do galpão para o pátio (`main.yard_door`), "trail" = os 3 raptors da emboscada mortos (S1), "trail2" = S2 limpa, "standoff" = S3
+  limpa (as torres esperam ela descer de novo: `towers_armed`/`towers_up` também vão no checkpoint), "tunnel" = abriu o portão do teclado
   (`main.mine_door`), "allosaurus" = passou pelo portão arrombado para a pedreira. Grava a jogadora (vida, armas, munição, silenciador,
   chaves, tiros, tempo) e o mundo (mortos por índice de `main.all_enemies()`, portas/baús/caixa de paraquedas/alçapão/chave e cartões
   pelo `save_state`/`load_state` de cada um, itens pegos e os largados no chão, caixotes estourados, cenas já tocadas). Game Over:
@@ -552,7 +580,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`HeroineModel`: tiro da arma da mão, telha, troca, pancada, queda, cambalhota/pulo/aterrissagem/borda e passos quando o osso
   Foot_* desce até o chão; `RaptorModel`: voz/golpe de cada animação em `ANIM_SOUNDS`, passos pelos Toe_*, piados), `Fx` toca
   impacto por superfície e cápsula no chão, `Chest` a tampa. Chão com meta "step" = "grass" = passos na grama. `Soundscape`
-  (criado no main): ambiente do galpão/pátio misturado pela posição dela e avisos "?"/"visto!" pelo `alert_level` dos inimigos.
+  (criado no main): ambiente do galpão/pátio misturado pela posição dela e o aviso "?" pelo `alert_level` dos inimigos (caça/combate
+  sem som de aviso). O "?"/"!" sobre a cabeça (`Enemy._update_marker`) só pisca quando o nível sobe: cresce, fica
+  `MARKER_HOLD` e some (`MARKER_*`), nunca fica preso.
 - Depois de mudar arte/animação: renderizar prévia e olhar; depois de mudar o jogo: capturar e olhar.
 - Sangue (`Blood`, jeito Dino Crisis): esguicho vermelho sem luz no golpe + gotas que viram respingo onde caem, respingo
   na parede/chão atrás (`SPATTER_RANGE`), rastro de gotas de quem está ferido (`Blood.Trail`, pelo `wound()` 0..1) e poça

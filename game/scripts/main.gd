@@ -84,8 +84,9 @@ const STANDOFF_SHOTS := ["standoff", "surrender_roll", "surrender_aim", "surrend
 const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
 const AIM_SHOT_AT := 2.0  # capturas allo_aim / flak: quando ela atira
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
-## Rendição no pátio (Cutscene.play_standoff): STANDOFF_DELAY s depois do último raptor da emboscada morrer, com ela no
-## pátio, de pé e com controle, os snipers das torres a pegam na mira; ela fica rendida (anda devagar com os lasers
+## Rendição no pátio (Cutscene.play_standoff): a última seção da trilha limpa (ForestTrail, S3), ela desce a trilha da faixa
+## oeste até Yard.STANDOFF_Z: os snipers sobem nas torres (`wake_towers`) e, STANDOFF_DELAY s depois, com ela de pé e
+## com controle, a pegam na mira; ela fica rendida (anda devagar com os lasers
 ## nela) até um movimento brusco (`Player.surrender_broken` → `Sniper.release`, um STANDOFF_STAGGER s depois do outro)
 ## ou até sair da vista de um deles andando (`Sniper.standoff_lost`: sem tiro na hora, a mira lenta).
 const STANDOFF_DELAY := 1.2
@@ -111,7 +112,11 @@ var chests: Array[Chest] = []
 var locker: Chest  # container trancado com a M79
 var key: KeyItem  # chave do container da M79 (etiqueta "0M79"), na mão do guerrilheiro morto
 var corpse: Corpse  # guerrilheiro morto no meio do pátio, com a chave do container na mão
-var yard_raptors: Array[Raptor] = []  # os 3 do pátio: escondidos na mata até a emboscada no morto
+var yard_raptors: Array[Raptor] = []  # os da mata: os 3 da emboscada (primeiros) + os dos trechos e do barranco (ForestTrail)
+var trail: ForestTrail  # trilha em S do pátio: trechos de raptors e portões de grade por seção
+## S3 acabou: os snipers sobem nas torres quando ela descer a trilha da faixa oeste (`wake_towers`)
+var towers_armed := false
+var towers_up := false
 var keycard: KeyItem
 var inspect: Inspect
 var pause_menu: PauseMenu
@@ -235,10 +240,20 @@ func _ready() -> void:
 		var r := Raptor.new()
 		_place(r, post)
 		raptors.append(r)
-	yard_raptors.assign(raptors.slice(0, Yard.POSTS.size()))
-	_lurk_yard_raptors()
-	for r in yard_raptors:
-		r.killed.connect(_on_yard_raptor_killed)
+	var ambush: Array[Raptor] = []
+	ambush.assign(raptors.slice(0, Yard.POSTS.size()))
+	_lurk_yard_raptors(ambush)
+	var grates: Array[Door] = []
+	for d: Door in get_tree().get_nodes_in_group("doors"):
+		if d.solid_layer == Yard.GRATE_LAYER:
+			grates.append(d)
+	trail = ForestTrail.new()
+	trail.player = player
+	add_child(trail)
+	var walkers := trail.build(_place, ambush, grates)
+	raptors.append_array(walkers)
+	yard_raptors.assign(ambush + walkers)
+	trail.cleared.connect(_on_trail_cleared)
 	allosaurus = Allosaurus.new()
 	_place(allosaurus, Arena.ALLO)
 	allosaurus.killed.connect(func() -> void:
@@ -308,7 +323,10 @@ func _ready() -> void:
 	cutscene.hud = _hud
 	add_child(cutscene)
 	lab.entered.connect(func() -> void: cutscene.play_clones(player, lab))
-	corpse.noticed.connect(func() -> void: cutscene.play_ambush(player, corpse, yard_raptors))
+	corpse.noticed.connect(func() -> void:
+		var first: Array[Raptor] = []
+		first.assign(trail.sections[0])
+		cutscene.play_ambush(player, corpse, first))
 	player.locked.connect(_on_locked)
 	player.keypad.connect(_on_keypad)
 	player.ladder_locked.connect(func(_l: Ladder) -> void: inspect.show_message(Catwalk.LOCKED_TEXT))
@@ -329,22 +347,45 @@ func _ready() -> void:
 		get_tree().create_timer(10.0).timeout.connect(func() -> void: _hud_help.visible = false)
 
 
-## Os raptors do pátio vão para as moitas da beira da clareira do morto (Yard.LURK) e esperam a emboscada.
-func _lurk_yard_raptors() -> void:
-	for i in yard_raptors.size():
-		yard_raptors[i].lurk(Yard.LURK[i % Yard.LURK.size()])
+## Os 3 da emboscada vão para as moitas dos cantos da clareira do morto (Yard.LURK) e esperam a cena.
+func _lurk_yard_raptors(ambush: Array[Raptor] = []) -> void:
+	if ambush.is_empty():
+		ambush.assign(trail.sections[0])
+	for i in ambush.size():
+		ambush[i].lurk(Yard.LURK[i % Yard.LURK.size()])
 
 
-## Morreu um raptor do pátio: com os três mortos, a chave na mão do guerrilheiro começa a brilhar e os snipers sobem nas
-## torres do portão.
-func _on_yard_raptor_killed() -> void:
-	if yard_raptors.all(func(r: Raptor) -> bool: return r.dead):
-		key.shine = true
-		for s in tower_snipers:
+## Uma seção da trilha acabou (ForestTrail.cleared; o portão de grade dela já destravou): S1 = a chave na mão do guerrilheiro
+## começa a brilhar; S3 = as torres ficam prontas para quando ela descer a trilha da faixa oeste. Cada uma é checkpoint.
+func _on_trail_cleared(section: int) -> void:
+	match section:
+		0:
+			key.shine = true
+			reach_checkpoint("trail")
+		1:
+			reach_checkpoint("trail2")
+		2:
+			towers_armed = true
+			reach_checkpoint("standoff")
+
+
+## Ela desceu a trilha da faixa oeste com a mata limpa (`towers_armed`): os snipers sobem nas torres e a rendição conta.
+func _update_towers() -> void:
+	if not towers_armed or towers_up or player.dead:
+		return
+	var at := player.global_position
+	if Yard.in_west(at) and at.z < Yard.STANDOFF_Z:
+		wake_towers()
+
+
+func wake_towers() -> void:
+	towers_armed = true
+	towers_up = true
+	for s in tower_snipers:
+		if not s.dead:
 			s.appear()
-		if standoff_armed:
-			_standoff_t = STANDOFF_DELAY
-		reach_checkpoint("standoff")
+	if standoff_armed:
+		_standoff_t = STANDOFF_DELAY
 
 
 ## Rendição: conta o STANDOFF_DELAY e espera ela estar no pátio, de pé, com controle (fora de cena, tela, golpe, escada).
@@ -361,7 +402,7 @@ func _update_standoff(delta: float) -> void:
 		return
 	if player.moves.busy() or player.is_dodging() or player.model.is_ragdoll() or not player.is_on_floor():
 		return
-	if Level.room_of(player.global_position.x) != 1 or Roof.has(player.global_position):
+	if not Yard.in_west(player.global_position) or Roof.has(player.global_position):
 		return
 	standoff_armed = false
 	_standoff_t = -1.0
@@ -914,6 +955,8 @@ func _reset_world() -> void:
 	gate_card.reset()
 	standoff_armed = true
 	_standoff_t = -1.0
+	towers_armed = false
+	towers_up = false
 	for i in tower_snipers.size():
 		var s := tower_snipers[i]
 		s.reset()
@@ -928,6 +971,7 @@ func _reset_world() -> void:
 	for r in raptors:
 		r.reset()
 	_lurk_yard_raptors()
+	trail.reset()
 	key.shine = false
 	corpse.reset()
 	for sd in soldiers:
@@ -1062,6 +1106,24 @@ func _parse_args() -> void:
 		allosaurus.process_mode = Node.PROCESS_MODE_DISABLED
 		for r in raptors:
 			r.process_mode = Node.PROCESS_MODE_DISABLED
+	elif _shot == "trail_map":
+		# planta da trilha do pátio, de cima (ortográfica; o sul fica em cima, o galpão à direita): faixas, portões, barranco
+		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_review_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		_review_cam.size = 96.0
+		_review_cam.far = 200.0
+		add_child(_review_cam)
+		_review_cam.global_position = Vector3((Yard.X_NEAR + Yard.X_FAR) * 0.5, 80.0, 0.0)
+		_review_cam.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+		_review_cam.current = true
+		var sun := DirectionalLight3D.new()
+		sun.light_energy = 2.5
+		sun.rotation = Vector3(-PI * 0.42, 0.3, 0.0)
+		add_child(sun)
+		for fv: FogVolume in find_children("*", "FogVolume", true, false):
+			fv.visible = false
+		_hud.visible = false
 	elif _shot == "flak":
 		# 6 m na frente do sentinela de Flak Jacket da esquerda da porta da sala dos clones (parado), mirando
 		_still_target(soldiers[9])
@@ -1125,6 +1187,7 @@ func _process(delta: float) -> void:
 		sniper_scope.update_scope(in_sniper, player.sniper_zoom_label(), dist, aim_info.get("blocked", false))
 	if corpse.armed and not inspect.busy:
 		corpse.check_notice()
+	_update_towers()
 	_update_standoff(delta)
 	_update_tower_zone()
 	_watch_checkpoints()
@@ -1599,8 +1662,10 @@ func _setup_tower_shot() -> void:
 	for r in yard_raptors:
 		r.lurking = false
 		r.take_hit(999, Vector3.FORWARD, r.global_position)
-	player.global_position = Vector3(-43.0, 0, -4.0)
-	player.rotation.y = PI * 0.5
+	# descendo a trilha da faixa oeste, olhando para o portão do fundo (as torres acordam: ForestTrail limpo + Yard.STANDOFF_Z)
+	player.global_position = Vector3(-48.5, 0, 9.0)
+	var to_gate := Vector3(Yard.GATE_X, 0, -3.0) - player.global_position
+	player.rotation.y = atan2(-to_gate.x, -to_gate.z)
 	player.reset_physics_interpolation()
 	player.camera_rig.yaw = player.rotation.y
 	player.camera_rig.pitch = 0.12
@@ -1757,10 +1822,10 @@ func _setup_key_shot() -> void:
 	var spots := {
 		"locked": [front, locker.rotation.y], "unlock": [front, locker.rotation.y], "pickup_m79": [front, locker.rotation.y],
 		# do lado da mão da chave, olhando para o morto (key_get: os raptors do pátio já mortos, a chave brilhando)
-		"corpse": [corpse.global_position + Vector3(8.0, 0, -6.0), PI * 0.5],
+		"corpse": [corpse.global_position + Vector3(-3.5, 0, 5.0), PI * 0.5],
 		"key_get": [corpse.stand_point() + Vector3(1.8, 0, 0), PI * 0.5],
-		# vindo pela estrada, a uns 6 m do morto: entra na cena da emboscada
-		"ambush": [corpse.stand_point() + Vector3(5.8, 0, -2.0), PI * 0.4],
+		# vindo pela trilha do norte, a uns 6 m do morto: entra na cena da emboscada
+		"ambush": [corpse.stand_point() + Vector3(-1.5, 0, 5.8), 0.0],
 		# de frente para o fundo do galpão: a granada cai no chão a ~7 m
 		"fire_m79": [Vector3(-1.0, 0, 5.0), 0.0], "m79_aim": [Vector3(-2.4, 0, 1.6), 0.0],
 		"crates": [CRATES_FROM, 0.0], "crates_fire": [CRATES_FROM, 0.0], "crates_ping": [CRATES_FROM, 0.0],
