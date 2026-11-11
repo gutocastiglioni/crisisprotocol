@@ -276,7 +276,8 @@ func test_headshot_dummy() -> void:
 	await t._frames(3)
 	t.check(heads == [d] and d.dead, "alvo de treino cai com um tiro na cabeça", "vida=%d %s" % [d.health, str(heads)])
 	Input.action_release("aim")
-	await t._frames(40)
+	# as gotas voam até 0,9 s (Blood._droplet): em 40 quadros só caíam as que saíam baixas e, às vezes, nenhuma
+	await t._frames(66)
 	t.check(Blood.count() >= 2, "headshot espalha sangue no chão", str(Blood.count()))
 
 

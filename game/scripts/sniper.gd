@@ -11,9 +11,20 @@ extends Enemy
 ## nas torres quando os raptors da emboscada morrem). `falls`: ao morrer amolece encostado no guarda-corpo (`ledge`, o alto
 ## da barra), se debruça nela e escorrega por cima até cair; a `loot` só cai no chão depois que o corpo para (o cartão do
 ## painel do portão, com o último sniper das torres). No posto alto só quem cai larga o fuzil (no chão, do lado do corpo).
+## Mira laser (`SniperLaser`): ao travar, o ponto vermelho começa fora dela (`_sweep`) e vem tremendo até o peito
+## (`SWEEP_SETTLE` da mira), firma e, no fim (`BLINK_AT`), pisca cada vez mais rápido até o tiro.
+## Rendição (cena dos snipers das torres, `hold_at_gunpoint`): estado "standoff" = laser nela (segue-a andando), sem
+## atirar; o sensor de perigo enche em STANDOFF_TIMEOUT s (fora da cena) e aí `standoff_timeout` (eles atiram); sem
+## linha livre até ela por STANDOFF_BLIND s, `standoff_lost`. `release(como)` no
+## movimento brusco: mirou, correu/pulou ou rolou = tiro na hora (rolando, erra) e, em todo caso, a próxima mira leva
+## `STANDOFF_LOCK` s (o sensor enche devagar); depois, o fluxo de sempre.
 
 signal killed
 signal fired
+## rendição: ela saiu da vista dele (andando para trás de algo) por mais que STANDOFF_BLIND s
+signal standoff_lost
+## rendição: ela ficou STANDOFF_TIMEOUT s na mira sem fugir (eles atiram)
+signal standoff_timeout
 
 const BODY := preload("res://assets/characters/guerrilla.glb")
 const ATLAS := preload("res://assets/characters/guerrilla_atlas.png")
@@ -23,7 +34,14 @@ const DAMAGE := 38
 const FIRE_RANGE := 35.0
 const AIM_LOCK_TIME := 1.25  # tempo de mira com laser vermelho antes do disparo
 const COOLDOWN_TIME := 2.2   # intervalo de recarga do ferrolho entre disparos
-const COMBAT := ["alert", "aim_lock", "cooldown"]
+const COMBAT := ["alert", "aim_lock", "cooldown", "standoff"]
+const STANDOFF_LOCK := 5.0  # s da primeira mira depois da rendição (`release`): o sensor de perigo enche nesse tempo
+const SWEEP_SETTLE := 0.6  # fração da mira em que o ponto do laser chega ao peito dela
+const BLINK_AT := 0.75  # daqui até o tiro o laser pisca, cada vez mais rápido
+const LASER_ON := 0.15  # s para o laser acender
+const STANDOFF_TIMEOUT := 15.0  # s rendida na mira (fora da cena) até eles atirarem; o sensor de perigo enche nesse tempo
+const STANDOFF_BLIND := 0.4  # s sem linha livre até ela na rendição: perdeu a vista (`standoff_lost`)
+const BODY_DEPTH := 0.13  # m do ponto mirado (meio do peito dela) até a frente da roupa: o ponto do laser fica ali
 const SEES_GRACE := 0.3  # sem vê-la por mais que isto, a mira não avança nem dispara
 const BLIND_SPOT_Z := 0.0  # metade da sala (z > 0 = início da sala no chão, protegido pelo mezanino)
 ## Na ronda do mezanino ele também olha para baixo, para as caixas do labirinto (Level.MAZE): com a cabeça baixa
@@ -54,11 +72,18 @@ const FALL_MAX := 6.0  # s depois de morrer a loot cai de qualquer jeito (no ch�
 var model: HeroineModel
 var health := MAX_HEALTH
 var _shape: CollisionShape3D
-var laser_mesh: MeshInstance3D
-var laser_mat: StandardMaterial3D
+var laser: SniperLaser
 var shots_fired := 0
 var aim_progress := 0.0
 var _cooldown_t := 0.0
+var _lock_time := AIM_LOCK_TIME  # tempo desta mira (a primeira depois da rendição é STANDOFF_LOCK)
+var _sweep := Vector3.ZERO  # de onde o ponto do laser começa, em relação ao peito dela
+var _laser_t := 0.0  # s com o laser aceso nesta mira (tremida, acender, pisca-pisca)
+var _standoff_blind := 0.0
+var _standoff_clock := 0.0  # s rendida na mira, fora da cena (STANDOFF_TIMEOUT)
+## corpos que não tapam a vista nem o tiro dele (as torres do pátio: a plataforma de tábuas não esconde quem está embaixo)
+var see_through: Array[RID] = []
+var flak := false  # Flak Jacket no lugar do colete comum (antes de entrar na árvore; os das torres do pátio)
 var loot: KeyItem
 ## plataforma (XZ, mundo) em que anda; vazia = o mezanino do galpão
 var perch := Rect2()
@@ -106,7 +131,8 @@ func _ready() -> void:
 	hunt_speed = Player.RUN_SPEED
 	head_mult = 10.0  # tiro na cabeça é fatal
 	armor_parts = Soldier.VEST_PARTS  # o mesmo colete do guerrilheiro
-	armor = Soldier.VEST_MULT
+	armor = Soldier.FLAK_MULT if flak else Soldier.VEST_MULT
+	armor_name = Soldier.FLAK_TEXT if flak else ""
 	can_stealth = true
 	drop_kind = "sniper"
 	drop_is_weapon = true
@@ -119,21 +145,9 @@ func _ready() -> void:
 
 
 func _setup_laser() -> void:
-	laser_mat = StandardMaterial3D.new()
-	laser_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	laser_mat.albedo_color = Color(1.0, 0.1, 0.1, 0.75)
-	laser_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	laser_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	laser_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	
-	laser_mesh = MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.015, 0.015, 1.0)
-	laser_mesh.mesh = box
-	laser_mesh.material_override = laser_mat
-	laser_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	laser_mesh.visible = false
-	add_child(laser_mesh)
+	laser = SniperLaser.new()
+	laser.exclude = see_through
+	add_child(laser)
 
 
 func _physics_process(delta: float) -> void:
@@ -156,6 +170,8 @@ func _physics_process(delta: float) -> void:
 				_aim_lock_process(delta)
 			"cooldown":
 				_cooldown_process(delta)
+			"standoff":
+				_standoff_process(delta)
 			"dead":
 				_stop(delta)
 				_hide_laser()
@@ -217,9 +233,40 @@ func in_combat() -> bool:
 ## Sensor de perigo: com o laser nela, sobe junto com a mira até o disparo (que não erra quem não esquiva); recarregando
 ## o ferrolho ou sem vê-la, pouco.
 func _threat() -> float:
+	if state == "standoff":
+		# rendida: o sensor sai do zero e enche até o tiro em STANDOFF_TIMEOUT s
+		return _share(clampf(_standoff_clock / STANDOFF_TIMEOUT, 0.0, 1.0), func(e: Sniper) -> bool: return e.state == "standoff")
 	if state == "aim_lock" and _lost_t <= SEES_GRACE:
-		return 0.35 + 0.65 * clampf(aim_progress / AIM_LOCK_TIME, 0.0, 1.0)
+		var p := clampf(aim_progress / _lock_time, 0.0, 1.0)
+		if _lock_time > AIM_LOCK_TIME:
+			# a mira lenta depois da rendição: o sensor sai do zero e enche até o tiro em STANDOFF_LOCK s
+			return _share(p, func(e: Sniper) -> bool: return e.state == "aim_lock" and e._lock_time > AIM_LOCK_TIME)
+		return 0.35 + 0.65 * p
 	return 0.25 if _lost_t <= SEES_GRACE else 0.05
+
+
+## Raio no cenário de `from` a `to` sem os corpos de `see_through`.
+func _ray(from: Vector3, to: Vector3) -> PhysicsRayQueryParameters3D:
+	var q := PhysicsRayQueryParameters3D.create(from, to, 1)
+	q.exclude = see_through
+	return q
+
+
+## Vista dele até ela: a de sempre, sem os corpos de `see_through`.
+func _line_clear(who: Player = target) -> bool:
+	if not is_instance_valid(who):
+		return false
+	return get_world_3d().direct_space_state.intersect_ray(_ray(global_position + Vector3.UP * eye_height, who.sight_point())).is_empty()
+
+
+## Parte de cada um na chance `p` com um ou com os dois snipers nela (o sensor junta as chances como "pelo menos um"):
+## juntos, o sensor mostra `p`. `same` diz quem está no mesmo passo que ele.
+func _share(p: float, same: Callable) -> float:
+	var n := 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e is Sniper and not e.dead and same.call(e):
+			n += 1
+	return 1.0 - pow(1.0 - p, 1.0 / maxi(n, 1))
 
 
 func _play(anim: String, _blend := 0.15, speed := 1.0, _restart := false) -> void:
@@ -336,7 +383,8 @@ func start_alert() -> void:
 	_hide_laser()
 
 
-func start_aim_lock() -> void:
+## Trava a mira (`lock` s até o tiro): o ponto do laser começa de um lado dela e vem até o peito.
+func start_aim_lock(lock := AIM_LOCK_TIME) -> void:
 	if not _has_target() or dead:
 		_resume()
 		_hide_laser()
@@ -346,7 +394,11 @@ func start_aim_lock() -> void:
 	if model:
 		model.set_aim(true)
 	aim_progress = 0.0
-	_show_laser()
+	_lock_time = lock
+	_laser_t = 0.0
+	var to := _to_target()
+	var side := to.normalized().cross(Vector3.UP) if to.length() > 0.1 else global_basis.x
+	_sweep = side * rng.randf_range(0.5, 0.9) * (1.0 if rng.randf() < 0.5 else -1.0) + Vector3.UP * rng.randf_range(-0.5, 0.25)
 
 
 func _aim_lock_process(delta: float) -> void:
@@ -371,14 +423,12 @@ func _aim_lock_process(delta: float) -> void:
 	_update_pitch(delta)
 	
 	aim_progress += delta
-	_update_laser(to)
+	_laser_t += delta
+	var p := clampf(aim_progress / _lock_time, 0.0, 1.0)
+	var settle := smoothstep(0.0, SWEEP_SETTLE, p)
+	_point_laser(target.sight_point() + _sweep * (1.0 - settle) + _sway() * (1.0 - 0.8 * settle), _laser_strength(p))
 	
-	# Laser pulsa e brilha mais forte conforme o tiro se aproxima
-	if laser_mat:
-		var pulse: float = clampf(aim_progress / AIM_LOCK_TIME, 0.0, 1.0)
-		laser_mat.albedo_color = Color(1.0, 0.1 + pulse * 0.2, 0.1, 0.5 + pulse * 0.5)
-	
-	if aim_progress >= AIM_LOCK_TIME:
+	if aim_progress >= _lock_time:
 		_fire_sniper()
 
 
@@ -419,40 +469,89 @@ func _update_pitch(delta: float) -> void:
 		model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, target_pitch, 1.0 - exp(-10.0 * delta))
 
 
-func _update_laser(_to: Vector3) -> void:
-	if not model or not laser_mesh:
-		return
-	var muzzle: Vector3 = model.muzzle_position()
-	var chest: Vector3 = target.sight_point()
-	
-	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
-	var block: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
-	var end: Vector3 = (block.position as Vector3) if not block.is_empty() else chest
-	
-	var beam_vec: Vector3 = end - muzzle
-	var dist: float = beam_vec.length()
-	if dist < 0.1:
-		_hide_laser()
-		return
-	
-	laser_mesh.visible = true
-	laser_mesh.global_position = muzzle + beam_vec * 0.5
-	
-	var fwd: Vector3 = beam_vec.normalized()
-	var up: Vector3 = Vector3.UP if absf(fwd.y) < 0.99 else Vector3.FORWARD
-	var right: Vector3 = fwd.cross(up).normalized()
-	up = right.cross(fwd).normalized()
-	laser_mesh.global_basis = Basis(right, up, fwd).scaled(Vector3(1.0, 1.0, dist))
+## Tremida da mão no fuzil (m, em volta do ponto mirado): some quando a mira firma.
+func _sway() -> Vector3:
+	return Vector3(sin(_laser_t * 1.7) * 0.05, sin(_laser_t * 2.3 + 1.0) * 0.04, cos(_laser_t * 1.3) * 0.05)
 
 
-func _show_laser() -> void:
-	if laser_mesh:
-		laser_mesh.visible = true
+## Brilho do laser na fração `p` da mira: acende em LASER_ON e, de BLINK_AT até o tiro, pisca cada vez mais rápido.
+func _laser_strength(p: float) -> float:
+	var on := clampf(_laser_t / LASER_ON, 0.0, 1.0)
+	if p < BLINK_AT:
+		return on * (0.75 + 0.25 * p / BLINK_AT)
+	var hz := lerpf(5.0, 16.0, (p - BLINK_AT) / (1.0 - BLINK_AT))
+	return on * (1.0 if fposmod(_laser_t * hz, 1.0) < 0.6 else 0.35)
+
+
+## Laser do cano até `at` (ou até o cenário no meio).
+func _point_laser(at: Vector3, strength: float) -> void:
+	if not model or not laser:
+		return
+	laser.point(model.muzzle_position(), at, strength, BODY_DEPTH)
 
 
 func _hide_laser() -> void:
-	if laser_mesh:
-		laser_mesh.visible = false
+	if laser:
+		laser.off()
+
+
+## Rendição (a cena dos snipers das torres): mira nela com o laser firme, sem atirar, até `release`. O laser acende
+## depois de `delay` s.
+func hold_at_gunpoint(delay := 0.0) -> void:
+	if dead or lurking or not _has_target():
+		return
+	alert_t = alert_time
+	identified = true
+	aware = 1.0
+	_lost_t = 0.0
+	_last_known = target.global_position
+	_laser_t = -delay
+	_standoff_blind = 0.0
+	_standoff_clock = 0.0
+	_enter("standoff", "Idle", 0.1)
+
+
+func _standoff_process(delta: float) -> void:
+	_stop(delta)
+	alert_t = alert_time  # rendida não é esquecida
+	_lost_t = 0.0
+	_face(_to_target(), delta, turn_rate)
+	_update_pitch(delta)
+	_laser_t += delta
+	_standoff_blind = 0.0 if _line_clear() else _standoff_blind + delta
+	if _standoff_blind > STANDOFF_BLIND:
+		standoff_lost.emit()
+	if not target.cutscene:
+		_standoff_clock += delta
+		if _standoff_clock >= STANDOFF_TIMEOUT:
+			standoff_timeout.emit()
+	if _laser_t < 0.0:
+		_hide_laser()
+		return
+	_point_laser(target.sight_point() + _sway() * 0.4, clampf(_laser_t / LASER_ON, 0.0, 1.0) * 0.9)
+
+
+## Movimento brusco na rendição (`how`: "aim" mirou/atirou, "rush" correu/pulou, "roll" rolou, "timeout" ficou
+## STANDOFF_TIMEOUT s na mira; "move" = sumiu andando):
+## menos no "move", atira na hora (rolando, erra); depois a mira de STANDOFF_LOCK s (`delay` a mais para um não atirar
+## junto com o outro).
+func release(how: String, delay := 0.0) -> void:
+	if dead or state != "standoff":
+		return
+	if how in ["aim", "rush", "roll", "timeout"]:
+		_fire_sniper()
+	start_aim_lock(STANDOFF_LOCK)
+	aim_progress = -delay
+
+
+## Rendição: o laser acende já (a cena foi pulada antes da hora dele).
+func light_laser() -> void:
+	if in_standoff():
+		_laser_t = maxf(_laser_t, LASER_ON)
+
+
+func in_standoff() -> bool:
+	return state == "standoff" and not dead
 
 
 ## Disparo potente de fuzil de precisão
@@ -470,7 +569,7 @@ func _fire_sniper() -> void:
 	Fx.muzzle_flash(parent, muzzle, WEAPON, dir)
 	
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
-	var block: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, chest, 1))
+	var block: Dictionary = space.intersect_ray(_ray(muzzle, chest))
 	
 	var hit_her := false
 	var end: Vector3 = (block.position as Vector3) if not block.is_empty() else chest
@@ -482,7 +581,7 @@ func _fire_sniper() -> void:
 	elif target.is_dodging():
 		# Erra por pouco
 		var miss_dir: Vector3 = dir + Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(-0.1, 0.1), rng.randf_range(-0.15, 0.15))
-		var far: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(muzzle, muzzle + miss_dir * FIRE_RANGE * 1.5, 1))
+		var far: Dictionary = space.intersect_ray(_ray(muzzle, muzzle + miss_dir * FIRE_RANGE * 1.5))
 		end = far.position if not far.is_empty() else muzzle + miss_dir * FIRE_RANGE
 		if not far.is_empty():
 			Fx.impact(parent, end, false, far.normal, str((far.collider as Node).get_meta("surface", "concrete")))

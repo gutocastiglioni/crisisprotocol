@@ -5,9 +5,9 @@ extends CharacterBody3D
 
 const GRAVITY := 18.0
 # percepção e patrulha
-const SIGHT_RANGE := 14.0
+const SIGHT_RANGE := 20.0
 const CLOSE_SIGHT := 2.5  # até aqui vê em volta toda, não só o cone
-const ALERT_SIGHT := 22.0  # alcance de quem já foi alertado (vezes a visibilidade dela: agachada ou no capim ainda se esconde)
+const ALERT_SIGHT := 32.0  # alcance de quem já foi alertado (vezes a visibilidade dela: agachada ou no capim ainda se esconde)
 const ALERT_FOV_BONUS := deg_to_rad(35.0)  # alertado olha mais para os lados, mas não vê nas costas (dá para escapar por trás)
 const COMBAT_SENSE := 5.0  # em combate, até aqui sabe onde ela está mesmo agachada (com nada no meio)
 const CORPSE_SIGHT := 7.0  # corpo caído no chão só se nota até aqui (de longe, no galpão escuro, passa batido)
@@ -27,6 +27,7 @@ const SWEEP_RINGS := [3.0, 5.0, 7.0]  # distâncias (do lugar onde a viu) dos po
 const CLAIM_DIST := 3.0  # destino a menos disto do de um colega = já tem gente indo lá
 const NO_PROGRESS_TIME := 3.0  # andando sem encurtar o caminho por este tempo (porta fechada, quina, colega no meio) = chegou o mais perto que dá
 const ASSASSINATE_RANGE := 2.2  # alcance do abate furtivo pelas costas
+const CLEARED_AT := Vector3(0, -200, 0)  # onde fica quem morreu antes do checkpoint (`clear_out`): longe de tudo
 const STEER_RADIUS := 0.3  # raio do corpo (cápsula de gente) ao conferir se dá para ir reto ao próximo ponto do caminho
 const CRIT_RANGE := 2.5  # alcance do golpe crítico no inimigo caído
 # passo: o corpo só tem andar e correr; velocidade no meio dos dois tocaria a corrida em câmera lenta
@@ -42,6 +43,8 @@ var state := "idle"
 var dead := false
 ## escondido fora de cena (emboscada, ver Raptor.lurk): sem corpo, sem IA, não ouve nem recebe alarme
 var lurking := false
+## morto antes do checkpoint de onde ela voltou (`clear_out`): fora do jogo até o próximo `reset`
+var cleared := false
 var rng := RandomNumberGenerator.new()
 # ajustes de cada tipo de inimigo
 var sight_range := SIGHT_RANGE
@@ -307,8 +310,30 @@ func can_crit_strike(_p: Player) -> bool: return false
 func assassinate(_dir: Vector3, _at: Variant = null) -> void: pass
 func crit_strike(_dir: Vector3, _at: Variant = null) -> void: pass
 
+## Checkpoint: morto antes do checkpoint fica fora do jogo, sem corpo à vista: sumido, longe de tudo (ninguém acha o
+## corpo, a explosão e o fogo não o alcançam), sem IA e fora da física (`PROCESS_MODE_DISABLED` tira os corpos de física
+## dele e do ragdoll). O `reset` de quem herda o traz de volta.
+func clear_out() -> void:
+	cleared = true
+	dead = true
+	lurking = true
+	visible = false
+	collision_layer = 0
+	velocity = Vector3.ZERO
+	state = "dead"
+	_update_marker()
+	global_position = CLEARED_AT
+	reset_physics_interpolation()
+	process_mode = Node.PROCESS_MODE_DISABLED
+
+
 ## De volta ao ponto de partida, calmo (ao reiniciar).
 func _reset_enemy() -> void:
+	if cleared:
+		cleared = false
+		lurking = false
+		visible = true
+		process_mode = Node.PROCESS_MODE_INHERIT
 	global_transform = _spawn
 	reset_physics_interpolation()
 	velocity = Vector3.ZERO
@@ -873,7 +898,7 @@ func _combat_sees() -> bool:
 	if not _has_target() or _target_hidden():
 		return false
 	var d := _to_target().length()
-	return (d < COMBAT_SENSE or d < ALERT_SIGHT * target.visibility()) and _line_clear()
+	return (d < COMBAT_SENSE or d < ALERT_SIGHT * target.visibility_from(global_position + Vector3.UP * eye_height)) and _line_clear()
 
 ## Em combate: ela à vista zera o tempo sem vê-la e guarda o lugar onde está.
 func _track_target(delta: float) -> void:

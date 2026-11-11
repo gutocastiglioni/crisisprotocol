@@ -16,9 +16,12 @@ const MOUSE_SENS := 0.0035
 const PAD_SENS := 2.6
 const FOLLOW_DELAY := 1.5
 ## por cima do ombro (survival): distância atrás dela, desvio para a direita e campo de visão, andando e mirando;
-## altura do pivô (no lugar de HEIGHT) e inclinação inicial (quase reta, olhando o caminho e não o chão)
-const SHOULDER := {"length": 1.35, "length_aim": 1.1, "side": 0.6, "side_aim": 0.52, "fov": 55.0, "fov_aim": 44.0,
-	"height": 1.62, "pitch": -0.1}
+## altura do pivô (no lugar de HEIGHT) e inclinação inicial (quase reta, olhando o caminho e não o chão);
+## `*_dodge` = na cambalhota (`Player.rolling`) a câmera se afasta e desce para ela aparecer inteira (jeito Horizon/Syphon Filter)
+const SHOULDER := {"length": 1.35, "length_aim": 1.1, "length_dodge": 3.2, "side": 0.6, "side_aim": 0.52, "fov": 55.0, "fov_aim": 44.0,
+	"height": 1.62, "height_dodge": 0.95, "pitch": -0.1}
+const DODGE_OUT := 11.0  # rapidez com que a câmera se afasta quando a cambalhota começa (1/s)
+const DODGE_BACK := 2.5  # rapidez da volta depois dela (mais devagar: não dá tranco ao levantar)
 const PORTRAIT_SIDE := 0.5  # tela em pé: fração do desvio do ombro
 const PORTRAIT_FOV := 62.0  # tela em pé: campo de visão mínimo (o da largura)
 const SHOULDER_AIM_SENS := 0.6  # mirando, o mouse/analógico giram a esta fração
@@ -86,6 +89,7 @@ const ACT_LOWS := [0.8, 0.3]  # alturas (acima dos pés) do ponto olhado ajoelha
 const PULSE_HOLD := 0.9  # ação sem animação (pegar item em pé, detonador): s no ângulo antes de voltar
 var _act_lin := 0.0  # 0..1 linear; o peso usado é o smoothstep dele
 var _act_cfg: Dictionary = ACTIONS.pulse
+var _dodge := 0.0  # 0..1: quanto do afastamento da cambalhota (`*_dodge`) está valendo
 var _act_kind := ""
 var _act_side := 1.0  # +1/-1: de que lado dela a câmera gira
 var _pulse := 0.0
@@ -155,7 +159,9 @@ func _process(delta: float) -> void:
 		pitch -= back
 		_recoil -= back
 	var focus: Vector3 = target.call("camera_focus") if target.has_method("camera_focus") else target.global_position
-	var goal := focus + Vector3.UP * (SHOULDER.height if shoulder else HEIGHT)
+	var dodging: bool = shoulder and bool(target.get("rolling"))
+	_dodge = lerpf(_dodge, 1.0 if dodging else 0.0, 1.0 - exp(-(DODGE_OUT if dodging else DODGE_BACK) * delta))
+	var goal := focus + Vector3.UP * (lerpf(SHOULDER.height, SHOULDER.height_dodge, _dodge) if shoulder else HEIGHT)
 	if target.get("crouching"):
 		goal.y -= 0.45
 	var act := _update_action(delta, in_sniper)
@@ -188,6 +194,7 @@ func _process(delta: float) -> void:
 			var off: float = (SHOULDER.side_aim if aiming else SHOULDER.side * side * (1.0 - SWING_CENTER * swing)) * (PORTRAIT_SIDE if portrait else 1.0)
 			var fov: float = SHOULDER.fov_aim if aiming else SHOULDER.fov + SWING_FOV * swing
 			var length: float = SHOULDER.length_aim if aiming else SHOULDER.length + SWING_BACK * swing
+			length = lerpf(length, SHOULDER.length_dodge, _dodge)
 			if act > 0.0:
 				off = lerpf(off, 0.0, act)
 				fov = lerpf(fov, float(_act_cfg.fov), act)

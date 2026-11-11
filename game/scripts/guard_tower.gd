@@ -14,17 +14,18 @@ const POST_AHEAD := 0.6  # o sniper fica a isto do centro, para a frente (o últ
 const RAIL_LAYER := 1 << 4  # camada só da barra da frente: segura o corpo mole (Sniper) sem empurrar a cápsula dele vivo
 const ROOF_Y := FLOOR_Y + 2.3
 const LEG := 0.22
+const WOOD := "planks"  # tábuas de obra (Level.TEX), não a textura das caixas
 const EDGE := 0.4  # o sniper anda até esta distância do parapeito de trás e dos lados (na frente, até encostar)
 
 
 func _ready() -> void:
 	var h := SIZE * 0.5
 	var leg := h - LEG * 0.5
-	var wood: Material = Level.material("crate", 0.5)
+	var wood: Material = Level.material(WOOD, 0.5)
 	# pernas inteiras do chão ao telhado e o X de reforço em cada face (só enfeite: tiro passa entre as tábuas)
 	for sx in [-1, 1]:
 		for sz in [-1, 1]:
-			Level.block(self, Vector3(LEG, ROOF_Y, LEG), Vector3(sx * leg, ROOF_Y * 0.5, sz * leg), "crate", 0.5)
+			Level.block(self, Vector3(LEG, ROOF_Y, LEG), Vector3(sx * leg, ROOF_Y * 0.5, sz * leg), WOOD, 0.5)
 	var low := 0.5
 	var high := FLOOR_Y - 0.35
 	for s in [-1, 1]:
@@ -33,15 +34,15 @@ func _ready() -> void:
 		_beam(Vector3(-leg, low, s * leg), Vector3(leg, high, s * leg), wood)
 		_beam(Vector3(leg, low, s * leg), Vector3(-leg, high, s * leg), wood)
 	# plataforma, com uma viga embaixo de cada lado
-	Level.block(self, Vector3(SIZE + 0.2, 0.2, SIZE + 0.2), Vector3(0, FLOOR_Y - 0.1, 0), "crate", 0.5)
+	Level.block(self, Vector3(SIZE + 0.2, 0.2, SIZE + 0.2), Vector3(0, FLOOR_Y - 0.1, 0), WOOD, 0.5)
 	for s in [-1, 1]:
 		_beam(Vector3(-h, FLOOR_Y - 0.3, s * leg), Vector3(h, FLOOR_Y - 0.3, s * leg), wood, Vector2(0.16, 0.2))
 	# parapeito de tábuas atrás e dos lados (com colisão: o tiro de baixo para nele)
-	Level.block(self, Vector3(0.08, WALL_H, SIZE), Vector3(-h + 0.04, FLOOR_Y + WALL_H * 0.5, 0), "crate", 0.5)
+	Level.block(self, Vector3(0.08, WALL_H, SIZE), Vector3(-h + 0.04, FLOOR_Y + WALL_H * 0.5, 0), WOOD, 0.5)
 	for s in [-1, 1]:
-		Level.block(self, Vector3(SIZE, WALL_H, 0.08), Vector3(0, FLOOR_Y + WALL_H * 0.5, s * (h - 0.04)), "crate", 0.5)
+		Level.block(self, Vector3(SIZE, WALL_H, 0.08), Vector3(0, FLOOR_Y + WALL_H * 0.5, s * (h - 0.04)), WOOD, 0.5)
 	# guarda-corpo vazado na frente: a barra de cima segura o corpo (o último sniper se debruça nela e cai por cima)
-	var rail := Level.block(self, Vector3(0.08, 0.08, SIZE - LEG), Vector3(leg, FLOOR_Y + RAIL_H - 0.04, 0), "crate", 0.5)
+	var rail := Level.block(self, Vector3(0.08, 0.08, SIZE - LEG), Vector3(leg, FLOOR_Y + RAIL_H - 0.04, 0), WOOD, 0.5)
 	rail.collision_layer = RAIL_LAYER
 	rail.physics_material_override = PhysicsMaterial.new()
 	rail.physics_material_override.friction = 0.15  # madeira lisa: o corpo escorrega por cima dela
@@ -53,6 +54,7 @@ func _ready() -> void:
 	lamp.light_energy = 1.2
 	lamp.omni_range = 5.0
 	lamp.position = Vector3(0, ROOF_Y - 0.35, 0)
+	lamp.add_to_group("lamps")  # sombra no PS2 (Gfx)
 	add_child(lamp)
 
 

@@ -8,7 +8,8 @@ extends Control
 ## com a cor do alerta dele (Enemy.alert_level). Fora do alcance fica preso na borda, apagado. Morto some; R esquece todos.
 ## Furtividade junto: o fundo e a moldura pulsam na cor do maior alerta dos inimigos (verde calmo, amarelo desconfiados,
 ## laranja busca ativa, vermelho alerta; mais rápido quanto pior) e embaixo vem um olho + VISIVEL/INVISIVEL e o estado.
-## INVISIVEL = `Player.visibility()` até INVISIBLE_AT (agachada, capim alto) ou num lugar onde não a percebem (telhado,
+## INVISIVEL = a visibilidade dela (`_exposure`: `Player.visibility()`, ou a de agachada à vista para quem a teria no
+## alcance sem nada baixo no meio, `PlayerStealth.exposed_to`) até INVISIBLE_AT (agachada atrás de algo, capim alto) ou num lugar onde não a percebem (telhado,
 ## alto da escada), desde que nenhum inimigo esteja com ela à vista agora (`Enemy.has_eyes_on`). O olho fecha quando ela
 ## some, abre mais quanto mais ela aparece, olha para os lados na busca e fica vermelho e arregalado no alerta.
 ## Barulho (`Player.noise_made`: passos, cambalhota, tiro): cada um solta um anel que sai dela e abre até o alcance real do som
@@ -60,6 +61,7 @@ var pings := {}  # instance_id -> s desde que ouviu o último barulho dela
 var seen := {}  # instance_id -> Enemy já avistado
 var level := 0  # maior Enemy.alert_level dos inimigos
 var unseen := false  # INVISIVEL
+var _vis := 1.0  # visibilidade dela que o olho mostra (`_exposure`)
 var _t := 0.0
 var _hold := 0.0
 
@@ -95,8 +97,24 @@ func _update_stealth() -> void:
 		level = maxi(level, e.alert_level())
 		watched = watched or e.has_eyes_on()
 	unseen = false
+	_vis = _exposure() if player else 1.0
 	if player and not watched:
-		unseen = player.visibility() <= INVISIBLE_AT or Roof.has(player.global_position) or player.moves.hidden_on_ladder()
+		unseen = _vis <= INVISIBLE_AT or Roof.has(player.global_position) or player.moves.hidden_on_ladder()
+
+
+## A visibilidade dela pior caso: agachada no aberto, quem a teria no alcance sem nada baixo no meio a vê de mais.
+func _exposure() -> float:
+	var v := player.visibility()
+	if not player.crouching:
+		return v
+	for e: Enemy in get_tree().get_nodes_in_group("enemies"):
+		if e.dead or e.lurking or e.cleared or not e.is_inside_tree() or e.is_distracted():
+			continue
+		var eye := e.global_position + Vector3.UP * e.eye_height
+		var ve := player.visibility_from(eye)
+		if ve > v and player.global_position.distance_to(e.global_position) <= e._sight_range():
+			v = ve
+	return v
 
 
 func status_text() -> String:
@@ -277,7 +295,7 @@ func _draw_eye(c: Vector2, tint: Color, k: float) -> void:
 			var a := c + Vector2(x, 1.5 * (1.0 - pow(x / w, 2.0)))
 			draw_line(a, a + Vector2(x * 0.25, 1.8), HIDDEN_COLOR, 1.0)
 		return
-	var vis := clampf(player.visibility() if player else 1.0, INVISIBLE_AT, 1.0)
+	var vis := clampf(_vis, INVISIBLE_AT, 1.0)
 	var open := remap(vis, INVISIBLE_AT, 1.0, 0.65, 1.0)
 	if level == 3:
 		open = 1.25

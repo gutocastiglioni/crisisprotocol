@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 
+import sound_samples as samples
 from sound_dsp import (
     SR, bell, bp, contour, crackle, decay, finish, hp, jitter, loop_seamless, lp, modes, n_of, noise, rng_for, saw,
     soft_clip, sweep, thud, tt,
@@ -144,6 +145,41 @@ def tail_whoosh():
     center = 400 + 1300 * np.sin(np.clip(t / 0.4, 0, 1) * math.pi)
     x = bp(noise(r, dur), center, 1.8) * bell(dur, 0.0, 0.2, 0.42)
     return finish(x, 0.85)
+
+
+# ------------------------------------------------------------------ raptor com gravações reais
+# As vozes acima (dente de serra + formantes) ficam como reserva: com art/ref_sounds/ presente (ver sound_samples.py) cada
+# uma vira um trecho de gravação real de animais (T-rex CC0 = jacaré + leão + alce) com o tom subido; sem a pasta vale a sintética.
+def _tear(x):
+    r = rng_for("raptor_shake_tear")
+    return x + bp(crackle(r, len(x) / SR, 60), 1800, 1.0) * 0.5  # pano e carne por cima do rosnado
+
+
+def _last_breath(x):
+    r = rng_for("raptor_death_breath")
+    dur = len(x) / SR
+    return x + lp(noise(r, dur), 1200) * bell(dur, dur - 0.5, dur - 0.3, dur - 0.02) * 0.12
+
+
+def _real(name, synth, extra=None):
+    """A gravação já sai no volume (RMS) certo, sem renormalizar pelo pico como o `finish` das sintéticas."""
+    def voice_fn(*args):
+        x = samples.render(name, *args)
+        if x is None:
+            return synth(*args)
+        x = extra(x) if extra else x
+        return np.clip(x - np.mean(x), -0.98, 0.98)
+    return voice_fn
+
+
+raptor_roar = _real("raptor_roar", raptor_roar)
+raptor_screech = _real("raptor_screech", raptor_screech)
+raptor_snarl = _real("raptor_snarl", raptor_snarl)
+raptor_chirp = _real("raptor_chirp", raptor_chirp)
+raptor_suspicious = _real("raptor_suspicious", raptor_suspicious)
+raptor_hurt = _real("raptor_hurt", raptor_hurt)
+raptor_shake = _real("raptor_shake", raptor_shake, _tear)
+raptor_death = _real("raptor_death", raptor_death, _last_breath)
 
 
 # ------------------------------------------------------------------ avisos (furtividade)

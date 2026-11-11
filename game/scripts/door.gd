@@ -16,6 +16,8 @@ var lock := ""  # id da chave/keycard necessária para abrir
 var is_locked_door := false
 var code := ""  # código do teclado (add_keypad); vazio = abre só com a chave/cartão
 var sealed := false  # sem fechadura nem maçaneta: não abre com E, só arrombado (`blow`, portão da pedreira no túnel)
+var blown := false  # arrombada (`blow`): as folhas estão deitadas no chão
+var _push := Vector3.LEFT  # para onde a explosão jogou as folhas
 var _col: CollisionShape3D
 var _panels: Array[Dictionary] = []
 var _tween: Tween
@@ -244,21 +246,64 @@ func blow(push: Vector3) -> void:
 	if opened:
 		return
 	opened = true
+	blown = true
+	_push = push
 	is_locked_door = false
 	collision_layer = 0
 	_col.set_deferred("disabled", true)
 	if _tween:
 		_tween.kill()
-	var local := (global_basis.inverse() * push).normalized()
-	var tip := PI * 0.5 * (1.0 if local.x < 0.0 else -1.0)  # +Z gira o alto da folha para -X
 	_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	for i in _panels.size():
-		var pn: Dictionary = _panels[i]
-		var land: Vector3 = pn.pos + local * (0.8 + 0.5 * i) + Vector3(0, 0.06, 0)
-		_tween.tween_property(pn.node, "position", land, 0.55)
-		_tween.tween_property(pn.node, "rotation", Vector3(0, pn.rot + (0.35 if i % 2 == 0 else -0.3), tip), 0.55)
+		var pose := _blown_pose(i)
+		_tween.tween_property(_panels[i].node, "position", pose[0], 0.55)
+		_tween.tween_property(_panels[i].node, "rotation", pose[1], 0.55)
 	if is_inside_tree():
 		Sfx.play(self, "impact_metal", global_position + Vector3.UP * 1.5, 6.0, 0.5)
+
+
+## Onde a folha `i` fica deitada depois de arrombada para `_push`: [posição, giro] locais.
+func _blown_pose(i: int) -> Array:
+	var pn: Dictionary = _panels[i]
+	var local := (global_basis.inverse() * _push).normalized()
+	var tip := PI * 0.5 * (1.0 if local.x < 0.0 else -1.0)  # +Z gira o alto da folha para -X
+	return [pn.pos + local * (0.8 + 0.5 * i) + Vector3(0, 0.06, 0), Vector3(0, pn.rot + (0.35 if i % 2 == 0 else -0.3), tip)]
+
+
+## Checkpoint: aberta, trancada ou arrombada agora.
+func save_state() -> Dictionary:
+	return {"opened": opened, "locked": is_locked_door, "blown": blown, "push": _push}
+
+
+## Checkpoint: volta de uma vez ao estado salvo (sem som nem folhas correndo).
+func load_state(s: Dictionary) -> void:
+	reset()
+	is_locked_door = s.locked
+	if not is_locked_door and lock != "":
+		_reader_color(Color(0.2, 1.0, 0.3))
+	if not s.opened:
+		return
+	opened = true
+	blown = s.blown
+	_push = s.push
+	collision_layer = 0
+	_col.set_deferred("disabled", true)
+	for i in _panels.size():
+		var pn: Dictionary = _panels[i]
+		if blown:
+			var pose := _blown_pose(i)
+			pn.node.position = pose[0]
+			pn.node.rotation = pose[1]
+		else:
+			pn.node.position = pn.open_pos
+			pn.node.rotation = Vector3(0, pn.open_rot, 0)
+
+
+func _reader_color(c: Color) -> void:
+	if _reader_mat:
+		_reader_mat.albedo_color = c
+	if _reader_light:
+		_reader_light.light_color = c
 
 
 ## Fecha de novo, de uma vez (ao reiniciar).
@@ -266,6 +311,7 @@ func reset() -> void:
 	if _tween:
 		_tween.kill()
 	opened = false
+	blown = false
 	if lock != "":
 		is_locked_door = true
 		if _reader_mat:

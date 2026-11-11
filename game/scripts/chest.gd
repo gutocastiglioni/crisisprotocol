@@ -24,10 +24,9 @@ const PALLET := 0.12  # altura do palete
 const WALL := 0.03
 const LID_OPEN := -105.0  # graus (para trás)
 const OPEN_TIME := 0.45
-## espuma no fundo (colchãozinho) com o vão na forma da arma: grade de FOAM_CELL m; a arma afunda FOAM_SINK m nela
+## espuma no fundo (colchãozinho) com o vão na forma da arma deitada: grade de FOAM_CELL m
 const FOAM_CELL := 0.012
-const FOAM_SINK := 0.015  # a espuma acima da parte de baixo de 3/4 da arma (coronha, cano e carregador afundam)
-const FOAM_MAX := 0.6  # mas no máximo nesta fração da altura da arma: o resto fica à mostra
+const FOAM_MAX := 0.5  # topo da espuma nesta fração da espessura da arma (o meio): o perfil inteiro afunda nela
 const FOAM_GAP := 2  # células de folga em volta da arma (a borda escura do vão desenha a forma dela)
 const FOAM_STEP := 0.01
 const FOAM := Color(0.42, 0.43, 0.4)  # cinza claro (como a da caixa de paraquedas): a arma preta aparece nela
@@ -90,21 +89,28 @@ func _ready() -> void:
 		_build_lock()
 
 
-## Colchãozinho de espuma no fundo do baú com o vão da arma: a malha da arma (onde ela está, em relação ao baú) é
-## projetada de cima numa grade; em cada célula o vão desce até o ponto mais baixo da arma ali (um pouco abaixo) e a
-## espuma em volta fica FOAM_SINK acima da parte de baixo de 3/4 da arma (até FOAM_MAX da altura dela). Topo e degraus juntados em faixas por linha.
+## Colchãozinho de espuma no fundo do baú com o vão da arma deitada (ver `foam`).
 func _build_foam() -> void:
-	var x0 := -SIZE.x * 0.5 + WALL
-	var z0 := -SIZE.z * 0.5 + WALL
-	var nx := int((SIZE.x - 2.0 * WALL) / FOAM_CELL)
-	var nz := int((SIZE.z - 2.0 * WALL) / FOAM_CELL)
-	var floor_y := PALLET + WALL
+	var inner := Rect2(-SIZE.x * 0.5 + WALL, -SIZE.z * 0.5 + WALL, SIZE.x - 2.0 * WALL, SIZE.z - 2.0 * WALL)
+	foam(self, _rifle, inner, PALLET + WALL, PALLET + SIZE.y - 0.04)
+
+
+## Espuma de estojo com o vão na forma da arma `gun` (já na árvore, onde fica deitada), em `space` (o vão é medido
+## no referencial dele): retângulo XZ `rect`, chão `floor_y`. A malha da arma é projetada de cima numa grade de
+## FOAM_CELL; em cada célula o vão desce até o ponto mais baixo da arma ali (com FOAM_GAP células de folga em volta)
+## e o topo da espuma fica no meio da espessura da arma (FOAM_MAX), ou em `top_y` se dado, nunca acima de `ceil_y`:
+## o perfil inteiro dela (cano, coronha, carregador) fica marcado. Vão mais escuro (FOAM_CUT), em degraus de FOAM_STEP.
+static func foam(space: Node3D, gun: Node3D, rect: Rect2, floor_y: float, ceil_y: float, top_y := NAN) -> MeshInstance3D:
+	var x0 := rect.position.x
+	var z0 := rect.position.y
+	var nx := int(rect.size.x / FOAM_CELL)
+	var nz := int(rect.size.y / FOAM_CELL)
 	var low := PackedFloat32Array()
 	low.resize(nx * nz)
 	low.fill(INF)
-	var inv := global_transform.affine_inverse()
+	var inv := space.global_transform.affine_inverse()
 	var wtop := [-INF]  # alto da arma
-	for mi: MeshInstance3D in _rifle.find_children("*", "MeshInstance3D", true, false):
+	for mi: MeshInstance3D in gun.find_children("*", "MeshInstance3D", true, false):
 		var xf := inv * mi.global_transform
 		for si in mi.mesh.get_surface_count():
 			var arr := mi.mesh.surface_get_arrays(si)
@@ -127,18 +133,18 @@ func _build_foam() -> void:
 					var jj: int = j + dj
 					if ii >= 0 and ii < nx and jj >= 0 and jj < nz:
 						cut[j * nx + i] = minf(cut[j * nx + i], low[jj * nx + ii])
-	var under: Array[float] = []
+	var wmin := INF
 	for h in low:
-		if h < INF:
-			under.append(h)
-	under.sort()
-	var wmin := INF if under.is_empty() else under[0]
-	var top := floor_y + 0.03
-	if not under.is_empty():
-		top = minf(under[int(under.size() * 0.75)] + FOAM_SINK, wmin + (wtop[0] - wmin) * FOAM_MAX)
-	top = clampf(top, floor_y + 0.03, PALLET + SIZE.y - 0.04)
+		wmin = minf(wmin, h)
+	var top := top_y
+	if is_nan(top):
+		top = floor_y + 0.03 if wmin == INF else wmin + (wtop[0] - wmin) * FOAM_MAX
 	var hgt := PackedFloat32Array()
 	hgt.resize(nx * nz)
+	# o topo arredondado como as alturas guardadas (float32): senão 0,37 guardado vira 0,36999998 < 0,37 e a
+	# espuma inteira cai no material do vão (o formato some)
+	hgt[0] = clampf(top, floor_y + 0.01, ceil_y)
+	top = hgt[0]
 	for k in nx * nz:
 		# o vão em degraus de FOAM_STEP (camadas de espuma cortadas): menos paredes que seguir cada célula
 		hgt[k] = top if cut[k] >= top else maxf(top - ceilf((top - cut[k] + 0.004) / FOAM_STEP) * FOAM_STEP, floor_y + 0.004)
@@ -152,6 +158,7 @@ func _build_foam() -> void:
 	var cz := PackedFloat32Array()
 	for j in nz + 1:
 		cz.append(z0 + j * FOAM_CELL)
+	var has_cut := false
 	for j in nz:
 		var i := 0
 		while i < nx:
@@ -160,6 +167,7 @@ func _build_foam() -> void:
 			while e + 1 < nx and hgt[j * nx + e + 1] == h:
 				e += 1
 			var st := st_top if h >= top else st_cut
+			has_cut = has_cut or h < top
 			_foam_quad(st, Vector3(cx[i], h, cz[j]), Vector3(cx[e + 1], h, cz[j]),
 				Vector3(cx[e + 1], h, cz[j + 1]), Vector3(cx[i], h, cz[j + 1]), Vector3.UP)
 			i = e + 1
@@ -182,15 +190,17 @@ func _build_foam() -> void:
 				var nrm := Vector3.BACK if h > h2 else Vector3.FORWARD
 				_foam_quad(st_cut, Vector3(cx[i], hi, z), Vector3(cx[i + 1], hi, z), Vector3(cx[i + 1], lo, z), Vector3(cx[i], lo, z), nrm)
 	var mesh := st_top.commit()
-	if wmin < top:
+	if has_cut:
 		st_cut.commit(mesh)
-	var foam := MeshInstance3D.new()
-	foam.mesh = mesh
-	foam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(foam)
-	foam.set_surface_override_material(0, _foam_mat(FOAM))
+	var mi := MeshInstance3D.new()
+	mi.name = "Foam"
+	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	space.add_child(mi)
+	mi.set_surface_override_material(0, foam_mat(FOAM))
 	if mesh.get_surface_count() > 1:
-		foam.set_surface_override_material(1, _foam_mat(FOAM_CUT))
+		mi.set_surface_override_material(1, foam_mat(FOAM_CUT))
+	return mi
 
 
 ## Ponto mais baixo de um triângulo da arma em cada célula da grade cujo centro cai dentro dele (visto de cima).
@@ -225,7 +235,7 @@ static func _foam_quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: V
 		st.add_vertex(p)
 
 
-func _foam_mat(tint: Color) -> ShaderMaterial:
+static func foam_mat(tint: Color) -> ShaderMaterial:
 	var m := _metal_mat(tint)
 	m.set_shader_parameter("rim", 0.0)
 	return m
@@ -270,7 +280,7 @@ func _metal(parent: Node3D, size: Vector3, pos: Vector3, tint: Color) -> MeshIns
 
 
 ## Metal liso da cor `tint` (o cadeado e o ferrolho são pequenos: textura de painel viraria um armário).
-func _metal_mat(tint: Color) -> ShaderMaterial:
+static func _metal_mat(tint: Color) -> ShaderMaterial:
 	if _plain == null:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGB8)
 		img.fill(Color.WHITE)
@@ -357,6 +367,25 @@ func take_item() -> String:
 
 func is_open() -> bool:
 	return _lid.rotation_degrees.x < -10.0
+
+
+## Checkpoint: a arma ainda dentro, destrancado, tampa aberta.
+func save_state() -> Dictionary:
+	return {"item": item, "unlocked": _unlocked, "open": is_open() or item != _start_item}
+
+
+## Checkpoint: volta de uma vez ao estado salvo (cadeado já caído no chão, tampa aberta, sem som).
+func load_state(s: Dictionary) -> void:
+	reset()
+	item = s.item
+	_rifle.visible = item != ""
+	_unlocked = s.unlocked
+	if _unlocked and _padlock:
+		_shackle.position.y = 0.022
+		_padlock.position = Vector3(0.05, 0.02, SIZE.z * 0.5 + 0.12)
+		_padlock.rotation = Vector3(-PI * 0.5, 0.4, 0.0)
+	if s.open:
+		_lid.rotation_degrees.x = LID_OPEN
 
 
 func reset() -> void:

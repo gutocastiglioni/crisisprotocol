@@ -169,6 +169,15 @@ func is_open_fully() -> bool:
 	return opened and (_tween == null or not _tween.is_running())
 
 
+## Checkpoint: aberto de uma vez (tampa em pé, escada liberada), sem som.
+func load_open(on: bool) -> void:
+	reset()
+	if on:
+		opened = true
+		ladder.top_open = true
+		_hinge.rotation.x = deg_to_rad(OPEN_ANGLE)
+
+
 ## Fecha de novo (reinício: ela volta para o telhado).
 func reset() -> void:
 	if _tween:

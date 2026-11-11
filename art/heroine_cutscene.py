@@ -4,6 +4,10 @@ HatchOpen: ajoelha na beira do alçapão do telhado, pega a tampa pela alça, le
 (o Godot gira a tampa entre HATCH_GRAB e HATCH_UP; ver game/scripts/hatch.gd).
 Shocked: o "O QUE...?!" na frente dos tanques: recua um passo com as mãos para cima, cabeça para trás, olha de um
 tanque para o outro e fica parada no fim (não é ciclo).
+Surrender / SurrenderHold: rendida na mira dos snipers das torres do pátio (cena "standoff" do Cutscene): levanta as
+mãos (Surrender, sem ciclo) e fica com elas ao alto respirando tensa (SurrenderHold, ciclo). Braços por IK: cotovelo
+para fora um pouco acima do ombro, antebraço em pé, mão na altura da cabeça com a palma para a frente e os dedos para
+cima (`SURRENDER_*`).
 """
 import math
 
@@ -19,6 +23,13 @@ HATCH_FRAMES = 66
 HATCH_LET_GO = 38  # a tampa passou de ~45°: as mãos soltam a alça e empurram, ela termina de subir sozinha
 HATCH_HANDS_FREE = 46  # daqui as mãos voltam à pose desenhada
 SHOCK_FRAMES = 56
+SURRENDER_FRAMES = 20  # levantar as mãos (0,67 s)
+SURRENDER_HOLD = 72  # ciclo com as mãos ao alto
+# alvos em relação à cabeça do UpperArm (ombro), lado esquerdo (+X = para fora; -Y = para a frente; Z para cima), m
+SURRENDER_ELBOW = (0.21, -0.05, 0.02)
+SURRENDER_WRIST = (0.23, -0.1, 0.24)
+SURRENDER_MID_ELBOW = (0.17, -0.1, -0.06)  # meio da subida: cotovelo saindo para o lado e para a frente
+SURRENDER_MID_WRIST = (0.24, -0.27, 0.06)
 
 # Alça da tampa em relação à raiz dela ajoelhada (= game/scripts/hatch.gd): a dobradiça fica HOLE.y - LADDER_INSET +
 # KNEEL_DIST à frente e CURB_H + LID_T/2 acima da laje; a alça, LID_T/2 + 0.03 acima da tampa e 0.08 antes da beira
@@ -127,3 +138,42 @@ def shocked_keys(A):
         (46, hold),
         (SHOCK_FRAMES, hold),
     ]
+
+
+def _hands_up(A, sk, base, elbow, wrist, up_fingers=True):
+    """Braços de `base` resolvidos por IK: cotovelo e punho nos alvos (em relação ao ombro de cada lado, espelhados),
+    palma para a frente e dedos para cima (`up_fingers`) ou para a frente."""
+    pose = dict(base)
+    rest = sk.matrices({})
+    for s, k in (("L", 1.0), ("R", -1.0)):
+        sh = rest[f"UpperArm_{s}"].translation
+        e_goal = sh + Vector((elbow[0] * k, elbow[1], elbow[2]))
+        w_goal = sh + Vector((wrist[0] * k, wrist[1], wrist[2]))
+        fingers = Vector((0, 0, 1)) if up_fingers else Vector((0, -1, 0))
+        palm_rest = Vector((-k, 0, 0))  # em repouso a palma olha para o corpo
+
+        def res(m, s=s, e_goal=e_goal, w_goal=w_goal, fingers=fingers, palm_rest=palm_rest):
+            e = list(sk.point(m, f"LowerArm_{s}") - e_goal) + list(sk.point(m, f"Hand_{s}") - w_goal)
+            e += list((sk.axis(m, f"Hand_{s}", (0, 0, -1)) - fingers) * 0.15)
+            e += list((sk.axis(m, f"Hand_{s}", palm_rest) - Vector((0, -1, 0))) * 0.15)
+            return e
+
+        pose, err = IK.solve(sk, pose, IK.arm_unknowns(s), res, IK.arm_bounds(s), iters=160)
+        print(f"[surrender] braço {s}: erro {err * 1000:.1f} mm")
+    return pose
+
+
+def surrender_keys(A, sk):
+    """Levanta as mãos (Surrender) e o ciclo com elas ao alto (SurrenderHold)."""
+    body = A.merge(A.IDLE, {"Spine": (-2, 0, 0), "Chest": (-3, 0, 0), "Neck": (-2, 0, 0), "Head": (-3, 0, 0)})
+    up = _hands_up(A, sk, body, SURRENDER_ELBOW, SURRENDER_WRIST)
+    mid = _hands_up(A, sk, A.merge(A.IDLE, {"Chest": (-1, 0, 0)}), SURRENDER_MID_ELBOW, SURRENDER_MID_WRIST, False)
+    high = _hands_up(A, sk, body, (SURRENDER_ELBOW[0], SURRENDER_ELBOW[1], SURRENDER_ELBOW[2] + 0.03),
+                     (SURRENDER_WRIST[0], SURRENDER_WRIST[1], SURRENDER_WRIST[2] + 0.04))
+    # respiração tensa: peito sobe e desce, as mãos tremem pouco
+    breath = A.merge(up, {"Chest": (-1.5, 0, 0), "Head": (2, 3, 0), "loc": (0, 0.004, 0),
+                          "LowerArm_L": (3, 0, 0), "LowerArm_R": (2, 0, 0)})
+    side = A.merge(up, {"Head": (0, -4, 0), "Chest": (0, -1, 0)})
+    raise_keys = [(0, A.IDLE), (6, mid), (12, high), (SURRENDER_FRAMES, up)]
+    hold_keys = [(0, up), (24, breath), (48, side), (SURRENDER_HOLD, up)]
+    return raise_keys, hold_keys

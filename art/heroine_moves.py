@@ -192,22 +192,32 @@ def gaits(A, crouch_guard=None):
                               lift=0.07, heel=6.0, toe_off=-14.0, swing_arm=0.0, upper=crouch_upper),
         "strafe": G.Gait(n=10, speed=0.75, travel=(1.0, 0.0), stance=0.5, hip=-0.04, bob=0.008, lift=0.05,
                          width=0.08, heel=0.0, toe_off=0.0, swing_arm=0.0, upper=no_legs(A.AIM)),
+        # passo lateral largo mirando em pé no survival (a pistola anda de lado a até 1,35 m/s): passada de ~0,55 m a 2,5
+        # passos/s, quadril um pouco mais baixo para as pernas abrirem; o StrafeL/R curto tocado a 1,8x virava trotinho
+        "strafe_fast": G.Gait(n=12, speed=1.35, travel=(1.0, 0.0), stance=0.5, hip=-0.07, bob=0.014, lift=0.07,
+                              width=0.08, heel=0.0, toe_off=0.0, swing_arm=0.0, upper=no_legs(A.AIM)),
         "crouch_strafe": G.Gait(n=14, speed=0.45, travel=(1.0, 0.0), stance=0.55, hip=-0.33, bob=0.006,
                                 lift=0.06, width=0.1, heel=0.0, toe_off=0.0, swing_arm=0.0, upper=crouch_aim),
     }
 
 
 
-# ------------------------------------------------------------------ cambalhota rente ao chão
-# Sem pulão: já sai andando, dobra os joelhos e empurra (0-3), projeção curta e baixa na diagonal até as mãos no chão
-# (3-7), encaixa o queixo e passa o peso para os ombros (7-9), rola encolhida sobre as costas (9-20), pés no chão agachada (23) e levanta (26-30).
+# ------------------------------------------------------------------ cambalhota de mergulho
+# Passada de impulso: a esquerda dá um passo à frente com os braços indo para trás (0-4), o pé apoia, ela abaixa e
+# empurra com essa perna enquanto a direita sobe atrás e os braços vêm para a frente (4-5), e mergulha num arco: o corpo
+# sobe e desce como um projétil enquanto gira de inclinado para cima até de cabeça para baixo, braços esticados (5-10);
+# as mãos tocam o chão bem à frente (10), o embalo leva o corpo por cima delas dobrando os cotovelos e encaixando o
+# queixo (10-12), e ela segue rolando para a frente sem frear sobre as costas (12-21), pés no chão agachada (24) e levanta (27-30).
 # O quadril nunca sobe acima do de pé. O corpo gira em volta do centro do "novelo" (ROLL_C), não do quadril, e o
 # caminho da raiz acompanha o giro (centro anda giro x raio nos quadros com as costas no chão): rola sem patinar.
 ROLL_FRAMES = 30
-ROLL_HANDS = (7, 10)  # mãos presas no chão
-ROLL_PATH = [(0, 0.0, 0.0), (3, 0.12, 0.0), (5, 0.4, 0.0), (7, 0.68, 0.0), (9, 0.93, 0.0), (13, 1.43, 0.0),
-             (15, 1.56, 0.0), (17, 1.67, 0.0), (19, 1.83, 0.0), (20, 1.92, 0.0), (23, 2.03, 0.0), (26, 2.06, 0.0),
-             (30, 2.07, 0.0)]
+ROLL_HANDS = (10, 12)  # mãos presas no chão
+ROLL_STEP = (4, 5)  # pé esquerdo da passada de impulso preso no chão
+ROLL_LAND = 22  # pés presos de novo, já onde ela fica de pé
+ROLL_PATH = [(0, 0.0, 0.0), (2, 0.14, 0.0), (4, 0.38, 0.0), (5, 0.56, 0.0), (6, 0.74, 0.0), (7, 0.92, 0.0),
+             (8, 1.1, 0.0), (9, 1.28, 0.0), (10, 1.46, 0.0), (11, 1.62, 0.0), (12, 1.76, 0.0), (14, 1.92, 0.0),
+             (16, 2.07, 0.0), (18, 2.21, 0.0), (20, 2.36, 0.0), (21, 2.43, 0.0), (24, 2.54, 0.0), (27, 2.57, 0.0),
+             (30, 2.58, 0.0)]
 ROLL_C = Vector((0.0, 0.26, 0.08))  # centro do corpo encolhido no espaço do quadril (esquerda, cima, frente)
 ROLL_STAND = 1.147  # altura desse centro de pé (pés no chão)
 
@@ -216,31 +226,44 @@ def roll_keys(A, sk):
     tuck = A.merge(arms(40, -10, 95), {"Hand_L": (-20, 0, 0), "Hand_R": (-20, 0, 0)})
     tucked_legs = legs(110, -138, 30)
     curl = {"Spine": (45, 0, 0), "Chest": (25, 0, 0), "Neck": (30, 0, 0), "Head": (55, 0, 0)}
+    line = {"Spine": (-4, 0, 0), "Neck": (-8, 0, 0), "Head": (-12, 0, 0)}  # corpo estendido numa linha
     keys = [
         (0, A.merge(A.IDLE, {"_th": 0, "_ch": ROLL_STAND, "_cf": 0.08})),
-        # dobra os joelhos e inclina para empurrar, braços indo para a frente
-        (3, A.merge(arms(55, -10, 20), legs(58, -92, 26), {"Spine": (16, 0, 0), "Head": (-14, 0, 0),
-                                                          "_th": 30, "_ch": 0.8, "_cf": 0.22})),
-        # projeção curta na diagonal para o chão: pernas esticando atrás, braços à frente buscando o chão
-        (5, A.merge(arms(110, -10, 15), legs(18, -25, -25, 8, -35, -20), {"Spine": (12, 0, 0), "Neck": (8, 0, 0),
-                                                                          "Head": (5, 0, 0),
-                                                                          "_th": 56, "_ch": 0.76, "_cf": 0.4})),
-        # mãos no chão, queixo indo para o peito, joelhos voltando
-        (7, A.merge(arms(100, -12, 30), legs(45, -75, 0), {"Spine": (26, 0, 0), "Neck": (22, 0, 0), "Head": (45, 0, 0),
-                                                          "_th": 78, "_ch": 0.54, "_cf": 0.34})),
+        # passada: a esquerda vai à frente, os braços vão para trás
+        (2, A.merge(arms(-30, -10, 15), legs(38, -55, 12, -6, -12, -10), {"Spine": (6, 0, 0),
+                                                                           "_th": 12, "_ch": 1.08, "_cf": 0.1})),
+        # o pé esquerdo apoia à frente e ela abaixa sobre ele, a direita atrás com o calcanhar no ar, braços no fundo
+        (4, A.merge(arms(-45, -10, 15), legs(58, -85, 22, -22, -38, -25), {"Spine": (14, 0, 0), "Head": (-10, 0, 0),
+                                                                            "_th": 30, "_ch": 0.86, "_cf": 0.2})),
+        # impulso: a esquerda estende, a direita sobe atrás, os braços vêm esticados para a frente
+        (5, A.merge(arms(125, -10, 0), legs(18, -22, -35, -30, -12, -20), {"Spine": (4, 0, 0), "Head": (-16, 0, 0),
+                                                                            "_th": 44, "_ch": 0.92, "_cf": 0.32})),
+        # arco: sobe inclinada para a frente, passa deitada no alto e desce de cabeça; os braços já saem apontando o chão
+        # lá na frente (de ~10° abaixo da horizontal no impulso a ~30° perto do toque), não alinhados com o corpo
+        (6, A.merge(arms(128, -8, 4), legs(-4, -6, -35), line, {"_th": 58, "_ch": 1.0, "_cf": 0.42})),
+        (7, A.merge(arms(138, -8, 4), legs(-2, -6, -35), line, {"_th": 74, "_ch": 1.02, "_cf": 0.45})),
+        (8, A.merge(arms(146, -8, 4), legs(2, -8, -32), line, {"_th": 88, "_ch": 0.96, "_cf": 0.45})),
+        (9, A.merge(arms(146, -10, 4), legs(8, -12, -28), {"Spine": (2, 0, 0), "Neck": (-2, 0, 0), "Head": (0, 0, 0),
+                                                           "_th": 100, "_ch": 0.82, "_cf": 0.42})),
+        # mãos tocam o chão à frente, braços ainda longos
+        (10, A.merge(arms(142, -12, 5), legs(14, -20, -20), {"Spine": (8, 0, 0), "Neck": (12, 0, 0), "Head": (25, 0, 0),
+                                                            "_th": 110, "_ch": 0.52, "_cf": 0.38})),
+        # o embalo leva o corpo por cima das mãos: cotovelos dobram, queixo no peito, joelhos vindo
+        (11, A.merge(arms(132, -12, 45), legs(45, -70, 0), {"Spine": (30, 0, 0), "Neck": (40, 0, 0), "Head": (70, 0, 0),
+                                                           "_th": 124, "_ch": 0.56, "_cf": 0.3})),
         # o peso passa para os ombros (nunca para a cabeça), as pernas empurram
-        (9, A.merge(arms(125, -12, 60), legs(85, -125, 20), curl, {"Neck": (40, 0, 0), "Head": (75, 0, 0),
-                                                                   "_th": 108, "_ch": 0.44, "_cf": 0.24})),
-        (13, A.merge(tuck, tucked_legs, curl, {"_th": 175, "_ch": 0.22, "_cf": 0.14})),
-        (15, A.merge(tuck, tucked_legs, curl, {"_th": 210, "_ch": 0.11, "_cf": 0.11})),
-        (17, A.merge(tuck, tucked_legs, curl, {"Neck": (15, 0, 0), "Head": (40, 0, 0),
-                                               "_th": 245, "_ch": 0.15, "_cf": 0.08})),
-        (19, A.merge(tuck, legs(105, -134, 32), curl, {"Neck": (10, 0, 0), "Head": (34, 0, 0),
-                                                       "_th": 282, "_ch": 0.31, "_cf": 0.07})),
-        (20, A.merge(tuck, legs(100, -130, 35), {"Spine": (35, 0, 0), "Chest": (15, 0, 0), "Head": (30, 0, 0),
-                                                 "_th": 300, "_ch": 0.34, "_cf": 0.06})),
-        (23, A.merge(A.CROUCH, {"Spine": (30, 0, 0), "_th": 357, "_ch": 0.77, "_cf": 0.08})),
-        (26, A.merge(A.CROUCH, {"Spine": (14, 0, 0), "_th": 361, "_ch": 0.97, "_cf": 0.07})),
+        (12, A.merge(arms(125, -12, 70), legs(85, -125, 20), curl, {"Neck": (40, 0, 0), "Head": (75, 0, 0),
+                                                                    "_th": 142, "_ch": 0.46, "_cf": 0.22})),
+        (14, A.merge(tuck, tucked_legs, curl, {"_th": 185, "_ch": 0.19, "_cf": 0.13})),
+        (16, A.merge(tuck, tucked_legs, curl, {"_th": 225, "_ch": 0.11, "_cf": 0.1})),
+        (18, A.merge(tuck, tucked_legs, curl, {"Neck": (15, 0, 0), "Head": (40, 0, 0),
+                                               "_th": 262, "_ch": 0.17, "_cf": 0.08})),
+        (20, A.merge(tuck, legs(105, -134, 32), curl, {"Neck": (10, 0, 0), "Head": (34, 0, 0),
+                                                       "_th": 292, "_ch": 0.31, "_cf": 0.07})),
+        (21, A.merge(tuck, legs(100, -130, 35), {"Spine": (35, 0, 0), "Chest": (15, 0, 0), "Head": (30, 0, 0),
+                                                 "_th": 308, "_ch": 0.35, "_cf": 0.06})),
+        (24, A.merge(A.CROUCH, {"Spine": (30, 0, 0), "_th": 357, "_ch": 0.77, "_cf": 0.08})),
+        (27, A.merge(A.CROUCH, {"Spine": (14, 0, 0), "_th": 361, "_ch": 0.97, "_cf": 0.07})),
         (ROLL_FRAMES, A.merge(A.IDLE, {"_th": 360, "_ch": ROLL_STAND, "_cf": 0.08})),
     ]
     rest = sk.rest["Hips"]
@@ -273,9 +296,9 @@ def roll_keys(A, sk):
         a = sk.point(m1, f"Foot_{s}") + off1
         return Vector((a.x, a.y, ANKLE_Z))
 
-    plants = [Plant("foot", s, 0, 4) for s in ("L", "R")]
+    plants = [Plant("foot", "R", 0, 3), Plant("foot", "L", 0, 1), Plant("foot", "L", *ROLL_STEP)]
     plants += [Plant("palm", s, *ROLL_HANDS, target=on_floor(s)) for s in ("L", "R")]
-    plants += [Plant("foot", s, 21, ROLL_FRAMES, target=stand(s)) for s in ("L", "R")]
+    plants += [Plant("foot", s, ROLL_LAND, ROLL_FRAMES, target=stand(s)) for s in ("L", "R")]
     return bake(sk, "Roll", keys, plants, ROLL_PATH, fix)
 
 

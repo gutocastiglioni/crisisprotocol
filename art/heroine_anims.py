@@ -15,9 +15,9 @@ import bpy
 FPS = 30
 CENTER = ("Hips", "Spine", "Chest", "Neck", "Head")
 # ciclos (o Godot também toca em laço): curvas cíclicas, senão a suavização para no primeiro quadro e dá um tranco
-LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL",
+LOOPS = ("Idle", "Walk", "Run", "AimIdle", "Crouch", "Dazed", "StrafeL", "StrafeR", "StrafeFastL", "StrafeFastR", "CrouchWalk", "CrouchStrafeL",
          "CrouchStrafeR", "Fall", "Hang", "RifleHold", "RifleAim", "LadderUp", "LadderDown", "LadderIdle", "Console",
-         "CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR")
+         "CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR", "SurrenderHold")
 
 
 def merge(*poses):
@@ -415,6 +415,7 @@ def actions(sk):
     A = sys.modules[__name__]
     g = M.gaits(A, pistol_guard(sk, M.crouch_walk_body(A)))
     strafe = G.solve_cycle(sk, g["strafe"], "StrafeL")
+    strafe_fast = G.solve_cycle(sk, g["strafe_fast"], "StrafeFastL")
     crouch_strafe = G.solve_cycle(sk, g["crouch_strafe"], "CrouchStrafeL")
     hold, rifle_aim, rifle_recoil = RF.rifle_poses(A, sk)
     hold_breath = merge(hold, {"Chest": (-1, 0, 0)})
@@ -422,6 +423,7 @@ def actions(sk):
     # sair pelo topo: beirada do alçapão (rebordo) ou do mezanino (piso); entrar = o mesmo ao contrário
     ladder_out = M.ladder_out_keys(A, sk, ladder_idle_keys[0][1], M.LADDER_LIP)
     ladder_out_low = M.ladder_out_keys(A, sk, ladder_idle_keys[0][1], 0.0, "LadderOutLow")
+    surrender, surrender_hold = CS.surrender_keys(A, sk)
     return {
         "Idle": [(0, IDLE), (30, idle_breath), (60, IDLE)],
         "Walk": G.solve_cycle(sk, g["walk"], "Walk"),
@@ -430,6 +432,8 @@ def actions(sk):
         "Shoot": [(0, AIM), (2, recoil), (9, AIM)],
         "StrafeL": strafe,
         "StrafeR": G.mirror_lateral(strafe),
+        "StrafeFastL": strafe_fast,
+        "StrafeFastR": G.mirror_lateral(strafe_fast),
         "Crouch": [(0, crouch), (30, crouch_breath), (60, crouch)],
         "CrouchWalk": G.solve_cycle(sk, g["crouch_walk"], "CrouchWalk"),
         "CrouchStrafeL": crouch_strafe,
@@ -469,6 +473,8 @@ def actions(sk):
         **CV.cover_keys(A, sk),
         "HatchOpen": CS.hatch_open_keys(A, sk),
         "Shocked": CS.shocked_keys(A),
+        "Surrender": surrender,
+        "SurrenderHold": surrender_hold,
         "Death": [(0, IDLE), (4, HIT), (14, death_fall), (20, death_fall)],
     }
 

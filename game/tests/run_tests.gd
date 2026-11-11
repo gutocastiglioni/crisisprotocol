@@ -39,6 +39,8 @@ const SUITES := [
 		preload("res://tests/tower_tests.gd")],
 	["allosaurus", "alossauro e pedreira (última sala)", preload("res://tests/allosaurus_tests.gd")],
 	["tunnel", "túnel da mina: guardas, explosivos, detonador, portão arrombado e cenas", preload("res://tests/tunnel_tests.gd")],
+	["checkpoint", "checkpoints por área: portão do pátio, raptors, mina e pedreira; rendição sem cena da segunda vez",
+		preload("res://tests/checkpoint_tests.gd")],
 	["survival", "sobrevivência: câmera, armas, munição e dano", preload("res://tests/survival_tests.gd")],
 	["gfx", "visual (PS1/PS2) e atlas", preload("res://tests/gfx_tests.gd")],
 	["sfx", "efeitos sonoros", preload("res://tests/sfx_tests.gd")],

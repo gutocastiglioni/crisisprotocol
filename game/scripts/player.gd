@@ -38,6 +38,9 @@ signal keypad(door: Door)
 signal ladder_locked(ladder: Ladder)
 ## interagiu com a plaqueta de um tubo da sala dos clones (o main mostra de perto)
 signal read_plate(plate: SubjectPlate)
+## rendida (`surrender`), ela fez um movimento brusco: "aim" mirou/atirou, "roll" rolou, "rush" correu ou pulou;
+## "move" = sumiu da vista deles andando (ver main._on_standoff_lost)
+signal surrender_broken(how: String)
 
 # andando, agachada e mirando, a velocidade é a dos ciclos de passo (Moves.speed): o pé não escorrega
 const RUN_SPEED := 4.4
@@ -49,6 +52,11 @@ const JUMP_MOVING := 0.5  # m/s no plano: abaixo disso e sem direcional o pulo �
 const AIR_CONTROL := 2.0
 const COYOTE := 0.12  # sem chão por menos que isso ainda conta como no chão (degraus, quinas)
 const TURN_RATE := 12.0
+## giro da mira: diferença acima disto (quase de costas para o alvo) = o lado do giro é escolhido uma vez e mantido até
+## a diferença cair abaixo dele (o ponto sob a retícula pula perto de parede e o lado mais curto trocava no meio do giro)
+const AIM_BIG_TURN := deg_to_rad(120.0)
+## mirando em pé no survival: andando de lado acima disto x a velocidade do passo lateral curto, toca o largo (StrafeFast)
+const FAST_STRAFE_AT := 1.25
 const BACK_WALK_SCALE := 0.8  # andando de costas (survival): fração da velocidade do andar
 const CROUCH_WALK_SCALE := 1.3  # andar agachado: acima da velocidade do ciclo, com a animação mais rápida junto (o pé não escorrega)
 const GRAVITY := 18.0
@@ -128,10 +136,18 @@ var death_cause := ""
 ## numa cena: sem controle nem dano; `cutscene_walk` = velocidade no plano que a cena pede
 var cutscene := false
 var cutscene_walk := Vector3.ZERO
+## rendida na mira dos snipers das torres (fim da cena "standoff"): mãos ao alto; anda devagar, até um movimento brusco
+var surrendered := false
+var _surrender_t := 0.0
+var _surrender_grace := 0.0  # rendida há menos que isto: mexer-se ainda não conta (rendição sem cena, ela estava jogando)
+const SURRENDER_RAISE := 0.67  # s da animação Surrender (levantar as mãos); depois, SurrenderHold
+const SURRENDER_MOVE := 0.1  # direcional acima disto: anda (devagar, de mãos ao alto)
+const SURRENDER_RUN := 0.6  # direcional acima disto sem o botão de andar devagar = correr (movimento brusco)
 var _jumping := false
 var _jump_up := false  # o pulo de agora é o parado (JumpUp)
 var _shot_cd := 0.0
 var _hip_aim_t := 0.0
+var _aim_turn := 0  # giro grande da mira em andamento: 1 / -1 = lado escolhido, 0 = nenhum
 var _lock_t := 0.0  # depois do tiro: o movimento fica preso/lento por um instante (coice)
 var _roll_cd := 0.0
 var _respawn_t := 0.0  # logo depois de renascer: o aperto que recomeçou não agacha (RESPAWN_ROLL_GRACE)
@@ -188,7 +204,7 @@ func _physics_process(delta: float) -> void:
 	stealth.update(delta)
 	if not dead and not grabbed:
 		_trail.update(self, delta, 1.0 - health / 100.0)
-	if grabbed or dead or cutscene or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
+	if grabbed or dead or cutscene or surrendered or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
 		lean.cancel()
 		cover.cancel()
 	if grabbed:
@@ -215,6 +231,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if _daze > 0.0:
 		_dazed(delta)
+		return
+	if surrendered and _hold_surrender(delta):
 		return
 	_shot_cd -= delta
 	_hip_aim_t -= delta
@@ -251,6 +269,8 @@ func _physics_process(delta: float) -> void:
 	_air_t = 0.0 if is_on_floor() else _air_t + delta
 	var grounded := _air_t < COYOTE and not _jumping
 	aiming = (Input.is_action_pressed("aim") or _hip_aim_t > 0.0) and grounded
+	if grounded and not is_sniper_zoomed():
+		cover.aim_from_cover(aiming)  # survival: mirar encostada esgueira pela beirada ou mira por cima do bloco
 	var leaning := lean.update(delta, wish) if grounded and not is_sniper_zoomed() else false
 	if not leaning and not grounded:
 		lean.cancel()
@@ -331,10 +351,16 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
 
-	# encosta sozinha na caixa/parede (PlayerCover): parada perto dela ou andando contra ela
-	var covering := cover.update(delta, wish) if grounded and not leaning and not aiming and not is_sniper_zoomed() else false
-	if not covering and cover.active:
+	# encostada na caixa/parede (PlayerCover, pelo comando): mirar/esgueirar só pausam e ela volta a encostar depois
+	var covering := false
+	if not grounded:
 		cover.cancel()
+	elif leaning or aiming or is_sniper_zoomed():
+		cover.hold()
+	else:
+		covering = cover.update(delta, wish)
+		if not covering and cover.active:
+			cover.cancel()
 
 	var hv := Vector3.ZERO
 	if not grounded:
@@ -406,10 +432,11 @@ func visibility() -> float:
 	return stealth.visibility
 
 
-## O quanto ela aparece para quem olha de `eye`: encostada na caixa, quem está atrás dela (do outro lado da parede) a vê
-## menos (PlayerCover.hides_from); do lado aberto, igual a `visibility()`.
+## O quanto ela aparece para quem olha de `eye`: agachada sem nada baixo no meio, quase como em pé
+## (PlayerStealth.exposed_to); encostada na caixa, quem está atrás dela (do outro lado da parede) a vê menos
+## (PlayerCover.hides_from); do lado aberto, igual a `visibility()`.
 func visibility_from(eye: Vector3) -> float:
-	return stealth.visibility * (PlayerCover.HIDE_MULT if cover.hides_from(eye) else 1.0)
+	return stealth.visibility_from(eye) * (PlayerCover.HIDE_MULT if cover.hides_from(eye) else 1.0)
 
 
 ## Para onde os inimigos olham e miram: o peito; esgueirada pela quina, a cabeça que ficou de fora (PlayerLean).
@@ -523,7 +550,12 @@ func _armed_locomotion(wish: Vector3) -> Vector3:
 	var speed: float
 	if absf(local.x) > absf(local.z):
 		speed = minf(cap * strength, Moves.speed("strafe") * 1.8)
-		model.set_state("strafe_r" if local.x > 0.0 else "strafe_l", speed / Moves.speed("strafe"))
+		# devagar o passo lateral curto; mais rápido que FAST_STRAFE_AT dele, o largo (StrafeFast), feito para essa velocidade
+		var short := Moves.speed("strafe")
+		if speed > short * FAST_STRAFE_AT and Moves.data().speeds.has("strafe_fast"):
+			model.set_state("strafe_fast_r" if local.x > 0.0 else "strafe_fast_l", speed / Moves.speed("strafe_fast"))
+		else:
+			model.set_state("strafe_r" if local.x > 0.0 else "strafe_l", speed / short)
 	elif local.z < 0.0:
 		speed = cap * strength
 		if speed > walk * 2.0:
@@ -547,8 +579,22 @@ func _aim_at(delta: float) -> void:
 	var target := camera_rig.aim_point([get_rid()])
 	var shoulder := global_position + Vector3.UP * (0.95 if crouching else 1.38)
 	var d := target - shoulder
-	_face(Vector3(d.x, 0.0, d.z), delta)
+	_face_aim(Vector3(d.x, 0.0, d.z), delta)
 	model.set_aim_pitch(clampf(atan2(d.y, Vector2(d.x, d.z).length()), -1.2, 1.2))
+
+
+## Vira para a mira como `_face`, mas um giro grande (acima de AIM_BIG_TURN) segue para o lado em que começou.
+func _face_aim(dir: Vector3, delta: float) -> void:
+	if dir.length() < 0.01:
+		return
+	var diff := wrapf(atan2(-dir.x, -dir.z) - rotation.y, -PI, PI)
+	if _aim_turn != 0 and signf(diff) != float(_aim_turn) and absf(diff) > AIM_BIG_TURN:
+		diff += TAU * _aim_turn  # o alvo passou para o outro lado do "de costas": continua girando para o mesmo lado
+	if absf(diff) <= AIM_BIG_TURN:
+		_aim_turn = 0
+	elif _aim_turn == 0:
+		_aim_turn = 1 if diff > 0.0 else -1
+	rotation.y = wrapf(rotation.y + diff * (1.0 - exp(-TURN_RATE * delta)), -PI, PI)
 
 
 func _face(dir: Vector3, delta: float) -> void:
@@ -1142,6 +1188,96 @@ func _cutscene_move(delta: float) -> void:
 	move_and_slide()
 
 
+## Rendida na mira dos snipers (fim da cena "standoff", ou sem cena da segunda vez): mãos ao alto, sem arma na mão.
+## `raised` = já com as mãos no alto (a cena as levantou); `grace` = s em que mirar/correr/rolar ainda não quebram a
+## rendição (sem cena, o botão que ela segurava jogando não pode virar movimento brusco na hora).
+func surrender(raised := false, grace := 0.0) -> void:
+	if dead or grabbed:
+		return
+	_surrender_grace = grace
+	moves.cancel()
+	lean.cancel()
+	cover.cancel()
+	crouching = false
+	aiming = false
+	_jumping = false
+	surrendered = true
+	_surrender_t = SURRENDER_RAISE if raised else 0.0
+	model.holster(true)
+	model.set_aim(false)
+	model.hands_up = raised
+	if raised:
+		model.set_state("surrender_hold")
+	else:
+		model.play("surrender")
+
+
+func end_surrender() -> void:
+	if not surrendered:
+		return
+	surrendered = false
+	model.hands_up = false
+	model.holster(false)
+
+
+## Acaba com a rendição por `how` (ver `surrender_broken`); o aviso sai no fim do quadro (rolando, o tiro já a pega na
+## cambalhota).
+func break_surrender(how: String) -> void:
+	if not surrendered:
+		return
+	end_surrender()
+	surrender_broken.emit.call_deferred(how)
+
+
+## Rendida: mãos ao alto; anda devagar (andar devagar ou direcional pela metade; agachada, sempre devagar) e os lasers
+## a seguem (a câmera também gira). Movimento brusco acaba com a rendição: mirar/atirar ("aim"), correr ou pular
+## ("rush") e rolar ("roll"); o passo segue como sempre (o rolar sai neste mesmo passo). Devolve true se segue rendida.
+func _hold_surrender(delta: float) -> bool:
+	var wish := move_wish()
+	var walk_btn := Input.is_action_pressed("walk_slow" if GameMode.sprint() else "walk")
+	var moving := wish.length() > SURRENDER_MOVE
+	# andar é o direcional (rendida não corre sem querer); correr = o botão de corrida (no arcade, que não tem, o
+	# direcional inteiro sem o andar devagar, como sempre)
+	var running := moving and not crouching and (Input.is_action_pressed("sprint") if GameMode.sprint()
+			else not walk_btn and wish.length() >= SURRENDER_RUN)
+	var how := ""
+	if Input.is_action_pressed("aim") or Input.is_action_pressed("shoot"):
+		how = "aim"
+	elif Input.is_action_just_pressed("roll"):
+		how = "roll"
+	elif Input.is_action_just_pressed("jump") or running:
+		how = "rush"
+	if how != "" and _surrender_t >= _surrender_grace:
+		break_surrender(how)
+		return false
+	if InputSetup.crouch_tapped():
+		crouching = not crouching
+	_surrender_t += delta
+	var up := _surrender_t >= SURRENDER_RAISE
+	model.hands_up = up
+	aiming = false
+	model.visible = true
+	model.set_aim(false)
+	var hv := Vector3.ZERO
+	if not up:
+		model.set_state("surrender")
+	elif moving:
+		var gait := "crouch_walk" if crouching else "walk"
+		var speed := Moves.speed(gait) * GameMode.move_scale() * (CROUCH_WALK_SCALE if crouching else 1.0) \
+				* (1.0 if walk_btn else clampf(wish.length() / SURRENDER_RUN, 0.3, 1.0))
+		hv = wish.normalized() * speed
+		_face(wish, delta)
+		model.set_state(gait, speed / Moves.speed(gait))
+	else:
+		model.set_state("crouch" if crouching else "surrender_hold")
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+	velocity.x = hv.x
+	velocity.z = hv.z
+	move_and_slide()
+	return true
+
+
 ## Rugido do alossauro: atordoada por `time` segundos (não fere). Golpe, mordida ou arremesso acabam com isso.
 func daze(time: float) -> void:
 	if dead or grabbed or _down_t > 0.0 or _rising or cutscene:
@@ -1451,6 +1587,7 @@ func respawn() -> void:
 	death_cause = ""
 	cutscene = false
 	cutscene_walk = Vector3.ZERO
+	end_surrender()
 	stealth.loud_t = 0.0
 	health = 100
 	health_changed.emit(health)

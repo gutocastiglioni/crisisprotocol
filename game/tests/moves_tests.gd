@@ -94,7 +94,8 @@ func test_gaits_dont_slide() -> void:
 	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
 	# glTF olha para +Z (frente) e a esquerda dela é +X; o chão passa no sentido contrário ao do corpo
 	for g in [["Walk", "walk", Vector3(0, 0, 1)], ["CrouchWalk", "crouch_walk", Vector3(0, 0, 1)],
-			["StrafeL", "strafe", Vector3(1, 0, 0)], ["CrouchStrafeL", "crouch_strafe", Vector3(1, 0, 0)]]:
+			["StrafeL", "strafe", Vector3(1, 0, 0)], ["StrafeFastL", "strafe_fast", Vector3(1, 0, 0)],
+			["CrouchStrafeL", "crouch_strafe", Vector3(1, 0, 0)]]:
 		ap.play(g[0])
 		var v: float = Moves.speed(g[1])
 		var length := ap.current_animation_length
@@ -202,7 +203,7 @@ func test_roll_projection() -> void:
 	await t._frames(50)
 	t.check(not p.rolling, "cambalhota termina")
 	var dist := z0 - p.global_position.z
-	t.check(dist > 1.8 and dist < 2.3, "cambalhota contida: ~2 m, só uma projeção curta", "%.2f m" % dist)
+	t.check(dist > 2.2 and dist < 2.9, "cambalhota de mergulho: ~2,6 m", "%.2f m" % dist)
 	t.check(top.y < 0.05, "rente ao chão: o corpo não pula", "%.2f m" % top.y)
 	var f: Dictionary = Moves.data().roll
 	var up := 0.0

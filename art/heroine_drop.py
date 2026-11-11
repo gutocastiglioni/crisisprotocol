@@ -15,9 +15,10 @@ import heroine_rifle as RF
 
 GRAB_FRAME = 24
 FRAMES = 50
-CRATE_TOP = 0.44  # altura do pulso com a pistola deitada na espuma (topo do corpo da caixa 0,42 + meia espessura)
-CRATE_IN = 0.08  # do lado de dentro da frente da caixa até o pulso
-CRATE_X = -0.1  # para a direita dela
+# deitada atravessada no meio da caixa, como as armas nos baús: cano para a esquerda dela, cabo virado para ela
+CRATE_TOP = 0.36  # altura do pulso: o meio da espessura da pistola no topo da espuma (SupplyDrop: 0,42 - FOAM_IN 0,06)
+CRATE_IN = 0.31  # da frente da caixa até o pulso: o meio da pistola no meio do fundo da caixa (0,62 m)
+CRATE_X = -0.15  # para a direita dela: o meio da pistola (0,33 m) no meio da caixa, que está tombada 3° (TILT) para a esquerda
 
 
 def pistol_rest():
@@ -27,16 +28,16 @@ def pistol_rest():
 
 
 def crate_frame():
-    """Pistola deitada de lado na caixa (em relação à raiz dela ajoelhada): cano para a frente, ferrolho para a esquerda."""
-    return RF.frame_matrix((CRATE_X, -(RF.KNEEL_DIST + CRATE_IN), CRATE_TOP), (0, -1, 0), (1, 0, 0))
+    """Pistola deitada de lado na caixa (em relação à raiz dela ajoelhada): cano para a esquerda dela, cabo para ela."""
+    return RF.frame_matrix((CRATE_X, -(RF.KNEEL_DIST + CRATE_IN), CRATE_TOP), (1, 0, 0), (0, -1, 0))
 
 
 def _pistol_now(sk, m):
     return m["Hand_R"] @ sk.rest["Hand_R"].inverted() @ pistol_rest()
 
 
-def _grab(sk, pose, target):
-    """Mão direita (posição + giro) fechada no cabo da pistola em `target`."""
+def _grab(sk, pose, target, torso=()):
+    """Mão direita (posição + giro) fechada no cabo da pistola em `target`; `torso` = incógnitas extras."""
     def res(m):
         cur = _pistol_now(sk, m)
         e = list(cur.col[3].to_3d() - target.col[3].to_3d())
@@ -44,7 +45,7 @@ def _grab(sk, pose, target):
         e += list((cur.col[2].to_3d() - target.col[2].to_3d()) * 0.3)
         return e
 
-    return IK.solve(sk, pose, IK.arm_unknowns("R"), res, IK.arm_bounds("R"))
+    return IK.solve(sk, pose, IK.arm_unknowns("R") + list(torso), res, IK.arm_bounds("R"))
 
 
 def pickup_keys(A, sk):
@@ -56,8 +57,11 @@ def pickup_keys(A, sk):
     # inclinada para a caixa: o chute da IK (braço direito para a frente e para baixo)
     lean = A.merge(kneel, {"Hips": (10, 0, 0), "Spine": (16, -8, 0), "Chest": (8, -6, 0), "Head": (14, 0, 0)},
                    M.arms(30, -10, 40, 60, -10, 20))
-    reach, e = _grab(sk, lean, crate_frame())
-    print(f"[drop] PickupPistol: erro da mão direita {e * 1000:.1f} mm")
+    # a pistola fica dentro da caixa, na espuma abaixo da boca: a inclinação do tronco entra na IK
+    # (o quadril fica: girá-lo levanta do chão o joelho e o pé de trás)
+    reach, e = _grab(sk, lean, crate_frame(), [("Spine", 0), ("Chest", 0), ("Neck", 0)])
+    print(f"[drop] PickupPistol: erro da mão direita {e * 1000:.1f} mm, quadril {reach['Hips'][0]:.0f}°, "
+          f"coluna {reach['Spine'][0]:.0f}°, peito {reach['Chest'][0]:.0f}°")
     # um pouco acima da pistola antes de fechar a mão (a mão entra na caixa de cima)
     above = crate_frame().copy()
     above.translation += Vector((0, 0.04, 0.09))

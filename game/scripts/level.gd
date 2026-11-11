@@ -7,6 +7,7 @@ const TEX := {
 	"concrete": preload("res://assets/textures/concrete.png"),
 	"wall": preload("res://assets/textures/wall.png"),
 	"crate": preload("res://assets/textures/crate.png"),
+	"planks": preload("res://assets/textures/planks.png"),  # tábuas de obra (torres de guarda do pátio)
 	"hazard": preload("res://assets/textures/hazard.png"),
 	"chest": preload("res://assets/textures/chest.png"),
 	"chest_shotgun": preload("res://assets/textures/chest_shotgun.png"),
@@ -385,7 +386,7 @@ static func _pipe(parent: Node, a: Vector3, b: Vector3, radius: float) -> void:
 
 static func _lights(parent: Node) -> void:
 	var sun := DirectionalLight3D.new()
-	sun.light_energy = 0.55
+	sun.light_energy = 0.85
 	sun.light_color = Color(0.75, 0.8, 1.0)
 	sun.rotation_degrees = Vector3(-55, 30, 0)
 	sun.add_to_group("lamps")
@@ -404,7 +405,7 @@ static func _lights(parent: Node) -> void:
 	env.background_color = Color(0.02, 0.02, 0.03)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.32, 0.34, 0.42)
-	env.ambient_light_energy = 0.8
+	env.ambient_light_energy = 0.5
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.03, 0.03, 0.04)
 	env.fog_density = 0.035

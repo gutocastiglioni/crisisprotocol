@@ -132,7 +132,8 @@ func test_corpse_and_ambush() -> void:
 	await t._frames(2)
 	t.check(p.pick_key() == key, "perto da mão: aviso de pegar a chave")
 	p.global_position = saved
-	# os três mortos: a chave brilha
+	# os três mortos: a chave brilha (a rendição que vem depois tem o teste dela, tower_tests.test_standoff)
+	main.standoff_armed = false
 	rs[0].take_hit(999, Vector3.FORWARD, rs[0].global_position)
 	rs[1].take_hit(999, Vector3.FORWARD, rs[1].global_position)
 	await t._frames(2)

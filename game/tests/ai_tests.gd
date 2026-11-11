@@ -102,14 +102,31 @@ func test_cone_and_hearing() -> void:
 	check(r.state in Raptor.COMBAT, "investigando, chega e a vê: ataca", r.state)
 
 
+## Agachar só esconde atrás de algo: no aberto, a 8 m na frente dele, é notada; com uma caixa baixa no meio (cobre o
+## quadril, não a cabeça), não.
 func test_crouch_stays_hidden() -> void:
 	var pr := await _spawn(Vector3(0, 0, 8))
 	var p: Player = pr[0]
 	var r: Raptor = pr[1]
 	p.crouching = true
+	for i in 400:
+		await t._frames(1)
+		if r.state != "idle":
+			break
+	var eye := r.global_position + Vector3.UP * r.eye_height
+	check(p.stealth.exposed_to(eye) and p.visibility_from(eye) >= PlayerStealth.OPEN_CROUCH,
+		"agachada no aberto: quase tão visível quanto em pé", "%.2f" % p.visibility_from(eye))
+	check(r.state != "idle", "agachada no aberto a 8 m na frente dele: é notada", r.state)
+	pr = await _spawn(Vector3(0, 0, 8))
+	p = pr[0]
+	r = pr[1]
+	_wall(pr[2], Vector3(0, 0.4, 7.0), Vector3(3, 0.8, 0.6))
+	p.crouching = true
 	await t._frames(240)
-	check(p.visibility() < 0.35, "agachada e parada: pouco visível", str(p.visibility()))
-	check(r.state == "idle" and r.aware == 0.0, "agachada a 8 m: ele não a percebe", "%s %.2f" % [r.state, r.aware])
+	eye = r.global_position + Vector3.UP * r.eye_height
+	check(p.visibility() < 0.35 and not p.stealth.exposed_to(eye), "agachada atrás da caixa baixa: pouco visível",
+		"%.2f" % p.visibility_from(eye))
+	check(r.state == "idle" and r.aware == 0.0, "agachada atrás da caixa baixa a 8 m: ele não a percebe", "%s %.2f" % [r.state, r.aware])
 
 
 func test_crouch_close_is_seen() -> void:
@@ -172,7 +189,7 @@ func test_gunshot_investigates() -> void:
 	p.make_noise(26.0, 2.2)
 	await t._frames(2)
 	check(r.state == "suspicious", "tiro a 20 m: desconfia", r.state)
-	pr = await _spawn(Vector3(0, 0, 10))
+	pr = await _spawn(Vector3(0, 0, 10), Vector3.ZERO, 0.0)  # de costas para ela: só o ouvido conta
 	p = pr[0]
 	r = pr[1]
 	p.make_noise(26.0, 2.2)
@@ -317,6 +334,7 @@ func test_alerted_can_hide() -> void:
 	var pr := await _spawn(Vector3(0, 0, 8))
 	var p: Player = pr[0]
 	var r: Raptor = pr[1]
+	_wall(pr[2], Vector3(0, Level.LOW_CRATE_H * 0.5, 7.0), Vector3(6, Level.LOW_CRATE_H, 0.6))  # caixa baixa do galpão no meio (no aberto, agachada, ele a veria)
 	p.crouching = true
 	r.alert_t = Enemy.ALERT_TIME
 	r.start_search()
@@ -324,7 +342,7 @@ func test_alerted_can_hide() -> void:
 	for i in 480:
 		await t._frames(1)
 		fought = fought or r.state in Raptor.COMBAT
-	check(not fought, "alertado, procurando: agachada a 8 m na frente não é vista", r.state)
+	check(not fought, "alertado, procurando: agachada a 8 m atrás de caixa baixa não é vista", r.state)
 	check(r.state == "idle" and r.alert_t == 0.0 and r.aware == 0.0, "não a acha: esquece e volta à guarda", "%s %.1f" % [r.state, r.alert_t])
 	# em pé atrás dele, parada: alertado não vê nas costas
 	pr = await _spawn(Vector3(0, 0, -6))
@@ -837,7 +855,7 @@ func test_sniper_forgets() -> void:
 			calm_at = i / 60.0
 			break
 	check(sn.shots_fired == shots1, "escondida: ele não atira mais nas caixas", str(sn.shots_fired - shots1))
-	check(not sn.laser_mesh.visible, "escondida: laser apagado")
+	check(not sn.laser.visible, "escondida: laser apagado")
 	check(calm_at >= 0.0 and calm_at < 15.0, "sem vê-la, procura na passarela e esquece (em menos de 15 s)", "%s %.1f" % [sn.state, calm_at])
 	main.queue_free()
 	await t.process_frame

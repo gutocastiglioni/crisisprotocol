@@ -153,7 +153,8 @@ func test_sniper_enemy_behavior() -> void:
 	# Iniciar trava de mira (aim lock) com laser vermelho
 	sniper.start_aim_lock()
 	check(sniper.state == "aim_lock", "estado aim_lock do sniper")
-	check(sniper.laser_mesh != null and sniper.laser_mesh.visible, "mira laser vermelha visível")
+	await t._frames(2)  # o laser é desenhado a cada passo da mira (ponto vindo até ela), não no start_aim_lock
+	check(sniper.laser != null and sniper.laser.visible, "mira laser vermelha visível")
 	
 	# Avançar mira até o disparo
 	sniper.aim_progress = Sniper.AIM_LOCK_TIME + 0.01
@@ -163,7 +164,7 @@ func test_sniper_enemy_behavior() -> void:
 	check(fired_signal[0] or sniper.shots_fired > 0, "sniper efetuou disparo")
 	check(sniper.shots_fired == 1, "contador de tiros do sniper incrementado")
 	check(sniper.state == "cooldown", "após disparo entra em cooldown de ferrolho")
-	check(not sniper.laser_mesh.visible, "laser apaga após disparo")
+	check(not sniper.laser.visible, "laser apaga após disparo")
 	
 	# Morte com headshot e ragdoll
 	sniper.take_headshot(10, Vector3.FORWARD, sniper.global_position + Vector3.UP * 1.5)

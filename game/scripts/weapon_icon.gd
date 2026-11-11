@@ -3,7 +3,7 @@ extends TextureRect
 ## Arma na mão no HUD (canto de baixo à direita): o modelo 3D dela de perfil, com o cano para a direita, desenhado numa
 ## SubViewport com mundo e luz próprios (câmera ortográfica) e mostrado em VIEW unidades do HUD de 320x240 (ampliado
 ## com ele; a imagem é renderizada a RES vezes isso e filtrada sem suavizar, pixelada como o resto). Armas longas e a
-## pistola com silenciador vêm dos .glb soltos (já de perfil); a pistola comum é a malha "Pistol" do corpo dela.
+## pistola com silenciador vêm dos .glb soltos; a pistola comum é a malha "Pistol" do corpo dela.
 
 const VIEW := Vector2(56, 22)
 const RES := 2
@@ -17,8 +17,12 @@ const SCENES := {
 	"pistol_sd": preload("res://assets/characters/pistol_sd.glb"),
 }
 ## giro (graus) até ficar de perfil, cano para a direita e cabo para baixo: [em volta do Y do modelo, depois em volta do
-## eixo da câmera]. Os .glb soltos já vêm assim; a pistola do corpo está no coldre, de cano para baixo.
+## eixo da câmera]. A pistola do corpo está no coldre, de cano para baixo.
 const TURN := {"pistol": [90.0, 90.0]}
+## armas longas: o .glb é o do baú, deitado de lado como num estojo (heroine_rifle.RIFLE_CHEST: cano em +X, alça virada
+## para +Z = para a câmera); antes de tudo giram LYING graus em volta do cano, de volta ao perfil em pé
+const LYING_GUNS := ["m16", "shotgun", "m79", "sniper"]
+const LYING := -90.0
 
 var kind := ""
 var _vp: SubViewport
@@ -98,6 +102,8 @@ func show_weapon(k: String, body: HeroineModel) -> void:
 	holder.add_child(gun)
 	var turn: Array = TURN.get(k, [0.0, 0.0])
 	holder.basis = Basis(Vector3.BACK, deg_to_rad(turn[1])) * Basis(Vector3.UP, deg_to_rad(turn[0]))
+	if k in LYING_GUNS:
+		holder.basis = holder.basis * Basis(Vector3.RIGHT, deg_to_rad(LYING))
 	_pivot.add_child(holder)
 	_fit(holder)
 

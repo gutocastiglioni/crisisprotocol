@@ -68,7 +68,8 @@ func find() -> Dictionary:
 ## Um passo da física com ela no chão e no controle normal; devolve true se a esgueirada está mandando no movimento
 ## (aí `locomotion` diz a velocidade).
 func update(delta: float, wish: Vector3) -> bool:
-	var tap := Input.is_action_just_pressed("lean")
+	# no survival o V/L3 encosta (PlayerCover): esgueirar vem da mira encostada na beirada (`peek`)
+	var tap := Input.is_action_just_pressed("lean") and not PlayerCover.enabled()
 	if tap and side != 0:
 		side = 0
 		returning = true
@@ -90,6 +91,24 @@ func update(delta: float, wish: Vector3) -> bool:
 	if returning and amount <= 0.0 and _flat(_anchor - p.global_position).length() < 0.03:
 		returning = false
 	return side != 0 or returning
+
+
+## Esgueira pela beirada `s` (1 = direita, -1 = esquerda de quem olha para `fwd`) a `edge` m dela, virada para `fwd`
+## (PlayerCover: mirou encostada na beirada).
+func peek(s: int, edge: float, fwd: Vector3) -> void:
+	side = s
+	_last_side = s
+	step = clampf(edge + CLEAR - HEAD_REACH, 0.0, STEP_MAX)
+	_anchor = p.global_position if not returning else _anchor
+	_forward = Vector3(fwd.x, 0.0, fwd.z).normalized()
+	returning = false
+
+
+## Volta da quina para o lugar de onde saiu (soltou a mira).
+func unpeek() -> void:
+	if side != 0:
+		side = 0
+		returning = true
 
 
 ## Velocidade no plano enquanto esgueira (passo de lado até a beirada) ou volta (até o lugar de onde saiu). Sem mira, ela

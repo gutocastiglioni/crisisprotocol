@@ -29,6 +29,12 @@ extends Node
 ##   2. o rosto dela, pensando (LAIR_LINES);
 ##   3. o alossauro a vê e ruge (Enemy.spot: chama os raptors da pedreira), por cima do ombro dela e depois perto da
 ##      cabeça dele. Pulando antes do rugido, ele a vê do mesmo jeito.
+## Rendição no pátio (`play_standoff`, main: os 3 raptors da emboscada mortos, os snipers das torres sobem):
+##   1. atrás dela, virando para o portão: os dois erguem o fuzil e os lasers acendem (STAND_LASER), "PARADA AÍ!";
+##   2. de frente, perto: os dois lasers cruzando no peito dela, ela levanta as mãos (Surrender), "É O FIM DA LINHA.";
+##   3. por cima do ombro de um sniper, ela lá embaixo com o laser nela, "NÃO FAÇA MOVIMENTOS BRUSCOS OU ATIRAREMOS.".
+##   No fim (ou pulando) ela fica rendida (`Player.surrender`) com os dois na mira (`Sniper.hold_at_gunpoint`); o jogo
+##   segue a partir daí (ver Player._hold_surrender e Sniper.release).
 
 signal finished
 
@@ -74,6 +80,14 @@ const LAIR_SUB2 := [3.8, 6.6]
 const LAIR_ROAR_AT := 6.6
 const LAIR_CLOSE_AT := 7.1  # câmera vai para perto da cabeça dele (o rugido)
 const LAIR_END_AT := 9.6
+const STAND_LINES := ["PARADA AÍ!", "É O FIM DA LINHA.", "NÃO FAÇA MOVIMENTOS BRUSCOS OU ATIRAREMOS."]
+const STAND_SUBS := [[0.5, 2.4], [2.8, 4.8], [5.1, 7.7]]  # quando cada fala fica na tela
+const STAND_LASER := [0.9, 1.4]  # quando o laser de cada sniper acende
+const STAND_CLOSE_AT := 2.4  # de frente, os lasers no peito dela
+const STAND_HANDS_AT := 2.8  # ela levanta as mãos
+const STAND_SNIPER_AT := 4.9  # por cima do ombro de um sniper
+const STAND_END_AT := 8.1
+const STAND_TURN := 3.0  # rapidez com que ela vira para o portão
 
 var player: Player
 var lab: CloneLab
@@ -102,6 +116,8 @@ var speakers: Array[Soldier] = []  # conversa do túnel: quem fala primeiro e qu
 var _talk_yaw := {}  # giro de cada um enquanto a cena o vira (por cima do que a IA dele faz)
 var _talk_home := {}  # giro de trabalho de cada um (virado para o caixote): volta a ele no fim
 var allo: Allosaurus  # chegada à pedreira
+var gunmen: Array[Sniper] = []  # rendição no pátio: os snipers das torres
+var _hands_up := false
 
 
 func _ready() -> void:
@@ -200,6 +216,18 @@ func play_lair(p: Player, a: Allosaurus) -> void:
 	_place_camera()
 
 
+## Rendição no pátio: os snipers `who` (das torres) a pegam na mira; no fim ela fica rendida.
+func play_standoff(p: Player, who: Array[Sniper]) -> void:
+	if busy or who.is_empty():
+		return
+	gunmen = who
+	_hands_up = false
+	_begin(p, "standoff", STAND_LINES[0])
+	for i in gunmen.size():
+		gunmen[i].hold_at_gunpoint(STAND_LASER[mini(i, STAND_LASER.size() - 1)])
+	_place_camera()
+
+
 func _begin(p: Player, which: String, subtitle: String) -> void:
 	player = p
 	scene = which
@@ -239,6 +267,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if scene == "lair":
 		_lair_step(delta)
+		return
+	if scene == "standoff":
+		_standoff_step(delta)
 		return
 	if t < WALK_TIME:
 		player.cutscene_walk = Vector3(0, 0, -WALK_SPEED)
@@ -362,6 +393,42 @@ func _lair_step(delta: float) -> void:
 		_finish()
 
 
+## Linha do tempo da rendição (ver o cabeçalho).
+func _standoff_step(delta: float) -> void:
+	player.cutscene_walk = Vector3.ZERO
+	if t < STAND_HANDS_AT:
+		_turn_to(_gate_mid(), delta, STAND_TURN)
+		player.model.set_state("idle")
+	elif not _hands_up:
+		_hands_up = true
+		player.model.play("surrender")
+	elif t > STAND_HANDS_AT + Player.SURRENDER_RAISE:
+		player.model.set_state("surrender_hold")
+	# o clique do fuzil de cada um quando o laser acende
+	for i in gunmen.size():
+		var at: float = STAND_LASER[mini(i, STAND_LASER.size() - 1)]
+		if t >= at and t - delta < at and is_instance_valid(gunmen[i]) and not gunmen[i].dead:
+			Sfx.play(gunmen[i].model, "weapon_switch", gunmen[i].model.muzzle_position())
+	_sub.visible = false
+	for i in STAND_SUBS.size():
+		if t >= STAND_SUBS[i][0] and t < STAND_SUBS[i][1]:
+			_sub.text = STAND_LINES[i]
+			_sub.visible = true
+	if t >= STAND_END_AT:
+		_finish()
+
+
+## Meio dos snipers (entre as torres, no portão): para onde ela vira.
+func _gate_mid() -> Vector3:
+	var c := Vector3.ZERO
+	var n := 0
+	for g in gunmen:
+		if is_instance_valid(g):
+			c += g.global_position
+			n += 1
+	return c / float(n) if n > 0 else player.global_position - player.global_basis.z
+
+
 ## O alossauro a vê: ruge virado para ela e chama os raptors da pedreira.
 func _lair_roar() -> void:
 	_roared = true
@@ -439,6 +506,9 @@ func _place_camera() -> void:
 		return
 	if scene == "lair":
 		_lair_camera()
+		return
+	if scene == "standoff":
+		_standoff_camera()
 		return
 	var her := player.get_global_transform_interpolated().origin
 	var head := her + Vector3.UP * 1.55
@@ -580,6 +650,47 @@ func _lair_camera() -> void:
 		_cam.look_at(m + Vector3.DOWN * 0.6)
 
 
+func _standoff_camera() -> void:
+	var her := player.get_global_transform_interpolated().origin
+	var chest := her + Vector3.UP * 1.3
+	var mid := _gate_mid()
+	var ahead := Vector3(mid.x - her.x, 0.0, mid.z - her.z).normalized()
+	var side := ahead.cross(Vector3.UP)
+	if t < STAND_CLOSE_AT:
+		# atrás dela, baixo, as duas torres à frente
+		var k := t / STAND_CLOSE_AT
+		_cam.fov = 52.0
+		_cam.global_position = her - ahead * (2.6 - 0.4 * k) + side * 0.7 + Vector3.UP * (1.1 + 0.1 * k)
+		_cam.look_at(Vector3(mid.x, mid.y + GuardTower.FLOOR_Y * 0.5, mid.z))
+	elif t < STAND_SNIPER_AT:
+		# de frente, perto e um pouco de baixo: os dois lasers chegando de cima e cruzando no peito dela
+		var k := (t - STAND_CLOSE_AT) / (STAND_SNIPER_AT - STAND_CLOSE_AT)
+		_cam.fov = 44.0
+		_cam.global_position = chest + ahead * (2.1 - 0.3 * k) + side * 0.35 + Vector3.UP * (-0.15 + 0.1 * k)
+		_cam.look_at(chest + Vector3.UP * 0.25)
+	else:
+		# por cima do ombro do sniper mais perto dela: ela lá embaixo, o laser descendo até ela
+		var k := (t - STAND_SNIPER_AT) / (STAND_END_AT - STAND_SNIPER_AT)
+		var g: Sniper = _nearest_gunman(her)
+		if g == null:
+			return
+		var head := g.global_position + Vector3.UP * 1.6
+		var to_her := Vector3(her.x - head.x, 0.0, her.z - head.z).normalized()
+		var right := to_her.cross(Vector3.UP)
+		_cam.fov = 40.0 - 4.0 * k
+		# do lado de dentro da torre (para trás do sniper fica o parapeito e nos cantos os postes)
+		_cam.global_position = head - to_her * 0.45 - right * 0.5 + Vector3.UP * 0.35
+		_cam.look_at(chest.lerp(head, 0.12))
+
+
+func _nearest_gunman(at: Vector3) -> Sniper:
+	var best: Sniper = null
+	for g in gunmen:
+		if is_instance_valid(g) and not g.dead and (best == null or g.global_position.distance_to(at) < best.global_position.distance_to(at)):
+			best = g
+	return best
+
+
 ## Acaba a cena (ou pula, ou reinício): controle e câmera de volta para ela, atrás dela e olhando para onde ela olha
 ## (dentro da sala dos clones; na emboscada, o raptor que rugiu), nunca na inclinação que o mouse deixou.
 func stop() -> void:
@@ -608,4 +719,14 @@ func stop() -> void:
 		player.model.set_state("idle")
 		player.camera_rig.reset_view(player.rotation.y)
 		player.camera_rig.camera.current = true
+		if scene == "standoff" and not player.dead:
+			# fica rendida, de mãos ao alto, com os dois na mira (pulou antes: os lasers acendem já)
+			for g in gunmen:
+				if is_instance_valid(g):
+					g.light_laser()
+			if gunmen.any(func(g: Sniper) -> bool: return is_instance_valid(g) and g.in_standoff()):
+				var to := _gate_mid() - player.global_position
+				player.rotation.y = atan2(-to.x, -to.z)
+				player.camera_rig.reset_view(player.rotation.y)
+				player.surrender(true)
 	finished.emit()

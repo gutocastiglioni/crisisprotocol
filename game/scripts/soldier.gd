@@ -141,7 +141,7 @@ func _ready() -> void:
 	model.set_weapon(weapon)
 	if distracted and weapon == WEAPON:
 		_stowed = _lean_rifle()
-	sight_range = 16.0
+	sight_range = 23.0  # agachada atrás de algo: 7 m parada, 9 m andando; no aberto ~15 m
 	fov_half = deg_to_rad(62.0)
 	eye_height = 1.55
 	marker_height = 2.2

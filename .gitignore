@@ -17,6 +17,9 @@ art/*.blend
 # modelos extraídos de jogos comerciais: só referência local, nunca no repositório
 possible_models/
 
+# amostras CC0 baixadas só para medir/derivar os sons (art/ref_sounds/LEIAME.txt tem fonte e licença)
+art/ref_sounds/
+
 # Builds e Instaladores
 INSTALADOR/
 dist/

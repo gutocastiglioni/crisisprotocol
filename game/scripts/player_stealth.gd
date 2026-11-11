@@ -11,7 +11,16 @@ const COVER_GROUP := "cover"  # capim alto (Yard): nó com meta "radius"; dentro
 const ASSASSINATE_PROMPT := "ABATE FURTIVO"  # verbo do botão de atirar no HUD (UiStyle.Hint)
 const CRIT_PROMPT := "GOLPE CRÍTICO"
 
+## Agachar só esconde atrás de algo: com a linha livre do olho de quem olha até o quadril dela (`LOW_POINT` acima dos
+## pés), ela aparece de `OPEN_CROUCH` / `OPEN_CROUCH_MOVING` (quase como em pé) em vez de `visibility`.
+## No capim alto o capim é o que a cobre (vale a `visibility` baixa).
+const OPEN_CROUCH := 0.65
+const OPEN_CROUCH_MOVING := 0.7
+const LOW_POINT := 0.5
+
 var visibility := 0.7
+## a visibilidade dela agachada para quem a vê sem nada baixo no meio (= `visibility` em pé ou no capim)
+var open_visibility := 0.7
 var loud_t := 0.0
 var step_t := 0.0
 var p: Player
@@ -42,17 +51,36 @@ func update(delta: float) -> void:
 			p.make_noise(10.0, 0.5)
 	var v := 0.7  # parada em pé
 	if p.crouching:
-		v = 0.45 if moving else 0.3
+		v = 0.39 if moving else 0.3
 	elif speed >= RUN_NOISE_SPEED:
 		v = 1.0
 	elif moving:
 		v = 0.75
+	var open := v
+	if p.crouching:
+		open = OPEN_CROUCH_MOVING if moving else OPEN_CROUCH
 	if p.rolling or loud_t > 0.0 or (p.moves.busy() and not silent_move):
 		v = 1.0
+		open = 1.0
 	# capim alto cobre mais quem está agachada
 	if in_cover():
 		v *= 0.5 if p.crouching else 0.8
+		open = v
 	visibility = maxf(v, 0.1)
+	open_visibility = maxf(open, visibility)
+
+
+## Agachada sem nada baixo entre `eye` e o quadril dela: o agachar não a esconde de quem olha dali.
+func exposed_to(eye: Vector3) -> bool:
+	if not p.crouching or open_visibility <= visibility or not p.is_inside_tree():
+		return false
+	var q := PhysicsRayQueryParameters3D.create(eye, p.global_position + Vector3.UP * LOW_POINT, 1)
+	return p.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## O quanto ela aparece para quem olha de `eye` (antes da ocultação de encostada).
+func visibility_from(eye: Vector3) -> float:
+	return open_visibility if exposed_to(eye) else visibility
 
 
 ## Inimigo (soldado, velociraptor ou sniper; nunca o alossauro) ao alcance para abate furtivo ou golpe crítico sem mirar, ou null.

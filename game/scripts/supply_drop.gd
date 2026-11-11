@@ -28,6 +28,13 @@ const DESCRIPTION := "Pistola .45 com silenciador rosqueado.\nTiro abafado: só 
 ## lona: retângulo atrás da caixa (x0, x1, z0, z1 em relação à caixa) e grade de pontos
 const CHUTE := [-1.4, 1.5, -0.45, -2.75]
 const CHUTE_GRID := Vector2i(9, 7)
+## por dentro, como os baús: paredes de compensado (RIM de espessura) e a espuma FOAM_IN abaixo da boca, com o vão da
+## pistola (heroine_drop.CRATE_TOP = SIZE.y - FOAM_IN: o meio da espessura dela no topo da espuma)
+const RIM := 0.03
+const RIM_TINT := Color(0.25, 0.27, 0.18)
+const FOAM_IN := 0.06
+const FOAM_OVER := 0.01  # a espuma passa isto do meio da pistola: ela fica afundada uns 3/4 e o vão aparece
+const FOAM_DEPTH := 0.06  # o vão da pistola não desce mais que isto do topo da espuma
 
 var _lid: Node3D
 var _pistol: Node3D
@@ -53,19 +60,22 @@ func _ready() -> void:
 	col.position = crate.transform * Vector3(0, (SIZE.y + LID_T) * 0.5, 0)
 	add_child(col)
 	var paint := _mat("drop_crate")
-	_cube(crate, SIZE, Vector3(0, SIZE.y * 0.5, 0), paint)
-	# espuma escura por dentro (aparece com a tampa aberta) e a pistola deitada nela
-	var foam := MeshInstance3D.new()
-	var fq := PlaneMesh.new()
-	fq.size = Vector2(SIZE.x - 0.08, SIZE.z - 0.08)
-	foam.mesh = fq
-	foam.material_override = _plain(Color(0.3, 0.31, 0.27))  # cinza claro: a pistola preta aparece nela
-	foam.position.y = SIZE.y + 0.002
-	crate.add_child(foam)
+	_cube(crate, SIZE, Vector3(0, SIZE.y * 0.5, 0), paint, false)  # sem a face de cima: a espuma fecha a boca
 	# o glTF olha para +Z: girado como o modelo dela, na raiz ajoelhada (fora da caixa torta: a mão chega certo nela)
 	_pistol = _atlas(CRATE_ITEM.instantiate())
 	add_child(_pistol)
 	_pistol.transform = _local_kneel() * Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+	# por dentro (aparece com a tampa aberta): paredes de compensado e, FOAM_IN abaixo da boca, a espuma cinza com o vão
+	# da pistola
+	var inner := Rect2(-SIZE.x * 0.5 + RIM, -SIZE.z * 0.5 + RIM, SIZE.x - 2.0 * RIM, SIZE.z - 2.0 * RIM)
+	var foam_y := SIZE.y - FOAM_IN
+	Chest.foam(crate, _pistol, inner, foam_y - FOAM_DEPTH, foam_y + FOAM_OVER, foam_y + FOAM_OVER)
+	var edge := _plain(RIM_TINT)
+	var wall_h := FOAM_IN + 0.01
+	for sz in [-1, 1]:
+		_rim(crate, Vector3(SIZE.x - 0.002, wall_h, RIM), Vector3(0, SIZE.y - wall_h * 0.5, sz * (SIZE.z - RIM) * 0.5), edge)
+	for sx in [-1, 1]:
+		_rim(crate, Vector3(RIM, wall_h, SIZE.z - 2.0 * RIM), Vector3(sx * (SIZE.x - RIM) * 0.5, SIZE.y - wall_h * 0.5, 0), edge)
 	# tampa com a dobradiça na borda de trás
 	_lid = Node3D.new()
 	_lid.position = Vector3(0, SIZE.y, -SIZE.z * 0.5)
@@ -161,8 +171,20 @@ func _cord(a: Vector3, b: Vector3, mat: Material) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-## Caixa com a textura inteira em cada face (o estêncil e as cintas aparecem certos mesmo com a caixa girada).
-func _cube(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+## Parede de dentro (um pouco para dentro das faces da caixa: sem brigar com elas).
+func _rim(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size - Vector3(0.002, 0, 0.002)
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = at
+	parent.add_child(mi)
+
+
+## Caixa com a textura inteira em cada face (o estêncil e as cintas aparecem certos mesmo com a caixa girada);
+## `top` falso = sem a face de cima.
+func _cube(parent: Node3D, size: Vector3, at: Vector3, mat: Material, top := true) -> MeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var h := size * 0.5
@@ -171,6 +193,8 @@ func _cube(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshIns
 			[Vector3.LEFT, Vector3.BACK, Vector3.UP], [Vector3.RIGHT, Vector3.FORWARD, Vector3.UP],
 			[Vector3.UP, Vector3.RIGHT, Vector3.FORWARD], [Vector3.DOWN, Vector3.RIGHT, Vector3.BACK]]:
 		var n: Vector3 = f[0]
+		if not top and n == Vector3.UP:
+			continue
 		var r: Vector3 = f[1]
 		var up: Vector3 = f[2]
 		var c := n * h
@@ -250,6 +274,19 @@ func take_item() -> String:
 ## Ela levantou com a pistola: mostra o item.
 func finish() -> void:
 	picked.emit(self)
+
+
+## Checkpoint: a pistola já foi pega?
+func save_state() -> Dictionary:
+	return {"taken": _taken}
+
+
+func load_state(s: Dictionary) -> void:
+	reset()
+	if s.taken:
+		_taken = true
+		_pistol.visible = false
+		_lid.rotation_degrees.x = LID_OPEN
 
 
 func reset() -> void:

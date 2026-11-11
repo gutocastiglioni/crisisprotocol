@@ -27,6 +27,7 @@ func run(runner: SceneTree) -> void:
 	await test_roll_beats_charges()
 	await test_raptor_bite_damage()
 	await test_pack_turns()
+	await test_aim_turn_one_way()
 	await test_arcade_unchanged()
 	GameMode.set_mode(GameMode.ARCADE)
 
@@ -340,7 +341,11 @@ func test_aim_lock() -> void:
 	var p3 := await _aimed(w3, "pistol")
 	Input.action_press("move_left")
 	await t._frames(30)
-	t.check(p3.model.state == "strafe_l" and Vector2(p3.velocity.x, p3.velocity.z).length() > 0.5, "pistola mirando: passo lateral", p3.model.state)
+	var side_v := Vector2(p3.velocity.x, p3.velocity.z).length()
+	t.check(p3.model.state == "strafe_fast_l" and absf(side_v - Moves.speed("strafe") * 1.8) < 0.05,
+		"pistola mirando: passo lateral largo, na mesma velocidade de antes", "%s %.2f m/s" % [p3.model.state, side_v])
+	var rate := float(p3.model.tree.get("parameters/strafe_fast_l_speed/scale"))
+	t.check(rate > 0.85 and rate < 1.1, "o passo lateral largo toca perto do ritmo dele (sem trotinho)", "%.2fx" % rate)
 	# agachada com a escopeta também trava
 	_release_all()
 	var w4: Node3D = await t._fresh_world()
@@ -630,7 +635,7 @@ func _press_x(dir := "") -> void:
 		Input.action_release(dir)
 
 
-## Survival: parada rola para a frente, com direção rola para lado pedido; curta (~2 m) e sem pulinho.
+## Survival: parada rola para a frente, com direção rola para lado pedido; mergulho de ~2,6 m.
 func test_survival_roll() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 10))
@@ -640,13 +645,13 @@ func test_survival_roll() -> void:
 	t.check(p.moves.mode == "roll" and p.model.state == "roll" and p.is_dodging(), "survival: parada, rola para a frente", p.model.state)
 	await t._frames(_roll_frames())
 	var moved := p.global_position - p0
-	t.check(p.moves.mode == "" and moved.z < -1.8 and moved.z > -2.3 and absf(moved.x) < 0.1, "cambalhota para a frente: ~2 m", "%.2f, %.2f" % [moved.x, moved.z])
+	t.check(p.moves.mode == "" and moved.z < -2.2 and moved.z > -2.9 and absf(moved.x) < 0.1, "cambalhota para a frente: ~2,6 m", "%.2f, %.2f" % [moved.x, moved.z])
 	await t._frames(90)
 	p0 = p.global_position
 	await _press_x("move_left")
 	await t._frames(_roll_frames())
 	var side := p.global_position - p0
-	t.check(side.x < -1.8 and side.x > -2.3 and absf(side.z) < 0.2, "esquerda + rolar = rola para a esquerda", "%.2f, %.2f" % [side.x, side.z])
+	t.check(side.x < -2.2 and side.x > -2.9 and absf(side.z) < 0.2, "esquerda + rolar = rola para a esquerda", "%.2f, %.2f" % [side.x, side.z])
 	_release_all()
 	p.queue_free()
 
@@ -844,3 +849,28 @@ func test_pack_turns() -> void:
 	t.check(gap_min >= Raptor.PACK_GAP.x - 0.6, "matilha: espera entre um ataque e o próximo", "%.2f s" % gap_min)
 	t.check(pairs > 60 and spread_min > deg_to_rad(60.0), "matilha: quem espera cerca espalhado", "%.0f° (%d)" % [rad_to_deg(spread_min), pairs])
 	t.check(wait_frames > 120 and still_frames > wait_frames * 0.9, "matilha: quem espera fica parado observando (não rodeia)", "%d/%d" % [still_frames, wait_frames])
+
+
+## Giro da mira quase de costas: o lado do giro escolhido no começo segue até o fim, mesmo com o alvo pulando para o outro
+## lado do "de costas" no meio (ponto sob a retícula perto de parede); sem volta inteira.
+func test_aim_turn_one_way() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 0))
+	await t._frames(5)
+	p.process_mode = Node.PROCESS_MODE_DISABLED  # só o giro, chamado à mão
+	p.rotation.y = 0.0
+	var travel := 0.0
+	var last := 0.0
+	var signs := {}
+	for f in 60:
+		# o alvo fica em 178° e -178° alternando nos primeiros quadros (de costas para ela, um lado e o outro)
+		var yaw := deg_to_rad(178.0 if f % 2 == 0 or f > 6 else -178.0)
+		p._face_aim(Vector3(-sin(yaw), 0, -cos(yaw)), 1.0 / 60.0)
+		var step := wrapf(p.rotation.y - last, -PI, PI)
+		if absf(step) > 0.0001:
+			signs[signf(step)] = true
+		travel += absf(step)
+		last = p.rotation.y
+	t.check(signs.size() == 1 and travel < deg_to_rad(200.0) and absf(wrapf(p.rotation.y - deg_to_rad(178.0), -PI, PI)) < 0.05,
+		"giro da mira de costas: um lado só, sem volta inteira", "%.0f° percorridos, lados %s" % [rad_to_deg(travel), str(signs.keys())])
+	p.queue_free()

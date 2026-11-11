@@ -36,6 +36,7 @@ const SURFACES := {
 	"concrete": {"dust": Color(0.6, 0.58, 0.53), "sparks": 0, "metal": false, "tint": Color(1, 1, 1)},
 	"hazard": {"dust": Color(0.6, 0.58, 0.53), "sparks": 0, "metal": false, "tint": Color(1, 1, 1)},
 	"crate": {"dust": Color(0.6, 0.44, 0.27), "sparks": 0, "metal": false, "tint": Color(1.0, 0.78, 0.55)},
+	"planks": {"dust": Color(0.55, 0.45, 0.33), "sparks": 0, "metal": false, "tint": Color(1.0, 0.82, 0.62)},
 	"wall": {"dust": Color(0.45, 0.45, 0.48), "sparks": 5, "metal": true, "tint": Color(1, 1, 1)},
 	"metal": {"dust": Color(0.45, 0.45, 0.48), "sparks": 5, "metal": true, "tint": Color(0.9, 1.0, 0.85)},
 }

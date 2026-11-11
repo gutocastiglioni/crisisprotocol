@@ -158,7 +158,40 @@ def crate():
     return img
 
 
-def chest(caliber="U.S. 5.56MM", label="RIFLE M16"):
+def planks():
+    """Tábuas de madeira de obra (torres de guarda do pátio): pranchas em pé com o veio no comprimento, frestas escuras
+    entre elas, nós e duas fileiras de pregos; madeira gasta pelo tempo, mais cinza que a das caixas e sem moldura,
+    travessa nem estêncil (UV do mundo: nas paredes o V é a altura, então o veio sobe pelas pernas e pelo parapeito)."""
+    img = Image.new("RGB", (N, N))
+    px = img.load()
+    grain = smooth_noise(16)
+    stain = smooth_noise(64)
+    W = 32  # uma prancha (~25 cm no UV do mundo de 0,5)
+    tones = [rng.uniform(0.86, 1.08) for _ in range(N // W)]
+    for x in range(N):
+        board = x // W
+        for y in range(N):
+            g = math.sin(x * 1.1 + grain(x, y) * 8 + board * 1.7)
+            k = tones[board] * (0.9 + 0.07 * g) * (0.95 + rng.uniform(0, 0.06)) * (0.88 + 0.16 * stain(x, y))
+            px[x, y] = tuple(int(c * k) for c in (112, 92, 70))
+    d = ImageDraw.Draw(img)
+    for x in range(0, N, W):
+        d.line([(x, 0), (x, N - 1)], fill=(38, 30, 22), width=2)
+        d.line([(x + 2, 0), (x + 2, N - 1)], fill=(138, 118, 92))
+    for b in range(N // W):
+        # nós: elipse escura com o veio contornando
+        if rng.random() < 0.6:
+            cx, cy = b * W + rng.randint(9, W - 9), rng.randint(20, N - 20)
+            d.ellipse([cx - 3, cy - 5, cx + 3, cy + 5], fill=(60, 46, 32))
+            d.ellipse([cx - 5, cy - 8, cx + 5, cy + 8], outline=(84, 66, 48))
+        for ny in (36, 220):
+            for nx in (b * W + 8, b * W + W - 8):
+                d.ellipse([nx - 2, ny - 2, nx + 2, ny + 2], fill=(52, 50, 48))
+                d.point((nx - 1, ny - 1), fill=(120, 116, 110))
+    return img
+
+
+def chest(caliber="5.56MM", label="RIFLE M16"):
     """Baú militar de metal: verde-oliva com nervuras, cantos gastos e estêncil."""
     img = base((78, 84, 52), 0.04, cells=((32, 0.12), (8, 0.06)))
     d = ImageDraw.Draw(img)
@@ -546,7 +579,8 @@ def main():
                      ("grass", grass), ("dirt", dirt), ("bark", bark), ("leaves", leaves), ("rock", rock),
                      ("grass_card", grass_card), ("fern_card", fern_card), ("shot_fx", shot_fx),
                      ("blood_fx", blood_fx), ("chest_m79", chest_m79), ("scorch", scorch),
-                     ("drop_crate", drop_textures.drop_crate), ("chute", drop_textures.chute), ("explosive", explosive)):
+                     ("drop_crate", drop_textures.drop_crate), ("chute", drop_textures.chute), ("explosive", explosive),
+                     ("planks", planks)):  # no fim: o sorteio (rng) das outras fica igual
         fn().save(OUT / f"{name}.png")
         print(OUT / f"{name}.png")
 

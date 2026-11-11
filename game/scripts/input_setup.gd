@@ -14,8 +14,7 @@ const KEYS := {
 	"interact": [KEY_E],
 	"switch_weapon": [KEY_Q, KEY_TAB],
 	"crouch": [KEY_C, KEY_CTRL],
-	"lean": [KEY_V],
-	"cover": [KEY_G],  # encostar/soltar da parede (no controle: dois empurrões do analógico direito para cima, PlayerCover)
+	"lean": [KEY_V],  # arcade: esgueirar pela quina; survival: encostar/soltar da parede (PlayerCover)
 	"reset": [KEY_R],
 	"pause": [KEY_ESCAPE],
 	"zoom_in": [KEY_X, KEY_SPACE],
@@ -46,7 +45,7 @@ const JOY_BUTTONS := {
 	# R3 também agacha, mas só no jogo (ação à parte: nos menus o "crouch" é o X de confirmar/voltar); atirar fica no R2
 	"crouch_stick": JOY_BUTTON_RIGHT_STICK,
 	"pause": JOY_BUTTON_START,  # menu de pausa (reiniciar fica lá dentro; no teclado R segue reiniciando)
-	# L3: corrida forte segurando; um toque perto da beirada de uma cobertura esgueira pela quina (PlayerLean.find)
+	# L3: corrida forte segurando; um toque: arcade esgueira pela quina (PlayerLean.find), survival encosta/solta (PlayerCover)
 	"sprint": JOY_BUTTON_LEFT_STICK,
 	"lean": JOY_BUTTON_LEFT_STICK,
 }

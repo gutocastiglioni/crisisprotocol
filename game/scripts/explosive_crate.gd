@@ -187,6 +187,15 @@ func _explode() -> void:
 	shockwave(get_tree(), at, CHAIN_RADIUS)
 
 
+## Checkpoint: já explodido = some sem estourar de novo (o fogo e a mancha não voltam).
+func load_exploded(on: bool) -> void:
+	reset()
+	if on:
+		exploded = true
+		visible = false
+		_shape.set_deferred("disabled", true)
+
+
 func reset() -> void:
 	exploded = false
 	_fuse = -1.0

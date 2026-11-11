@@ -579,6 +579,7 @@ static func lamp(parent: Node, p: Vector3) -> void:
 	o.light_energy = 1.8
 	o.omni_range = 13.0
 	o.omni_attenuation = 1.2
+	o.add_to_group("lamps")  # sombra no PS2 (Gfx)
 	parent.add_child(o)
 
 

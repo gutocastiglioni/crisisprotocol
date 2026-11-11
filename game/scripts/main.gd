@@ -24,7 +24,9 @@ extends Node3D
 ## Visual:  --gfx=ps1|ps2  (F2 alterna no jogo; ver Gfx)
 ## Perfil de jogo:  --mode=survival|arcade  (F3 alterna no jogo; ver GameMode)
 ## Começo da fase:  --shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|mezz_climb|ladder_locked|gate|lab|clones  (hatch/clones: --at=segundos escolhe o
-##   quadro da tampa subindo / da cena do choque; sniper_ladder: o sniper a vê na escada do telhado e atira)
+##   quadro da tampa subindo / da cena do choque; sniper_ladder: o sniper a vê na escada do telhado e atira; sniper_laser:
+##   ela no chão do galpão e o sniper do mezanino mirando com o laser, --at escolhe o quadro da mira, câmera de lado
+##   (--yaw gira) ou --playercam)
 ##   --shot=smell: na beira do telhado do lado do pátio, salva quando a mensagem do cheiro de sangue para o jogo
 ## Caixa de paraquedas:  --shot=drop|drop_get|drop_pick|fire_sd  (drop = de frente para a caixa no teto dos clones, --dist=m
 ##   do lugar de ajoelhar (padrão 2); drop_get pega e salva quando a tela do item aparece; drop_pick = câmera de lado
@@ -33,7 +35,8 @@ extends Node3D
 ##   (tank = o tanque vazio do alossauro; plate/plate_allo salvam quando a tela aparece; keypad = sem o cartão,
 ##   keypad_on = com ele, digitando; keypad_ok = código certo; gate_open = depois, o portão abrindo: --at escolhe o quadro)
 ##   --shot=clone: o raptor do primeiro tubo de perto (--yaw gira, --dist afasta); --shot=chest_open: baú aberto de cima,
-##   a espuma com o vão da arma (--part=0|1|2 = M16, escopeta, container da M79; --yaw gira, --dist afasta)
+##   a espuma com o vão da arma (--part=0|1|2|3 = M16, escopeta, container da M79, caixa de paraquedas; --empty tira a
+##   arma; --yaw gira, --dist afasta)
 ## Torres de guarda do portão do pátio:  --shot=towers|tower_fall|gate_card  (towers = as duas com os snipers, vistas da
 ##   estrada; tower_fall = o último sniper tomba da torre, câmera de lado, --at escolhe o quadro; gate_card = pega o cartão
 ##   que ele derrubou e salva quando a tela do item aparece)
@@ -65,23 +68,41 @@ const CRATES_AIM := Vector3(-102.0, 1.6, Tunnel.Z - 5.0)
 ## revisão do começo da fase: telhado, alçapão, escada do canto, labirinto, portão e sala dos clones (ver _setup_start_shot)
 const START_SHOTS := ["roof", "hatch", "ladder_mount", "ladder_out", "ladder_roof", "sniper_ladder", "maze", "gate", "lab", "clones",
 	"drop", "drop_get", "drop_pick", "fire_sd", "smell", "mezz_climb", "ladder_locked", "tank", "plate", "plate_allo", "keypad", "keypad_on", "keypad_ok",
-	"gate_open", "clone", "chest_open"]
+	"gate_open", "clone", "chest_open", "sniper_laser"]
 ## revisão do túnel da mina (ver _setup_tunnel_shot): tunnel = da boca olhando para dentro; tunnel_mid = os dois
 ## sentinelas do meio (parados); tunnel_far = os quatro do fundo nos explosivos; tunnel_talk = a cena da conversa (--at);
 ## tunnel_boom = os do fundo mortos, ela arma o detonador em 0,3 s e corre (a explosão em ~10,3 s arromba o portão, --at);
 ## lair = passa pelo portão arrombado e a cena do alossauro toca (--at)
 const TUNNEL_SHOTS := ["tunnel", "tunnel_mid", "tunnel_far", "tunnel_talk", "tunnel_boom", "lair"]
 ## revisão das torres de guarda do portão do pátio e do cartão do painel (ver _setup_tower_shot)
-const TOWER_SHOTS := ["towers", "tower_fall", "gate_card"]
+const TOWER_SHOTS := ["towers", "tower_fall", "gate_card", "standoff", "surrender_roll", "surrender_aim", "surrender_walk", "surrender_run", "standoff_live", "tower_under"]
+## rendição no pátio: standoff = a cena (--at escolhe o quadro); surrender_roll / surrender_aim = a cena pulada, ela
+## rendida e em 3 s rola (o tiro erra; a mira de 5 s depois) ou mira (o tiro acerta); surrender_walk / surrender_run =
+## anda devagar de lado de mãos ao alto (os lasers seguem) / corre (o tiro acerta); --at escolhe o quadro;
+## standoff_live = a rendição sem cena (a da segunda vez, voltando do checkpoint): lasers, mãos ao alto e as falas no HUD
+const STANDOFF_SHOTS := ["standoff", "surrender_roll", "surrender_aim", "surrender_walk", "surrender_run", "standoff_live"]
 const LOCKER_POS := Vector3(0, Catwalk.FLOOR_Y, 12.2)  # container trancado da M79 no mezanino
 const AIM_SHOT_AT := 2.0  # capturas allo_aim / flak: quando ela atira
 const HEADSHOT_TIME := 1.0  # quanto tempo o aviso de tiro na cabeça fica na tela
+## Rendição no pátio (Cutscene.play_standoff): STANDOFF_DELAY s depois do último raptor da emboscada morrer, com ela no
+## pátio, de pé e com controle, os snipers das torres a pegam na mira; ela fica rendida (anda devagar com os lasers
+## nela) até um movimento brusco (`Player.surrender_broken` → `Sniper.release`, um STANDOFF_STAGGER s depois do outro)
+## ou até sair da vista de um deles andando (`Sniper.standoff_lost`: sem tiro na hora, a mira lenta).
+const STANDOFF_DELAY := 1.2
+const STANDOFF_STAGGER := 0.35
+## Perto demais do portão do fundo ou das torres (a faixa de TOWER_ZONE m da parede do fundo, entre as torres com
+## TOWER_ZONE_SIDE m a mais de cada lado): os snipers vivos a veem e atiram (rendida, é movimento brusco). Embaixo da
+## torre a plataforma não a esconde (`Sniper.see_through`).
+const TOWER_ZONE := 6.5
+const TOWER_ZONE_SIDE := 4.0
+const LIVE_GRACE := 0.6  # rendição sem cena: s depois de levantar as mãos em que mexer-se ainda não conta
+const LINE_W := 300.0  # largura máxima das falas dos snipers no HUD (unidades de 240 de altura)
 const END_DELAY := 3.0  # depois que o alossauro cai, a tela de fim aparece (dá tempo de ver o corpo tombar)
 const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparece (dá tempo de ver o corpo cair)
 const RESTART_ACTIONS := ["reset", "interact", "crouch", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO rolar (O)  C agachar (quadrado / R3)  V esgueirar na quina (L3)  G encostar na parede (analógico dir. 2x para cima)  F pular/agarrar (X)  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)  G encostar na parede (analógico dir. 2x p/ cima)\nH dano  K morrer  J guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO rolar (O)  C agachar (quadrado / R3)  V esgueirar na quina / sobrevivência: encostar (L3)  F pular/agarrar (X)  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  J guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -105,6 +126,16 @@ var drop: SupplyDrop  # caixa de paraquedas com a pistola com silenciador, no te
 var towers: Array[GuardTower] = []  # torres de guarda dos dois lados do portão do pátio (Yard.TOWERS)
 var tower_snipers: Array[Sniper] = []  # um em cada torre, fora de cena até os raptors da emboscada morrerem
 var gate_card: KeyItem  # cartão do painel do portão da pedreira: cai do último sniper das torres
+var standoff_armed := true  # a rendição ainda não tocou (R arma de novo; os testes que não são dela desarmam)
+var _standoff_t := -1.0  # >= 0: contando para a rendição
+## a cena da rendição já tocou nesta partida: voltando do checkpoint, a rendição vem sem cena (`_standoff_live`)
+var standoff_seen := false
+var _line_t := -1.0  # >= 0: rendição sem cena, relógio das falas dos snipers (Cutscene.STAND_SUBS) no HUD
+var _hud_line: Label
+## último checkpoint (Checkpoint.capture); vazio = nenhum ainda (o Game Over recomeça do zero). R zera.
+var checkpoint := {}
+var yard_door: Door  # portão do galpão para o pátio (checkpoint "yard")
+var mine_door: Door  # portão do teclado, do pátio para a mina (checkpoint "tunnel")
 var cutscene: Cutscene
 var sniper: Sniper
 var sniper_scope: SniperScope
@@ -144,6 +175,7 @@ var _show := {"creature": "raptor", "anim": "", "move": 0}  # --shot=showroom
 var _review_cam: Camera3D
 var _player_cam := false
 var _part := ""  # --part=: parte mirada nas capturas allo_aim / flak
+var _empty := false  # --empty: chest_open sem a arma (só a espuma com o vão)
 
 
 func _ready() -> void:
@@ -245,6 +277,11 @@ func _ready() -> void:
 	for i in Tunnel.GUARDS.size():
 		tunnel.guards.append(_spawn_guard(Tunnel.guard_spot(i)))
 	tunnel.tick.connect(func(left: int) -> void: show_notice("DETONAÇÃO EM %d" % left))
+	for d: Door in get_tree().get_nodes_in_group("doors"):
+		if d.room == 0:
+			yard_door = d
+		elif d.room == 1:
+			mine_door = d
 	Yard.bake_nav(self)
 	var people := Yard.bake_people_nav(self)
 	for sd: Soldier in soldiers:
@@ -282,6 +319,7 @@ func _ready() -> void:
 	player.health_changed.connect(_set_health)
 	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
 	player.notice.connect(show_notice)
+	player.surrender_broken.connect(_on_surrender_broken)
 	apply_gfx(Gfx.mode)
 	_parse_args()
 	if _capture == "":
@@ -304,6 +342,116 @@ func _on_yard_raptor_killed() -> void:
 		key.shine = true
 		for s in tower_snipers:
 			s.appear()
+		if standoff_armed:
+			_standoff_t = STANDOFF_DELAY
+		reach_checkpoint("standoff")
+
+
+## Rendição: conta o STANDOFF_DELAY e espera ela estar no pátio, de pé, com controle (fora de cena, tela, golpe, escada).
+func _update_standoff(delta: float) -> void:
+	if not standoff_armed or _standoff_t < 0.0:
+		return
+	_standoff_t = maxf(_standoff_t - delta, 0.0)
+	var alive: Array[Sniper] = []
+	alive.assign(tower_snipers.filter(func(s: Sniper) -> bool: return not s.dead and not s.lurking))
+	if alive.size() < tower_snipers.size():
+		standoff_armed = false  # já mataram um deles: sem rendição
+		return
+	if _standoff_t > 0.0 or cutscene.busy or inspect.busy or player.dead or player.grabbed or player.cutscene:
+		return
+	if player.moves.busy() or player.is_dodging() or player.model.is_ragdoll() or not player.is_on_floor():
+		return
+	if Level.room_of(player.global_position.x) != 1 or Roof.has(player.global_position):
+		return
+	standoff_armed = false
+	_standoff_t = -1.0
+	if standoff_seen:
+		_standoff_live(alive)
+	else:
+		standoff_seen = true
+		cutscene.play_standoff(player, alive)
+
+
+## Rendição sem cena (da segunda vez: voltou do checkpoint depois de ver a cena): o jogo segue, os dois a pegam na mira
+## com os lasers, ela levanta as mãos onde está e fica rendida (com o mesmo controle do fim da cena) e as falas deles
+## aparecem embaixo no HUD (`_line_t`), sem faixas pretas. Mexer-se só conta depois de ela levantar as mãos (`grace`).
+func _standoff_live(who: Array[Sniper]) -> void:
+	for i in who.size():
+		who[i].hold_at_gunpoint(Cutscene.STAND_LASER[mini(i, Cutscene.STAND_LASER.size() - 1)])
+	player.surrender(false, Player.SURRENDER_RAISE + LIVE_GRACE)
+	_line_t = 0.0
+
+
+## Falas dos snipers na rendição sem cena: no tempo da cena; somem se ela se mexer (eles atiram) ou morrer.
+func _update_lines(delta: float, area: Vector2) -> void:
+	_hud_line.visible = false
+	if _line_t < 0.0:
+		return
+	_line_t += delta
+	if not player.surrendered or player.dead or _line_t > Cutscene.STAND_SUBS[-1][1]:
+		_line_t = -1.0
+		return
+	for i in Cutscene.STAND_SUBS.size():
+		if _line_t >= Cutscene.STAND_SUBS[i][0] and _line_t < Cutscene.STAND_SUBS[i][1]:
+			_hud_line.text = Cutscene.STAND_LINES[i]
+			_hud_line.visible = true
+	# largura fixa (o autowrap encolheria até uma letra por linha) e altura pelas linhas
+	_hud_line.custom_minimum_size = Vector2(minf(area.x - 24.0, LINE_W), 0)
+	_hud_line.reset_size()
+	_hud_line.position = Vector2(roundf((area.x - _hud_line.size.x) * 0.5), area.y - 66 - _hud_line.size.y)
+
+
+## Rendida, saiu andando da vista de um deles (atrás de árvore, pedra): todos largam a rendição sem atirar e miram devagar.
+func _on_standoff_lost() -> void:
+	if cutscene.busy:
+		return
+	if player.surrendered:
+		player.break_surrender("move")
+	else:
+		_on_surrender_broken("move")
+
+
+## Na faixa do portão do fundo e das torres (ver TOWER_ZONE)?
+static func in_tower_zone(at: Vector3) -> bool:
+	var z0: float = minf(Yard.TOWERS[0].z, Yard.TOWERS[1].z) - TOWER_ZONE_SIDE
+	var z1: float = maxf(Yard.TOWERS[0].z, Yard.TOWERS[1].z) + TOWER_ZONE_SIDE
+	return Level.room_of(at.x) == 1 and at.x < Yard.X_FAR + TOWER_ZONE and at.z > z0 and at.z < z1
+
+
+## Ela perto demais do portão ou das torres com os snipers lá em cima: a veem e atiram (rendida = movimento brusco).
+func _update_tower_zone() -> void:
+	if player.dead or player.cutscene or cutscene.busy or not in_tower_zone(player.global_position):
+		return
+	for s in tower_snipers:
+		if s.dead or s.lurking:
+			continue
+		if s.in_standoff():
+			if player.surrendered:
+				player.break_surrender("rush")
+			else:
+				_on_surrender_broken("rush")
+			return
+		if not s.in_combat():
+			s.spot()
+
+
+## Rendida na mira por Sniper.STANDOFF_TIMEOUT s sem fugir: eles atiram.
+func _on_standoff_timeout() -> void:
+	if cutscene.busy:
+		return
+	if player.surrendered:
+		player.break_surrender("timeout")
+	else:
+		_on_surrender_broken("timeout")
+
+
+## Ela se mexeu rendida: os snipers na mira atiram/miram (ver Sniper.release), um depois do outro.
+func _on_surrender_broken(how: String) -> void:
+	var n := 0
+	for s in tower_snipers:
+		if s.in_standoff():
+			s.release(how, STANDOFF_STAGGER * n)
+			n += 1
 
 
 ## Torres de guarda dos dois lados do portão do pátio, com um sniper fora de cena em cada (sobem depois da emboscada), e o
@@ -316,6 +464,7 @@ func _build_towers() -> void:
 		towers.append(tw)
 		var s := Sniper.new()
 		s.target = player
+		s.flak = true
 		s.perch = tw.perch()
 		s.floor_y = tw.global_position.y + GuardTower.FLOOR_Y
 		s.home_yaw = tw.facing_yaw()
@@ -325,22 +474,78 @@ func _build_towers() -> void:
 		add_child(s)
 		s.lurk()
 		s.killed.connect(_on_tower_sniper_killed)
+		s.standoff_lost.connect(_on_standoff_lost)
+		s.standoff_timeout.connect(_on_standoff_timeout)
 		tower_snipers.append(s)
+	# nenhuma das duas torres tapa a vista nem o tiro deles
+	var bodies: Array[RID] = []
+	for tw in towers:
+		for b: CollisionObject3D in tw.find_children("*", "CollisionObject3D", true, false):
+			bodies.append(b.get_rid())
+	for s in tower_snipers:
+		s.see_through.assign(bodies)
 	gate_card = KeyItem.new()
 	gate_card.id = Yard.GATE_KEY
 	gate_card.kind = "keycard"
 	gate_card.card_color = Color(0.45, 0.2, 0.07)
 	gate_card.display_name = "CARTÃO DO PAINEL"
-	gate_card.description = "Cartão do painel do portão da pedreira.\nNo verso: \"CÓDIGO = SUBJECT DO PROTÓTIPO\"."
+	gate_card.description = "Cartão do painel do portão da pedreira."
 	add_child(gate_card)
 
 
 ## Morreu um sniper das torres: o que sobrou fica com o cartão do painel e, quando morrer, cai da torre e o derruba.
 func _on_tower_sniper_killed() -> void:
+	refresh_tower_loot()
+
+
+## O único sniper das torres ainda vivo fica com o cartão e cai ao morrer (também ao voltar do checkpoint).
+func refresh_tower_loot() -> void:
 	var alive := tower_snipers.filter(func(s: Sniper) -> bool: return not s.dead)
 	if alive.size() == 1:
 		alive[0].loot = gate_card
 		alive[0].falls = true
+
+
+## Todos os inimigos da fase, sempre na mesma ordem (Checkpoint grava quem morreu por índice).
+func all_enemies() -> Array[Enemy]:
+	var out: Array[Enemy] = []
+	out.append_array(soldiers)
+	out.append_array(tunnel.guards)
+	out.append_array(raptors)
+	out.append(allosaurus)
+	if is_instance_valid(sniper):
+		out.append(sniper)
+	out.append_array(tower_snipers)
+	return out
+
+
+## Chegou ao checkpoint `id` (Checkpoint.ORDER): grava jogadora e mundo, se for mais à frente que o último.
+func reach_checkpoint(id: String) -> void:
+	if player.dead or game_over or ended:
+		return
+	if not checkpoint.is_empty() and Checkpoint.rank(id) <= Checkpoint.rank(checkpoint.id):
+		return
+	checkpoint = Checkpoint.capture(self, id)
+	show_notice("CHECKPOINT")
+
+
+## Gatilhos dos checkpoints que dependem de onde ela está ou do que abriu (o da rendição vem de _on_yard_raptor_killed).
+func _watch_checkpoints() -> void:
+	if yard_door and yard_door.opened:
+		reach_checkpoint("yard")
+	if mine_door and mine_door.opened:
+		reach_checkpoint("tunnel")
+	if tunnel.is_breached and player.global_position.x < Tunnel.X_FAR - 0.5 and Level.room_of(player.global_position.x) == 3:
+		reach_checkpoint("allosaurus")
+
+
+## Game Over → CONTINUAR: o mundo e ela como estavam no último checkpoint (sem nenhum, do começo).
+func continue_from_checkpoint() -> void:
+	if checkpoint.is_empty():
+		reset_all()
+		return
+	_reset_world()
+	Checkpoint.restore(self, checkpoint)
 
 
 ## Guarda (formato de Soldier.GUARDS) criado no lugar dele: parado no posto ou no começo da ronda.
@@ -425,6 +630,10 @@ func _build_hud() -> void:
 	_hud_notice = _label(layer, "", Vector2.ZERO)
 	_hud_notice.add_theme_color_override("font_color", UiStyle.ACCENT)
 	_hud_notice.visible = false
+	# falas dos snipers na rendição sem cena: no meio, embaixo, acima do aviso e dos botões
+	_hud_line = UiStyle.label(layer, "", UiStyle.INK, UiStyle.M, HORIZONTAL_ALIGNMENT_CENTER)
+	_hud_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hud_line.visible = false
 	# mira numa camada sem escala: ancorada no centro, a escala do HUD (apply_gfx) a jogaria para o canto
 	var cross_layer := CanvasLayer.new()
 	cross_layer.layer = 1
@@ -463,7 +672,7 @@ func _build_end(layer: CanvasLayer) -> Control:
 
 
 func _on_player_died() -> void:
-	if ended or (_capture != "" and _shot != "game_over"):
+	if ended or (_capture != "" and not _shot in ["game_over", "game_over_cp"]):
 		return
 	_end_t = -1.0
 	_game_over_t = GAME_OVER_DELAY
@@ -499,8 +708,12 @@ func show_game_over() -> void:
 	title.add_theme_color_override("font_color", UiStyle.DANGER)
 	title.reset_size()
 	_end_stats.text = ("VOCÊ MORREU NA QUEDA" if player.death_cause == "fall" else "VOCÊ MORREU") + "\nTEMPO %02d:%02d   TIROS %d" % [t / 60, t % 60, player.shots_fired]
-	# R no teclado; no controle o triângulo (RESTART_ACTIONS também aceita E, espaço, pular e atirar)
-	_end_hint.set_items([{"action": "reset", "pad_action": "crouch", "text": "RECOMEÇAR"}])
+	# com checkpoint: E / X do controle (RESTART_ACTIONS também aceita espaço, pular e atirar) volta a ele e R recomeça do
+	# zero; sem checkpoint, os dois recomeçam
+	if checkpoint.is_empty():
+		_end_hint.set_items([{"action": "reset", "pad_action": "crouch", "text": "RECOMEÇAR"}])
+	else:
+		_end_hint.set_items([{"action": "interact", "pad_action": "crouch", "text": "CONTINUAR"}, {"action": "reset", "text": "RECOMEÇAR"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
 	_end.visible = true
@@ -535,7 +748,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		if game_over:
-			_restart_from_overlay()
+			_restart_from_overlay(true)
 	elif event.is_action_pressed("reset"):
 		reset_all()
 	elif event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_J or event.physical_keycode == KEY_J):
@@ -549,7 +762,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			sd.die(-player.global_basis.z, sd.global_position + Vector3.UP * 1.2)
 			show_notice("GUERRILHEIRO RAGDOLL (J para repetir)")
 	elif game_over and _is_restart_event(event):
-		_restart_from_overlay()
+		_restart_from_overlay(true)
 	elif event.is_action_pressed("toggle_help"):
 		_hud_help.visible = not _hud_help.visible
 	elif event.is_action_pressed("toggle_gfx"):
@@ -578,11 +791,15 @@ func _poll_restart() -> bool:
 	return false
 
 
-func _restart_from_overlay() -> void:
+## Recomeça do zero, ou do último checkpoint (`from_checkpoint`: o CONTINUAR do Game Over).
+func _restart_from_overlay(from_checkpoint := false) -> void:
 	for a in RESTART_ACTIONS:
 		if InputMap.has_action(a):
 			Input.action_release(a)
-	reset_all()
+	if from_checkpoint:
+		continue_from_checkpoint()
+	else:
+		reset_all()
 	player._roll_cd = 0.1
 	player._shot_cd = 0.1
 
@@ -666,7 +883,15 @@ func _update_weapon_hud(area: Vector2) -> void:
 	_hud_weapon.position = Vector2(_weapon_icon.position.x - _hud_weapon.size.x - 2, area.y - 4 - roundf((WeaponIcon.VIEW.y + _hud_weapon.size.y) * 0.5))
 
 
+## Recomeço do zero (R, REINICIAR do menu, troca de perfil): o mundo inteiro de volta e sem checkpoint.
 func reset_all() -> void:
+	checkpoint = {}
+	standoff_seen = false
+	_reset_world()
+
+
+## Mundo e jogadora como no começo da fase (o checkpoint, se houver, é posto por cima: continue_from_checkpoint).
+func _reset_world() -> void:
 	for g in get_tree().get_nodes_in_group("grenades"):
 		g.queue_free()
 	cutscene.stop()
@@ -687,6 +912,8 @@ func reset_all() -> void:
 		d.reset()
 	key.reset()
 	gate_card.reset()
+	standoff_armed = true
+	_standoff_t = -1.0
 	for i in tower_snipers.size():
 		var s := tower_snipers[i]
 		s.reset()
@@ -723,6 +950,8 @@ func reset_all() -> void:
 	danger.reset()
 	radar.reset()
 	_notice_t = 0.0
+	_line_t = -1.0
+	_hud_line.visible = false
 	smelled = false
 	_headshot_t = 0.0
 	_t = 0.0
@@ -757,6 +986,8 @@ func _parse_args() -> void:
 			_player_cam = true
 		elif a.begins_with("--part="):
 			_part = a.get_slice("=", 1)
+		elif a == "--empty":
+			_empty = true
 		elif a == "--pad":
 			UiStyle.pad = true  # captura com os glifos do controle
 		elif a.begins_with("--yaw="):
@@ -838,6 +1069,13 @@ func _parse_args() -> void:
 		player.rotation.y = soldiers[9].rotation.y + PI
 		player.camera_rig.yaw = player.rotation.y
 		player.reset_physics_interpolation()
+	elif _shot == "aim_strafe":
+		# mirando e andando de lado, vista de 3/4 pela frente com o corpo inteiro (a câmera da mira cortava as pernas)
+		_review_cam = Camera3D.new()
+		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_review_cam.fov = 40.0
+		add_child(_review_cam)
+		_review_cam.current = true
 	elif _shot == "face":
 		# close do rosto (--yaw gira em volta dela: 0 = de frente)
 		_review_cam = Camera3D.new()
@@ -846,15 +1084,17 @@ func _parse_args() -> void:
 		add_child(_review_cam)
 		_review_cam.current = true
 	match _shot:
-		"aim":
+		"aim", "aim_strafe":
 			Input.action_press("aim")
 		"run":
 			Input.action_press("move_forward")
 		"crouch":
 			Input.action_press("crouch")
-		"lean", "lean_aim", "cover", "cover_crouch", "cover_edge":
+		"lean", "lean_aim", "cover", "cover_crouch", "cover_edge", "cover_peek", "cover_over":
 			# atrás da fileira de caixas ao sul da barra do T (beirada leste 0,3 m à direita dela), olhando para o norte;
-			# cover*: ali ela encosta de costas na caixa com o G em 0,6 s (PlayerCover; cover_edge anda de lado até a beirada leste)
+			# cover*: ali ela encosta de costas na caixa com o V/L3 em 0,6 s (PlayerCover; cover_edge anda de lado até a beirada
+			# leste; cover_peek anda até ela e mira em 2,8 s = esgueira; cover_over agacha, encosta e mira em 1,6 s = por cima da
+			# caixa se ela for baixa, `--pos`)
 			if not "--pos=" in " ".join(OS.get_cmdline_user_args()):
 				# cover*: 0,5 m da caixa e 0,9 m da beirada leste (cover_edge anda até ela)
 				player.global_position = Vector3(2.1, 0, 2.6) if _shot.begins_with("lean") else Vector3(1.5, 0, 2.3)
@@ -885,6 +1125,9 @@ func _process(delta: float) -> void:
 		sniper_scope.update_scope(in_sniper, player.sniper_zoom_label(), dist, aim_info.get("blocked", false))
 	if corpse.armed and not inspect.busy:
 		corpse.check_notice()
+	_update_standoff(delta)
+	_update_tower_zone()
+	_watch_checkpoints()
 	if not cutscene.busy and not inspect.busy and not player.dead:
 		var talkers := tunnel.talk_speakers(player)
 		if not talkers.is_empty():
@@ -931,9 +1174,9 @@ func _process(delta: float) -> void:
 		verb = "VER ESCADA"
 	# os botões possíveis lado a lado: pegar/abrir (E) e o abate furtivo / golpe crítico (atirar sem mirar)
 	var actions := []
-	if verb != "":
+	if verb != "" and not player.surrendered:
 		actions.append({"action": "interact", "text": verb})
-	var sp := player.stealth_prompt()
+	var sp := player.stealth_prompt() if not player.surrendered else ""
 	if sp != "":
 		actions.append({"action": "shoot", "text": sp})
 	_prompt.set_items(actions)
@@ -955,6 +1198,7 @@ func _process(delta: float) -> void:
 	_notice_t = maxf(_notice_t - delta, 0.0)
 	_hud_notice.visible = _notice_t > 0.0
 	_hud_notice.position = Vector2(roundf((area.x - _hud_notice.size.x) * 0.5), area.y - 50)
+	_update_lines(delta, area)
 	# atordoada: o aviso pisca enquanto dura
 	_hud_daze.visible = player.is_dazed() and fmod(_play_t, 0.5) < 0.32
 	_layout_overlays(area)
@@ -969,7 +1213,7 @@ func _process(delta: float) -> void:
 		if _game_over_t <= 0.0:
 			show_game_over()
 	elif game_over and _poll_restart():
-		_restart_from_overlay()
+		_restart_from_overlay(true)
 	elif ended and InputMap.has_action("reset") and Input.is_action_just_pressed("reset"):
 		_restart_from_overlay()
 	if _capture == "" and _shot == "idle":
@@ -986,6 +1230,11 @@ func _process(delta: float) -> void:
 		var head := player.global_position + Vector3.UP * 1.6
 		_review_cam.global_position = head + Vector3(sin(a), 0.03, cos(a)) * 0.75
 		_review_cam.look_at(head)
+	elif _review_cam and _shot == "aim_strafe":
+		var a := player.rotation.y + PI + deg_to_rad(35.0)
+		var c := player.global_position + Vector3.UP * 0.9
+		_review_cam.global_position = c + Vector3(sin(a), 0.15, cos(a)) * 3.4
+		_review_cam.look_at(c)
 	elif _review_cam and (_shot.begins_with("raptor_") or _shot in ["assassinate_raptor", "crit_raptor"]):
 		_raptor_shot(at)
 	elif _shot.begins_with("allo_"):
@@ -1002,9 +1251,11 @@ func _process(delta: float) -> void:
 	if _shot in MOVE_SHOTS:
 		_move_shot(at)
 	match _shot:
-		"aim":
+		"aim", "aim_strafe":
 			# reaplica: o Godot solta ações pressionadas se a janela perde o foco
 			Input.action_press("aim")
+			if _shot == "aim_strafe" and _t > 0.6:
+				Input.action_press("move_left")  # mirando, anda de lado (pistola no survival = passo lateral largo)
 		"run":
 			Input.action_press("move_forward")
 		"crouch":
@@ -1016,20 +1267,29 @@ func _process(delta: float) -> void:
 				Input.action_press("lean")
 				if _shot == "lean_aim":
 					Input.action_press("aim")
-		"cover", "cover_crouch", "cover_edge":
+		"cover", "cover_crouch", "cover_edge", "cover_peek", "cover_over":
 			if at.call(0.6):
-				Input.action_press("cover")
+				Input.action_press("lean")
 			if at.call(0.65):
-				Input.action_release("cover")
+				Input.action_release("lean")
 	match _shot:
-		"cover_crouch":
+		"cover_crouch", "cover_over":
 			if at.call(0.05):
 				Input.action_press("crouch")
 			if at.call(0.1):
 				Input.action_release("crouch")
+			if _shot == "cover_over" and _t > 1.6:
+				Input.action_press("aim")
 		"cover_edge":
 			if _t > 1.2:
 				Input.action_press("move_right")
+		"cover_peek":
+			if at.call(1.2):
+				Input.action_press("move_right")
+			if at.call(2.6):
+				Input.action_release("move_right")
+			if _t > 2.8:
+				Input.action_press("aim")
 		"danger_roll":
 			# a barra no alto (os guardas já atirando): rola (cai depressa) e volta a subir no fim da cambalhota
 			if at.call(2.6):
@@ -1056,8 +1316,10 @@ func _process(delta: float) -> void:
 				# o jogo fica pausado (o _t daqui para): espera o --at no relógio que roda na pausa
 				await get_tree().create_timer(maxf(_until - 0.3, 0.2), true).timeout
 				_save_and_quit()
-		"game_over":
+		"game_over", "game_over_cp":
 			if at.call(0.1):
+				if _shot == "game_over_cp":
+					reach_checkpoint("yard")  # o Game Over com checkpoint: CONTINUAR / RECOMEÇAR
 				player.take_hit(999, player.global_basis.z, player.global_position + Vector3.UP * 1.2)
 				player.camera_rig.yaw = PI * 0.75
 				player.camera_rig.pitch = -0.6
@@ -1101,7 +1363,7 @@ func _process(delta: float) -> void:
 
 ## Revisão do começo da fase: põe a jogadora no lugar de cada parte (o telhado já é o começo).
 func _setup_start_shot() -> void:
-	if _shot != "sniper_ladder":
+	if not _shot in ["sniper_ladder", "sniper_laser"]:
 		sniper.process_mode = Node.PROCESS_MODE_DISABLED
 	var spot := func(at: Vector3, yaw: float) -> void:
 		player.global_position = at
@@ -1119,6 +1381,17 @@ func _setup_start_shot() -> void:
 			_review_cam = Camera3D.new()
 			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 			_review_cam.fov = 50.0
+			add_child(_review_cam)
+			_review_cam.current = not _player_cam
+		"sniper_laser":
+			# no chão do galpão, de frente para o mezanino; o sniper parado no meio dele
+			spot.call(Vector3(2.0, 0.0, 2.0), PI)
+			sniper.global_position = Vector3(-1.0, Catwalk.FLOOR_Y, 11.7)
+			sniper.rotation.y = 0.0
+			sniper.route.clear()
+			_review_cam = Camera3D.new()
+			_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			_review_cam.fov = 55.0
 			add_child(_review_cam)
 			_review_cam.current = not _player_cam
 		"ladder_roof", "sniper_ladder":
@@ -1202,9 +1475,11 @@ func _setup_start_shot() -> void:
 				_review_cam.global_position = mid + inward.rotated(Vector3.UP, a) * _dist * 1.6 + Vector3.UP * 0.3
 				_review_cam.look_at(mid)
 			else:
-				var c: Chest = ([chest, chests[1], locker] as Array)[clampi(int(_part) if _part != "" else 0, 0, 2)]
+				var c: Node3D = ([chest, chests[1], locker, drop] as Array)[clampi(int(_part) if _part != "" else 0, 0, 3)]
 				c.open()
-				var mid := c.global_transform * Vector3(0, Chest.PALLET + Chest.SIZE.y * 0.5, 0)
+				if _empty:
+					c.take_item()
+				var mid := c.global_transform * (Vector3(0, SupplyDrop.SIZE.y, 0) if c == drop else Vector3(0, Chest.PALLET + Chest.SIZE.y * 0.5, 0))
 				var front := c.global_basis.z.rotated(Vector3.UP, a)
 				_review_cam.global_position = mid + (front * 0.3 + Vector3.UP * 1.1) * _dist * 0.5
 				_review_cam.look_at(mid)
@@ -1298,6 +1573,15 @@ func _start_shot(at: Callable) -> void:
 			Input.action_press("aim")
 			if at.call(0.8):
 				player.fire()
+		"sniper_laser":
+			if at.call(0.2):
+				sniper.spot()
+			if _review_cam:
+				# de lado, a meia distância entre ela e o mezanino (--yaw gira em volta do meio do feixe)
+				var mid := Vector3(0.5, 3.0, 6.5)
+				var a := deg_to_rad(70.0) if is_nan(_yaw) else _yaw
+				_review_cam.global_position = mid + Vector3(sin(a), 0.0, cos(a)) * 6.5 + Vector3.UP * 1.5
+				_review_cam.look_at(mid)
 		"sniper_ladder":
 			if at.call(0.2):
 				sniper.spot()
@@ -1320,6 +1604,17 @@ func _setup_tower_shot() -> void:
 	player.reset_physics_interpolation()
 	player.camera_rig.yaw = player.rotation.y
 	player.camera_rig.pitch = 0.12
+	standoff_armed = _shot in STANDOFF_SHOTS
+	standoff_seen = _shot == "standoff_live"
+	if standoff_armed:
+		return
+	if _shot == "tower_under":
+		# embaixo da plataforma da primeira torre (o antigo ponto cego): eles a veem pela plataforma e atiram
+		player.global_position = towers[0].global_position + Vector3(0.5, 0, 0.4)
+		player.rotation.y = -PI * 0.5
+		player.reset_physics_interpolation()
+		player.camera_rig.yaw = player.rotation.y
+		return
 	for s in tower_snipers:
 		s.sight_range = 0.0  # calmos na revisão (senão atiram nela)
 	if _shot != "towers":
@@ -1335,6 +1630,18 @@ func _setup_tower_shot() -> void:
 
 
 func _tower_shot(at: Callable) -> void:
+	if _shot in STANDOFF_SHOTS:
+		if _shot != "standoff" and cutscene.busy and cutscene.scene == "standoff" and cutscene.t > 0.4:
+			cutscene.stop()  # pula a cena: rendida, os dois na mira
+		# surrender_walk: anda devagar de lado (os lasers seguem); surrender_run: o mesmo correndo (tiro que acerta)
+		var acts: Array = {"surrender_roll": ["roll"], "surrender_aim": ["aim"], "surrender_run": ["move_left"],
+			"surrender_walk": ["walk_slow" if GameMode.sprint() else "walk", "move_left"]}.get(_shot, [])
+		if at.call(3.0):
+			for a: String in acts:
+				Input.action_press(a)
+		if _shot == "surrender_roll" and at.call(3.1):
+			Input.action_release("roll")
+		return
 	var last := tower_snipers[0]
 	if _shot != "towers" and at.call(0.5):
 		# tiro de frente (empurra para trás, para dentro da torre): mesmo assim ele tomba para o pátio

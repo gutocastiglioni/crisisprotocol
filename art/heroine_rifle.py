@@ -66,8 +66,17 @@ def muzzle_position():
 
 
 # ------------------------------------------------------------------ poses com o fuzil
-RIFLE_CHEST = frame_matrix((-0.14, -0.40, 0.34), (1, 0, 0), (0, 0, 1))  # deitado no baú, cano para a esquerda
+# deitado de lado no baú, como num estojo: cano para a esquerda dela, cabo e carregador virados para ela, alça para
+# longe (CHEST_UP; com a alça virada para ela a mão direita não chega no cabo sem torcer o pulso); o perfil aparece de
+# cima e o Godot corta o vão dele na espuma (Chest.foam); o cabo fica a CHEST_IN da frente do baú (o carregador não
+# encosta na parede) e o meio da espessura a CHEST_Z do chão (= topo da espuma). Alcançar: a pose `reach` do Pickup
+# resolve o tronco por IK.
+CHEST_IN = 0.19
+CHEST_Z = 0.32
+CHEST_UP = (0, -1, 0)  # alça para longe dela (o lado direito da arma fica para cima)
 KNEEL_DIST = 0.32  # da raiz dela até a frente do baú (o Godot põe o baú nessa distância)
+RIFLE_CHEST = frame_matrix((-0.14, -(KNEEL_DIST + CHEST_IN), CHEST_Z), (1, 0, 0), CHEST_UP)
+CHEST_GRIP = (-0.045, 0.25, 0.075)  # punho esquerdo por cima da telha com o fuzil deitado (-lado = cima)
 # carregando: os braços numa pose natural (somada ao IDLE) e o fuzil onde as mãos o levam, como quem segura de verdade:
 # braço direito junto ao corpo, antebraço cruzando na frente da barriga, mão no cabo; braço esquerdo solto, mão por baixo
 # da telha junto à coxa. O fuzil sai do cabo e aponta para a palma esquerda (diagonal na frente do peito, coronha no
@@ -86,7 +95,7 @@ def adapt(spec):
     da = spec.UPPER_ARM_LEN + spec.FOREARM_LEN - ARM_DESIGN
     AIM_TWIST = max(0.0, -da) * 250.0  # graus: ~10 para 4 cm a menos
     KNEEL_DIST = 0.32 + da
-    RIFLE_CHEST = frame_matrix((-0.14, -0.40 - da, 0.34), (1, 0, 0), (0, 0, 1))
+    RIFLE_CHEST = frame_matrix((-0.14, -(KNEEL_DIST + CHEST_IN), CHEST_Z), (1, 0, 0), CHEST_UP)
 GRAB_FRAME = 26
 PICKUP_FRAMES = 54
 
@@ -180,8 +189,14 @@ def pickup_keys(A, sk, hold):
                   "Head": (18, 0, 0)}
     kneel = A.merge(kneel_body, M.legs(80, -95, 10, 0, -95, -40), M.arms(30, -10, 40))
     kneel = _kneel_legs(sk, kneel)
-    reach = A.merge(kneel, {"Hips": (14, 0, 0), "Spine": (24, -8, 0), "Chest": (12, -6, 0), "Head": (10, 0, 0)},
+    reach = A.merge(kneel, {"Hips": (18, 0, 0), "Spine": (30, -8, 0), "Chest": (14, -6, 0), "Head": (10, 0, 0)},
                     M.arms(55, -10, 30))
+    # o fuzil deitado fica mais fundo no baú: a inclinação do tronco (quadril, coluna, peito) entra na IK uma vez, para
+    # as mãos chegarem nele; os quadros seguem só com os braços
+    reach, e = solve_rifle(sk, reach, RIFLE_CHEST, torso=[("Hips", 0), ("Spine", 0), ("Chest", 0), ("Spine", 1)],
+                           grip=CHEST_GRIP)
+    print(f"[rifle] alcançando o fuzil deitado: erro {e * 1000:.1f} mm, quadril {reach['Hips'][0]:.0f}°, "
+          f"coluna {reach['Spine'][0]:.0f}°, peito {reach['Chest'][0]:.0f}°")
     lift = A.merge(kneel, {"Spine": (12, -8, 0), "Chest": (8, -8, 0), "Head": (6, 6, 0)})
     keys = [
         (0, A.IDLE),
@@ -203,6 +218,12 @@ def pickup_keys(A, sk, hold):
                 return _lerp_frame(a, b, t * t * (3 - 2 * t))
         return rifle_keys[-1][1]
 
+    def grip_at(f):
+        # deitado no baú a esquerda vai por cima da telha; levantando, passa para baixo dela (pegada de carregar)
+        t = min(1.0, max(0.0, (f - GRAB_FRAME) / (40 - GRAB_FRAME)))
+        t = t * t * (3 - 2 * t)
+        return tuple(a + (b - a) * t for a, b in zip(CHEST_GRIP, HANDGUARD_GRIP))
+
     out = []
     worst = 0.0
     prev = None
@@ -212,7 +233,7 @@ def pickup_keys(A, sk, hold):
             if prev:
                 for k in ("UpperArm_L", "LowerArm_L", "UpperArm_R", "LowerArm_R", "Hand_R"):
                     pose[k] = prev[k]
-            pose, e = solve_rifle(sk, pose, rifle_at(f))
+            pose, e = solve_rifle(sk, pose, rifle_at(f), grip=grip_at(f))
             worst = max(worst, e)
             prev = pose
         out.append((f, pose))

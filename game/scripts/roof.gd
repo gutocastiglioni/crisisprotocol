@@ -111,6 +111,7 @@ static func _props(parent: Node) -> void:
 	o.light_color = Color(1.0, 0.2, 0.15)
 	o.light_energy = 0.9
 	o.omni_range = 4.0
+	o.add_to_group("lamps")  # sombra no PS2 (Gfx)
 	parent.add_child(o)
 
 

@@ -17,7 +17,7 @@ const CHAR_TINT := Color(0.2, 0.17, 0.15)  # corpo carbonizado (char_body)
 const LOOPS := [
 	"Idle", "Walk", "Run", "AimIdle", "Crouch", "StrafeL", "StrafeR", "CrouchWalk", "CrouchStrafeL", "CrouchStrafeR",
 	"Fall", "Hang", "RifleHold", "RifleAim", "Dazed", "LadderUp", "LadderDown", "LadderIdle", "Console",
-	"CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR",
+	"CoverL", "CoverR", "CoverCrouchL", "CoverCrouchR", "SurrenderHold",
 ]
 const UPPER_BODY := [
 	"Spine", "Chest", "Neck", "Head",
@@ -26,12 +26,15 @@ const UPPER_BODY := [
 const STATES := {
 	"idle": "Idle", "walk": "Walk", "run": "Run", "crouch": "Crouch", "crouch_walk": "CrouchWalk", "roll": "Roll",
 	"strafe_l": "StrafeL", "strafe_r": "StrafeR", "crouch_strafe_l": "CrouchStrafeL", "crouch_strafe_r": "CrouchStrafeR",
+	"strafe_fast_l": "StrafeFastL", "strafe_fast_r": "StrafeFastR",
 	"jump": "Jump", "jump_up": "JumpUp", "fall": "Fall", "land": "Land", "hang": "Hang", "climb": "ClimbUp", "mantle": "Mantle", "pickup": "Pickup",
 	"pickup_pistol": "PickupPistol",
 	"assassinate": "Assassinate", "crit_strike": "CritStrike",
 	"death": "Death", "dazed": "Dazed", "ladder_up": "LadderUp", "ladder_down": "LadderDown", "ladder_idle": "LadderIdle",
 	"ladder_out": "LadderOut", "ladder_in": "LadderIn", "ladder_out_low": "LadderOutLow", "ladder_in_low": "LadderInLow",
 	"hatch_open": "HatchOpen", "shocked": "Shocked", "console": "Console",
+	# rendida na mira dos snipers das torres: levanta as mãos e fica com elas ao alto (ciclo)
+	"surrender": "Surrender", "surrender_hold": "SurrenderHold",
 	"stagger_back": "StaggerBack", "stagger_fwd": "StaggerFwd", "getup_front": "GetUpFront", "getup_back": "GetUpBack",
 	# encostada de costas na cobertura (PlayerCover), olhando para a esquerda / direita dela
 	"cover_l": "CoverL", "cover_r": "CoverR", "cover_crouch_l": "CoverCrouchL", "cover_crouch_r": "CoverCrouchR",
@@ -39,16 +42,22 @@ const STATES := {
 ## encostada: com arma longa só os braços vêm da pose de carregar (o tronco reclinado e a cabeça virada ficam)
 const COVER := ["cover_l", "cover_r", "cover_crouch_l", "cover_crouch_r"]
 const ARMS := ["UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R"]
+## passo lateral: a parte de cima do StrafeL/R é a da mira (arma esticada); andando de lado sem mirar (colada na parede,
+## passo até a quina), a parte de cima vem da pose parada: a da encostada (`cover_upper`) ou em pé/agachada
+const STRAFES := ["strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "strafe_fast_l", "strafe_fast_r"]
+const HOLD_UPPER := ["idle", "crouch", "cover_l", "cover_r", "cover_crouch_l", "cover_crouch_r", "surrender_hold"]
+## rendida (`hands_up`): nestes estados a parte de cima é a das mãos ao alto (SurrenderHold), andando ou agachada
+const HANDS_UP_UNDER := ["idle", "walk", "crouch", "crouch_walk"]
 ## estados de andar: a velocidade da animação acompanha a do corpo (parâmetro "<estado>_speed")
 const SCALED := [
 	"walk", "run", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "ladder_up", "ladder_down",
-	"getup_front", "getup_back",
+	"getup_front", "getup_back", "strafe_fast_l", "strafe_fast_r",
 ]
 ## com o fuzil, nestes estados os braços ficam na pose de carregar; nos outros seguem a animação
 const GAIT_WALK_MAX := 1.05  # set_gait: até esta fração acima da velocidade do passo ainda é andar
 const CARRY := [
 	"idle", "walk", "run", "crouch", "crouch_walk", "strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r",
-	"jump", "jump_up", "fall", "land",
+	"strafe_fast_l", "strafe_fast_r", "jump", "jump_up", "fall", "land",
 ]
 ## arma: [malha, marcador do cano]
 const WEAPONS := {
@@ -67,7 +76,7 @@ const SHELL_PORT := Vector3(0.02, 0.018, 0.21)
 const STEP_UP := 0.03
 const STEP_DOWN := 0.01
 const STEP_DB := {
-	"walk": -6.0, "run": 0.0, "strafe_l": -7.0, "strafe_r": -7.0,
+	"walk": -6.0, "run": 0.0, "strafe_l": -7.0, "strafe_r": -7.0, "strafe_fast_l": -5.0, "strafe_fast_r": -5.0,
 	"crouch_walk": -13.0, "crouch_strafe_l": -13.0, "crouch_strafe_r": -13.0,
 }
 const AIR := ["jump", "jump_up", "fall"]
@@ -114,6 +123,11 @@ var _aim := 0.0
 var _aim_target := 0.0
 var _carry := 0.0
 var _carry_arms := 0.0
+var _hold_upper := 0.0
+var _hold_pick := ""
+## encostada na parede (PlayerCover): o estado da pose encostada, para a parte de cima andando de lado ("" = solta)
+var cover_upper := ""
+var hands_up := false  # rendida: mãos ao alto por cima do andar/agachar (HANDS_UP_UNDER)
 var _pump: Node3D
 var _pump_rest: Transform3D
 var _pump_t := -1.0  # segundos desde o tiro da escopeta (-1 = parada)
@@ -245,7 +259,7 @@ func _build_tree() -> void:
 		base.add_input(s)
 		bt.add_node("a_" + s, _anim(STATES[s]))
 	bt.add_node("base", base)
-	for s in SCALED:
+	for s in SCALED.filter(func(x): return x in states):  # o corpo do guerrilheiro não tem todas (StrafeFast)
 		bt.add_node(s + "_speed", AnimationNodeTimeScale.new())
 		bt.connect_node(s + "_speed", 0, "a_" + s)
 	# subir da borda pode começar no meio (borda baixa: o pulo já entra na subida)
@@ -259,12 +273,27 @@ func _build_tree() -> void:
 		base.set_input_reset(i, true)
 		i += 1
 
+	# andando de lado sem mirar: a parte de cima da pose parada (STRAFES/HOLD_UPPER)
+	var hold_pick := AnimationNodeTransition.new()
+	hold_pick.xfade_time = XFADE
+	var hold_in := HOLD_UPPER.filter(func(h): return anim_player.has_animation(STATES[h]))
+	for h in hold_in:
+		hold_pick.add_input(h)
+	bt.add_node("hold_pick", hold_pick)
+	for h in hold_in.size():
+		bt.add_node("a_hold_" + hold_in[h], _anim(STATES[hold_in[h]]))
+		bt.connect_node("hold_pick", h, "a_hold_" + hold_in[h])
+	var hold_upper := AnimationNodeBlend2.new()
+	_filter_upper_body(hold_upper)
+	bt.add_node("hold_upper", hold_upper)
+	bt.connect_node("hold_upper", 0, "base")
+	bt.connect_node("hold_upper", 1, "hold_pick")
 	# fuzil nas mãos (pose de carregar) por cima da locomoção
 	var carry := AnimationNodeBlend2.new()
 	_filter_upper_body(carry)
 	bt.add_node("a_carry", _anim("RifleHold"))
 	bt.add_node("carry", carry)
-	bt.connect_node("carry", 0, "base")
+	bt.connect_node("carry", 0, "hold_upper")
 	bt.connect_node("carry", 1, "a_carry")
 	var carry_arms := AnimationNodeBlend2.new()
 	_filter_bones(carry_arms, ARMS)
@@ -357,10 +386,21 @@ func _process(delta: float) -> void:
 	_aim = move_toward(_aim, _aim_target, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim)
 	aim_pitch.influence = _aim
-	var carry := 1.0 if weapon in LONG_GUNS and not holstered and state in CARRY else 0.0
+	var strafing := state in STRAFES and _aim_target == 0.0
+	var cover_strafe := strafing and cover_upper != ""
+	var raised := hands_up and state in HANDS_UP_UNDER and anim_player.has_animation(STATES["surrender_hold"])
+	if strafing or raised:
+		var pick := "surrender_hold" if raised else (cover_upper if cover_upper != "" else ("crouch" if state.begins_with("crouch") else "idle"))
+		if pick != _hold_pick and anim_player.has_animation(STATES[pick]):
+			_hold_pick = pick
+			tree.set("parameters/hold_pick/transition_request", pick)
+	_hold_upper = move_toward(_hold_upper, 1.0 if strafing or raised else 0.0, delta * 6.0)
+	tree.set("parameters/hold_upper/blend_amount", _hold_upper)
+	var long_gun := weapon in LONG_GUNS and not holstered
+	var carry := 1.0 if long_gun and state in CARRY and not cover_strafe else 0.0
 	_carry = move_toward(_carry, carry, delta * 6.0)
 	tree.set("parameters/carry/blend_amount", _carry)
-	var arms := 1.0 if weapon in LONG_GUNS and not holstered and state in COVER else 0.0
+	var arms := 1.0 if long_gun and (state in COVER or cover_strafe) else 0.0
 	_carry_arms = move_toward(_carry_arms, arms, delta * 6.0)
 	tree.set("parameters/carry_arms/blend_amount", _carry_arms)
 	_update_pump(delta)

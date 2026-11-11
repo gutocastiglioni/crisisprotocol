@@ -1,7 +1,9 @@
 extends RefCounted
 ## Testes das torres de guarda do portão do pátio (GuardTower, Yard.TOWERS), dos snipers delas (fora de cena até os 3
 ## raptors da emboscada morrerem), da queda do último (cambaleia até a cerca, debruça no abdome e cai) com o fuzil e o
-## cartão do painel do portão só depois que o corpo para, e da chave da M79 com a etiqueta "0M79". Chamado por
+## cartão do painel do portão só depois que o corpo para, da rendição (os 3 raptors mortos: cena, lasers nela, rendida até
+## se mexer; rolar = tiros que erram, mirar = tiros que acertam, depois a mira de 5 s) e da chave da M79 com a etiqueta
+## "0M79". Chamado por
 ## run_tests.gd (usa check/_frames de lá; perfil "arcade").
 
 var t: SceneTree  # o runner (run_tests.gd)
@@ -13,6 +15,8 @@ func run(runner: SceneTree) -> void:
 	await test_towers_and_hidden_snipers()
 	await test_last_sniper_falls_with_card()
 	await test_no_shot_from_roof_or_offstage()
+	await test_standoff()
+	await test_tower_zone()
 
 
 func _main() -> Node:
@@ -26,8 +30,9 @@ func _main() -> Node:
 	return main
 
 
-func _kill_yard_raptors(main: Node) -> void:
+func _kill_yard_raptors(main: Node, standoff := false) -> void:
 	main.corpse.armed = false  # como no jogo: os 3 só morrem depois da emboscada (perto do morto a cena não toca de novo)
+	main.standoff_armed = standoff  # a rendição só no teste dela
 	for r: Raptor in main.yard_raptors:
 		r.lurking = false
 		r.take_hit(999, Vector3.FORWARD, r.global_position)
@@ -95,6 +100,7 @@ func test_towers_and_hidden_snipers() -> void:
 	# dois raptors mortos: ainda não; o terceiro: sobem nas torres (como no jogo, depois da emboscada: perto do morto a cena
 	# não toca de novo, e numa cena ninguém a vê)
 	main.corpse.armed = false
+	main.standoff_armed = false  # a rendição tem o teste dela (test_standoff)
 	var rs: Array[Raptor] = main.yard_raptors
 	for i in 2:
 		rs[i].lurking = false
@@ -275,3 +281,186 @@ func test_last_sniper_falls_with_card() -> void:
 		"R: o ragdoll dele volta ao normal (juntas e amortecimento)", "%s %s" % [swing, knee])
 	main.queue_free()
 	await t._frames(2)
+
+
+## Os 3 raptors da emboscada mortos com ela no pátio: a cena da rendição (os dois lasers nela, mãos ao alto, as três
+## falas) e depois ela rendida, sem perigo no sensor e sem tiro; andando devagar de mãos ao alto, os lasers a seguem.
+## Rolar: os dois atiram na hora e erram; a mira seguinte leva Sniper.STANDOFF_LOCK s, com o sensor enchendo nesse
+## tempo. Mirar ou correr: os dois atiram na hora e acertam. R arma a cena de novo.
+func test_standoff() -> void:
+	var main: Node = await _main()
+	var p: Player = main.player
+	var cs: Cutscene = main.cutscene
+	var snipers: Array[Sniper] = main.tower_snipers
+	p.health = 100000  # os tiros dos snipers não a matam aqui
+	await _to_yard(main, p)
+	_kill_yard_raptors(main, true)
+	await t._frames(int(main.STANDOFF_DELAY * 60) - 20)
+	t.check(not cs.busy and snipers.all(func(s: Sniper) -> bool: return not s.lurking), "os snipers sobem; a cena espera um instante")
+	var started := false
+	for i in 60:
+		await t._frames(1)
+		if cs.busy:
+			started = true
+			break
+	t.check(started and cs.scene == "standoff" and p.cutscene, "com os 3 mortos e ela no pátio: a cena da rendição", cs.scene)
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.in_standoff()), "os dois a pegam na mira")
+	var lines := {}
+	var crossed := false
+	var hands := false
+	while cs.busy:
+		await t._frames(1)
+		if cs._sub.visible:
+			lines[cs._sub.text] = true
+		if cs.t > Cutscene.STAND_CLOSE_AT and snipers.all(func(s: Sniper) -> bool: return s.laser.visible and s.laser.end.distance_to(p.sight_point()) < 0.3):
+			crossed = true
+		if cs.t > Cutscene.STAND_HANDS_AT + 0.1 and p.model.state in ["surrender", "surrender_hold"]:
+			hands = true
+	t.check(crossed, "os dois lasers chegam ao peito dela (cruzando nela)")
+	t.check(hands, "ela levanta as mãos (Surrender)")
+	t.check(Cutscene.STAND_LINES.all(func(l: String) -> bool: return lines.has(l)), "as três falas", str(lines.keys()))
+	await t._frames(2)
+	t.check(p.surrendered and not p.cutscene and p.model.state == "surrender_hold" and p.model.holstered, "no fim: rendida, mãos ao alto, sem arma na mão", p.model.state)
+	var hp := p.health
+	await t._frames(120)
+	t.check(p.surrendered and p.health == hp and snipers.all(func(s: Sniper) -> bool: return s.in_standoff() and s.shots_fired == 0 and s.laser.visible),
+		"parada, ninguém atira e os lasers seguem nela")
+	var early := DangerMeter.sample(t.get_root().get_tree())
+	t.check(early > 0.05 and early < 0.25, "rendida: o perigo começa a crescer devagar (15 s até o tiro)", "%.2f" % early)
+	# rolar: os dois atiram na hora e erram; depois a mira de 5 s
+	Input.action_press("roll")
+	await t._frames(2)
+	Input.action_release("roll")
+	await t._frames(1)
+	t.check(not p.surrendered and p.rolling, "rolar acaba com a rendição")
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.shots_fired == 1) and p.health == hp, "os dois atiram na hora e erram (rolando)",
+		"%s %d" % [snipers.map(func(s: Sniper) -> int: return s.shots_fired), hp - p.health])
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.state == "aim_lock" and is_equal_approx(s._lock_time, Sniper.STANDOFF_LOCK)),
+		"e miram de novo, devagar", str(snipers.map(func(s: Sniper) -> String: return s.state)))
+	await t._frames(150)
+	var mid := DangerMeter.sample(t.get_root().get_tree())
+	t.check(mid > 0.25 and mid < 0.75 and snipers.all(func(s: Sniper) -> bool: return s.shots_fired == 1),
+		"na metade da mira lenta o sensor está pela metade e ninguém atirou", "%.2f" % mid)
+	var shot_at := -1.0
+	for i in 240:
+		await t._frames(1)
+		if snipers.any(func(s: Sniper) -> bool: return s.shots_fired > 1):
+			shot_at = (150 + i + 3) / 60.0
+			break
+	t.check(shot_at > Sniper.STANDOFF_LOCK - 0.5 and shot_at < Sniper.STANDOFF_LOCK + 0.8, "o tiro seguinte sai uns 5 s depois de ela se mexer", "%.2f s" % shot_at)
+	await t._frames(30)
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.state != "aim_lock" or is_equal_approx(s._lock_time, Sniper.AIM_LOCK_TIME)), "depois, o ritmo de sempre")
+	# R: a cena arma de novo; desta vez ela mira (a cena é pulada)
+	main.reset_all()
+	await t._frames(3)
+	t.check(main.standoff_armed and not p.surrendered and snipers.all(func(s: Sniper) -> bool: return s.lurking), "R: rendição armada de novo, ela livre")
+	p.health = 100000
+	hp = p.health
+	await _surrendered(main, p)
+	t.check(p.surrendered and snipers.all(func(s: Sniper) -> bool: return s.in_standoff() and s.laser.visible), "pulando a cena: rendida e os lasers já acesos")
+	var fired: Array = snipers.map(func(s: Sniper) -> int: return s.shots_fired)
+	Input.action_press("aim")
+	await t._frames(3)
+	Input.action_release("aim")
+	await t._frames(1)
+	t.check(not p.surrendered and snipers.all(func(s: Sniper) -> bool: return s.shots_fired == fired[snipers.find(s)] + 1) and p.health < hp, "mirar: os dois atiram na hora e acertam", str(hp - p.health))
+	# R de novo; desta vez ela anda devagar (os lasers a seguem) e depois corre (os dois acertam)
+	main.reset_all()
+	await t._frames(3)
+	p.health = 100000
+	hp = p.health
+	await _surrendered(main, p)
+	fired = snipers.map(func(s: Sniper) -> int: return s.shots_fired)
+	var walk_btn := "walk_slow" if GameMode.sprint() else "walk"
+	var from := p.global_position
+	Input.action_press(walk_btn)
+	Input.action_press("move_left")
+	var followed := true
+	for i in 60:
+		await t._frames(1)
+		followed = followed and snipers.all(func(s: Sniper) -> bool: return s.laser.visible and s.laser.end.distance_to(p.sight_point()) < 0.45)
+	var walked := p.global_position.distance_to(from)
+	t.check(p.surrendered and p.model.hands_up and p.model.state == "walk" and walked > 0.5, "rendida, anda devagar de mãos ao alto", "%.2f m %s" % [walked, p.model.state])
+	t.check(followed and snipers.all(func(s: Sniper) -> bool: return s.in_standoff() and s.shots_fired == fired[snipers.find(s)]) and p.health == hp,
+		"andando devagar: os lasers a seguem e ninguém atira")
+	t.check(DangerMeter.sample(t.get_root().get_tree()) < 0.25, "andando devagar: o perigo segue crescendo devagar")
+	Input.action_release(walk_btn)
+	await t._frames(3)
+	Input.action_release("move_left")
+	await t._frames(1)
+	t.check(not p.surrendered and snipers.all(func(s: Sniper) -> bool: return s.shots_fired == fired[snipers.find(s)] + 1) and p.health < hp,
+		"correr: os dois atiram na hora e acertam", "%s %d" % [snipers.map(func(s: Sniper) -> int: return s.shots_fired), hp - p.health])
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.state == "aim_lock" and is_equal_approx(s._lock_time, Sniper.STANDOFF_LOCK)), "e depois a mira lenta")
+	# R de novo; desta vez ela fica parada na mira: o perigo enche em 15 s e eles atiram
+	main.reset_all()
+	await t._frames(3)
+	p.health = 100000
+	hp = p.health
+	await _surrendered(main, p)
+	fired = snipers.map(func(s: Sniper) -> int: return s.shots_fired)
+	await t._frames(int(Sniper.STANDOFF_TIMEOUT * 30))
+	var half := DangerMeter.sample(t.get_root().get_tree())
+	t.check(p.surrendered and half > 0.35 and half < 0.65 and p.health == hp, "na metade dos 15 s o perigo está pela metade", "%.2f" % half)
+	var timed_out := -1.0
+	for i in int(Sniper.STANDOFF_TIMEOUT * 30) + 60:
+		await t._frames(1)
+		if snipers.any(func(s: Sniper) -> bool: return s.shots_fired > fired[snipers.find(s)]):
+			timed_out = Sniper.STANDOFF_TIMEOUT * 0.5 + (i + 1) / 60.0
+			break
+	await t._frames(2)
+	t.check(timed_out > Sniper.STANDOFF_TIMEOUT - 0.5 and timed_out < Sniper.STANDOFF_TIMEOUT + 0.5 and not p.surrendered and p.health < hp,
+		"15 s na mira: os dois atiram e acertam", "%.2f s %d" % [timed_out, hp - p.health])
+	main.queue_free()
+	await t._frames(2)
+
+
+## Ela na estrada do pátio, de frente para o portão (perto do morto: a emboscada já passou).
+func _to_yard(main: Node, p: Player) -> void:
+	main.corpse.armed = false
+	p.global_position = Vector3(-43.0, 0, -4.0)
+	p.rotation.y = PI * 0.5
+	p.reset_physics_interpolation()
+	await t._frames(3)
+
+
+## Os 3 raptors mortos, a cena da rendição pulada: ela rendida na mira dos dois.
+func _surrendered(main: Node, p: Player) -> void:
+	await _to_yard(main, p)
+	_kill_yard_raptors(main, true)
+	for i in 150:
+		await t._frames(1)
+		if main.cutscene.busy:
+			break
+	main.cutscene.stop()
+	await t._frames(2)
+
+
+## Snipers das torres de Flak Jacket; embaixo da plataforma da torre ela não fica escondida (a torre não tapa a vista, o
+## tiro nem o laser deles) e perto demais do portão do fundo ou das torres eles a veem e atiram.
+func test_tower_zone() -> void:
+	var main: Node = await _main()
+	var p: Player = main.player
+	var snipers: Array[Sniper] = main.tower_snipers
+	_kill_yard_raptors(main)
+	await t._frames(3)
+	t.check(snipers.all(func(s: Sniper) -> bool: return s.flak and is_equal_approx(s.armor, Soldier.FLAK_MULT) and s.armor_name == Soldier.FLAK_TEXT),
+		"snipers das torres de Flak Jacket")
+	t.check(not main.sniper.flak and main.sniper.armor_name == "", "o do mezanino segue de colete comum")
+	t.check(not main.in_tower_zone(Vector3(-43.0, 0, -4.0)), "da estrada: longe do portão")
+	p.health = 100000
+	var hp := p.health
+	p.global_position = main.towers[0].global_position + Vector3(0.5, 0, 0.4)
+	p.reset_physics_interpolation()
+	await t._frames(3)
+	t.check(main.in_tower_zone(p.global_position), "embaixo da torre: perto demais")
+	t.check(snipers.all(func(s: Sniper) -> bool: return s._line_clear(p)), "embaixo da plataforma ela não fica escondida (sem ponto cego)")
+	var shot := false
+	for i in 240:
+		await t._frames(1)
+		if snipers.any(func(s: Sniper) -> bool: return s.shots_fired > 0) and p.health < hp:
+			shot = true
+			break
+	t.check(shot, "perto demais do portão/torres: eles atiram e acertam", str(snipers.map(func(s: Sniper) -> String: return s.state)))
+	main.queue_free()
+	await t._frames(2)
+

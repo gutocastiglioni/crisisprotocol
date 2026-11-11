@@ -286,6 +286,33 @@ func take(p: Player) -> void:
 	picked.emit(self)
 
 
+## Checkpoint: com o dono, na mão do morto, no chão ou no bolso dela.
+func save_state() -> Dictionary:
+	return {"state": state, "xf": global_transform, "shine": shine}
+
+
+## Checkpoint: de volta ao estado salvo (caindo = já no chão, sem som).
+func load_state(s: Dictionary) -> void:
+	reset()
+	shine = s.shine
+	match s.state:
+		"held":
+			hold(s.xf)
+		"dropping", "dropped":
+			state = "dropped"
+			global_transform = s.xf
+			if s.state == "dropping":
+				# salvo no meio da queda: no chão embaixo de onde estava
+				var from: Vector3 = s.xf.origin
+				var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 3.0, 1))
+				if hit:
+					global_position.y = hit.position.y
+			_t = 0.0
+			_show(true)
+		"taken":
+			state = "taken"
+
+
 ## Reinício: volta a ficar com o dono.
 func reset() -> void:
 	state = "hidden"

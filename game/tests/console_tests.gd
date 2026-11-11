@@ -78,7 +78,7 @@ func test_noise_wakes_him() -> void:
 
 func test_back_to_the_panel() -> void:
 	# desistiu da busca: anda de volta, encosta no lugar da bancada e volta a mexer no painel (cego de novo)
-	var pr := await _spawn_guard(Vector3(0, 0, -15))
+	var pr := await _spawn_guard(Vector3(0, 0, -19))  # fora do alcance dele calmo (ela parada em pé: 16 m)
 	var p: Player = pr[0]
 	var s: Soldier = pr[1]
 	var post := s.global_position

@@ -555,6 +555,13 @@ func test_stealth_status() -> void:
 	p.stealth.visibility = 0.35  # agachada
 	radar.update(0.016)
 	t.check(radar.status_text() == "INVISÍVEL", "furtividade: agachada = INVISIVEL", radar.status_text())
+	p.crouching = true  # agachada de verdade, no aberto a 8 m dele: o agachar não a esconde
+	await t._frames(3)
+	radar.update(0.016)
+	t.check(radar.status_text() == "VISÍVEL", "furtividade: agachada no aberto ao alcance dele = VISIVEL", radar.status_text())
+	p.crouching = false
+	await t._frames(1)
+	p.stealth.visibility = 0.35
 	s.start_suspicious()
 	radar.update(0.016)
 	t.check(radar.level == 1 and Radar.STATES[radar.level] == "DESCONFIADOS", "furtividade: inimigo desconfiado = DESCONFIADOS", str(radar.level))
