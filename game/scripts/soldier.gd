@@ -156,8 +156,8 @@ func _ready() -> void:
 		burst_shots = PISTOL.burst
 		shot_gap = PISTOL.gap
 		if drop_kind == "":
-			drop_kind = "pistol"  # munição da pistola (a arma ela já tem)
-			drop_amount = 6
+			drop_kind = "pistol"  # munição da pistola (a arma ela já tem): um pente
+			drop_amount = 10
 	if drop_kind == "":
 		drop_kind = "m16"
 		drop_is_weapon = true

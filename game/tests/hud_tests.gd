@@ -152,9 +152,9 @@ func test_hud_in_game() -> void:
 	t.check(radar.rings.is_empty(), "radar: parada, sem anel de barulho", str(radar.rings.size()))
 	p.make_noise(10.0, 0.0)
 	t.check(radar.rings.size() == 1 and not radar.heard_recently(), "radar: barulho no telhado = anel que ninguém ouviu", str(radar.rings))
-	# no galpão, olhando para os guardas da porta do pátio pelo vão da parede de caixas do leste (z = -8,4); daqui o sentinela
-	# 3 fica atrás da caixa empilhada (-3,75; -7) por ~1 cm: o 4, da mesma porta, é o que está à vista
-	p.global_position = Vector3(-1.0, 0, -8.4)
+	# no canto da porta do pátio (por dentro do portão do canto), olhando para os guardas da porta do pátio: o 4 está à vista
+	# (de fora, pelo portão, as pilhas Shed.CORNER_SCREEN tapam a vista de propósito)
+	p.global_position = Vector3(-7.0, 0, -8.4)
 	p.rotation.y = PI * 0.5
 	p.camera_rig.yaw = p.rotation.y
 	p.reset_physics_interpolation()
@@ -216,7 +216,7 @@ func test_hud_in_game() -> void:
 	main.apply_mode(GameMode.SURVIVAL)
 	await t._frames(2)
 	main._process(0.016)
-	t.check(main._hud_weapon.text == str(p.ammo_of("pistol")) and main._hud_weapon.position.x + main._hud_weapon.size.x <= icon.position.x, "HUD sobrevivência: munição ao lado do modelo", main._hud_weapon.text)
+	t.check(main._hud_weapon.text == "%d/%d" % [p.mag_of("pistol"), p.reserve_of("pistol")] and main._hud_weapon.position.x + main._hud_weapon.size.x <= icon.position.x, "HUD sobrevivência: munição ao lado do modelo", main._hud_weapon.text)
 	main.apply_mode(GameMode.ARCADE)
 	main.queue_free()
 	await t._frames(2)
@@ -317,8 +317,9 @@ func test_mode_switch_hud() -> void:
 	await t._frames(2)
 	main._process(0.016)
 	var ammo_text: String = main._hud_weapon.text
-	t.check(ammo_text != "" and ammo_text.is_valid_int(), "survival: número de munição no HUD", ammo_text)
-	t.check(int(ammo_text) == main.player.ammo_of("pistol"), "survival: número correto", "%s vs %d" % [ammo_text, main.player.ammo_of("pistol")])
+	var parts := ammo_text.split("/")
+	t.check(parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int(), "survival: pente/reserva no HUD", ammo_text)
+	t.check(ammo_text == "%d/%d" % [main.player.mag_of("pistol"), main.player.reserve_of("pistol")], "survival: números corretos", ammo_text)
 	# munição baixa (LOW_AMMO): vermelho
 	main.player.ammo["pistol"] = 2
 	main._process(0.016)
@@ -328,7 +329,7 @@ func test_mode_switch_hud() -> void:
 	main.reset_all()
 	await t._frames(2)
 	main._process(0.016)
-	t.check(main._hud_weapon.text != "" and int(main._hud_weapon.text) > 2, "R limpa e volta à munição inicial", main._hud_weapon.text)
+	t.check(main._hud_weapon.text == "%d/%d" % [GameMode.MAGAZINE.pistol, 0], "R limpa e volta à munição inicial", main._hud_weapon.text)
 	main.apply_mode(GameMode.ARCADE)  # os testes seguintes são do arcade
 	main.queue_free()
 	await t._frames(2)

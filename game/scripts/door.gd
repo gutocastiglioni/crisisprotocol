@@ -269,6 +269,24 @@ func open() -> void:
 		Sfx.play(self, "chest_open", global_position + Vector3.UP * 1.2, 2.0, 0.6)
 
 
+## Fecha de novo, com as folhas correndo (portão de grade que um guarda abriu, Shed): volta a segurar e a travar como estava.
+func close() -> void:
+	if not opened or blown:
+		return
+	opened = false
+	collision_layer = solid_layer
+	_col.set_deferred("disabled", false)
+	_reader_color(Color(1.0, 0.15, 0.15) if held or is_locked_door else Color(0.2, 1.0, 0.3))
+	if _tween:
+		_tween.kill()
+	_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	for pn in _panels:
+		_tween.tween_property(pn.node, "position", pn.pos, OPEN_TIME)
+		_tween.tween_property(pn.node, "rotation:y", pn.rot, OPEN_TIME)
+	if is_inside_tree():
+		Sfx.play(self, "chest_open", global_position + Vector3.UP * 1.2, 2.0, 0.5)
+
+
 ## As folhas ainda estão correndo (abrindo, arrombada): ela espera parada (`PlayerMoves.start_door`).
 func is_moving() -> bool:
 	return _tween != null and _tween.is_valid() and _tween.is_running()

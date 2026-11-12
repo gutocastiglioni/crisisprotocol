@@ -12,6 +12,7 @@ func run(runner: SceneTree) -> void:
 	await test_fences()
 	await test_panel_and_lab()
 	await test_reinforcements()
+	await test_guard_opens_gate()
 
 
 func _main() -> Node:
@@ -80,10 +81,40 @@ func test_fences() -> void:
 	for pt in path:
 		near = minf(near, Vector2(pt.x - Shed.CORNER_GATE.x, pt.z - Shed.CORNER_GATE.z).length())
 	t.check(path.size() > 1 and near < 1.2, "do canto para o meio só pelo portão de grade do canto", "%.1f" % near)
-	# sem escalar a parede de caixas do canto e pular para dentro (grade por cima das caixas)
-	_put(p, Vector3(-3.75 + 0.75, 0, -11.0), PI * 0.5)  # de frente para a parede leste do canto, do lado do meio
+	# sem escalar a parede de caixas do canto e pular para dentro (as caixas dela não se escalam)
+	for z in [-11.0, -9.8, -7.0]:
+		_put(p, Vector3(-3.75 + 0.75, 0, z), PI * 0.5)  # de frente para a parede leste do canto, do lado do meio
+		await t._frames(10)
+		t.check(not p.moves.try_ledge(Vector3.LEFT), "a parede de caixas do canto não dá para escalar (z %.1f)" % z)
+	_put(p, Vector3(-5.8, 0, 1.6), PI)  # na frente da caixa baixa da ponta da parede do sul, do lado de fora
 	await t._frames(10)
-	t.check(not p.moves.try_ledge(Vector3.LEFT), "a parede de caixas do canto não dá para escalar (grade em cima)")
+	t.check(not p.moves.try_ledge(Vector3.FORWARD.rotated(Vector3.UP, PI)), "nem a caixa baixa da ponta da parede do sul")
+	# alambrado só até FENCE_H (nada até o teto)
+	t.check(space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-2, Shed.FENCE_H + 0.3, 4.5), Vector3(-2, Shed.FENCE_H + 0.3, 1.5), Yard.GRATE_LAYER)).is_empty()
+		and not space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-2, Shed.FENCE_H - 0.3, 4.5), Vector3(-2, Shed.FENCE_H - 0.3, 1.5), Yard.GRATE_LAYER)).is_empty(),
+		"a grade vai até %.1f m, não até o teto" % Shed.FENCE_H)
+	# portão do canto fechado: o canto é outro lugar (vista, som e alarme não passam); aberto, passa
+	var inside := Vector3(-8.0, 0, -7.0)
+	var m16 := Vector3(10.0, 0, -10.2)
+	t.check(Shed.in_corner(inside) and not Shed.in_corner(m16) and not Shed.in_corner(Vector3(-5.6, 0, -1.6)),
+		"canto da porta do pátio: só por dentro das paredes de caixas e grades (a ronda 8 passa fora)")
+	t.check(Shed.apart(t, inside, m16), "portão do canto fechado: o canto fica à parte")
+	var corner: Array = shed.corner_guards
+	for sd: Soldier in main.soldiers:
+		sd.process_mode = Node.PROCESS_MODE_DISABLED
+	for g: Soldier in corner:
+		g.process_mode = Node.PROCESS_MODE_INHERIT
+	_put(p, m16, 0.0)
+	await t._frames(3)
+	p.make_noise(26.0, 2.2)  # tiro na ala da M16
+	await t._frames(20)
+	t.check(corner.all(func(g: Soldier) -> bool: return g.alert_level() == 0 and not g.in_combat()),
+		"tiro na ala da M16 não chega aos guardas do canto (portão fechado)")
+	shed.corner_gate.open()
+	t.check(not Shed.apart(t, inside, m16), "portão do canto aberto: o canto e o galpão se juntam")
+	shed.corner_gate.close()
+	await t._frames(70)
+	t.check(not shed.corner_gate.opened and shed.corner_gate.held, "fechou de novo, ainda travado")
 	main.queue_free()
 	await t._frames(2)
 
@@ -197,5 +228,48 @@ func test_reinforcements() -> void:
 	await t._frames(3)
 	t.check(shed.waves_sent == [0, 0] and shed.reinforcements[1].all(func(sd: Soldier) -> bool: return sd.lurking and not sd.visible),
 		"R: reforços de volta à saleta")
+	main.queue_free()
+	await t._frames(2)
+
+
+## Guarda indo para dentro do canto (busca) abre o portão travado ao chegar nele; passou, o portão fecha sozinho depois de
+## AUTO_CLOSE s com o vão livre e segue travado.
+func test_guard_opens_gate() -> void:
+	var main: Node = await _main()
+	var shed: Shed = main.shed
+	var p: Player = main.player
+	p.health = 100000
+	_put(p, Vector3(10.0, 0, 8.0))  # longe, fora da vista
+	for sd: Soldier in main.soldiers:
+		sd.process_mode = Node.PROCESS_MODE_DISABLED
+	var g: Soldier = main.soldiers[9]  # sentinela da porta norte, ao lado do portão do canto
+	g.process_mode = Node.PROCESS_MODE_INHERIT
+	g.global_position = Shed.CORNER_GATE + Vector3(2.0, 0, 0)
+	g.reset_physics_interpolation()
+	await t._frames(5)
+	var goal := Vector3(-8.0, 0, -6.5)
+	g._alert_self(goal)
+	g.start_hunt(goal)
+	var opened := false
+	for i in 400:
+		await t._frames(1)
+		if shed.corner_gate.opened:
+			opened = true
+			break
+	t.check(opened, "guarda indo para o canto abre o portão travado")
+	var through := false
+	for i in 600:
+		await t._frames(1)
+		if Shed.in_corner(g.global_position) and g.global_position.x < Shed.CORNER_GATE.x - 1.5:
+			through = true
+			break
+	t.check(through, "e passa por ele", str(g.global_position))
+	var closed := false
+	for i in int((Shed.AUTO_CLOSE + 4.0) * 60):
+		await t._frames(1)
+		if not shed.corner_gate.opened:
+			closed = true
+			break
+	t.check(closed and shed.corner_gate.held, "com o vão livre o portão fecha sozinho e segue travado")
 	main.queue_free()
 	await t._frames(2)

@@ -8,7 +8,7 @@ extends SkeletonModifier3D
 
 const LEAD := 0.22  # s: quanto a cabeça adianta a virada (rad de pescoço por rad/s)
 const LEAD_MAX := 0.6
-const HEAD_SHARE := {"Neck1": 0.3, "Neck2": 0.3, "Head": 0.4}
+const HEAD_SHARE := {"Neck1": 0.3, "Neck2": 0.3, "Neck3": 0.4, "Head": 0.4}  # Neck3 só no raptor (pescoço mais curto: a mais)
 const TAIL_SHARE := {"Tail1": 0.2, "Tail2": 0.3}  # base (mola 1)
 const TIP_SHARE := {"Tail3": 0.3, "Tail4": 0.4}  # ponta (mola 2, atrás da base)
 const TAIL_K := 55.0  # mola (1/s²) e amortecimento (1/s) da cauda do raptor

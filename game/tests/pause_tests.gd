@@ -303,7 +303,8 @@ func test_showroom(main: Node) -> void:
 	sk.skeleton_updated.disconnect(grab)
 	var went := room.body.position.distance_to(start)
 	t.check(absf(went - Raptor.WALK_ANIM_SPEED) < 0.25, "EM CÍRCULO: anda na velocidade do ciclo", "%.2f m em 1 s" % went)
-	t.check(m.planted > 30 and m.drag < 0.01, "EM CÍRCULO: pé de apoio parado no chão", "%d %.3f m" % [m.planted, m.drag])
+	# o andar do raptor apoia ~25% do ciclo (passo alto, a bola do pé sobe cedo): ~25 de 120 quadros
+	t.check(m.planted > 18 and m.drag < 0.01, "EM CÍRCULO: pé de apoio parado no chão", "%d %.3f m" % [m.planted, m.drag])
 	await _tap("jump")
 	t.check(room.mode == 2, "MODO troca para GIRANDO", str(room.mode))
 	var yaw0 := room.body.rotation.y

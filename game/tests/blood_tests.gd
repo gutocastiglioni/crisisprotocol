@@ -177,6 +177,17 @@ func test_player_bleeds() -> void:
 	await t._frames(40)
 	var after_hit := Blood.count()
 	t.check(after_hit >= 1, "levar golpe espirra sangue no chão", str(after_hit))
+	await t._frames(30)
+	var n_light := Blood.count()
+	Input.action_press("move_forward")
+	await t._frames(120)
+	Input.action_release("move_forward")
+	t.check(Blood.count() == n_light, "com %d de vida (acima de %d) ela não sangra" % [p.health, Player.BLEED_AT],
+		str(Blood.count() - n_light))
+	p.global_position = Vector3.ZERO  # de volta ao meio do chão (a corrida seguinte não a leva para fora dele)
+	p.velocity = Vector3.ZERO
+	p.reset_physics_interpolation()
+	await t._frames(5)
 	p.take_hit(40, Vector3.BACK, p.global_position + Vector3.UP * 1.2)  # 30 de vida: ferida grave
 	await t._frames(40)
 	var n0 := Blood.count()
@@ -254,7 +265,7 @@ func test_headshot_raptor() -> void:
 	await t._frames(3)
 	var expect := Raptor.MAX_HEALTH - Player.DAMAGE
 	t.check(heads.is_empty() and r.health == expect, "raptor cabeçudo: tiro na cabeça vale como no corpo, sem headshot", "vida=%d (esperado %d) %s" % [r.health, expect, str(heads)])
-	t.check(not r.dead and r.state != "hit", "raptor leva o tiro sem se encolher", r.state)
+	t.check(not r.dead and r.state == "hit", "raptor leva o tiro e recua com a dor", r.state)
 	t.check(r.wound() > 0.1, "raptor ferido (vai deixar rastro)", str(r.wound()))
 	Input.action_release("aim")
 

@@ -27,6 +27,7 @@ import heroine_m79  # noqa: E402
 import heroine_mesh  # noqa: E402
 import heroine_cover  # noqa: E402
 import heroine_moves  # noqa: E402
+import heroine_reload  # noqa: E402
 import heroine_rifle  # noqa: E402
 import heroine_sniper  # noqa: E402
 import heroine_rig  # noqa: E402
@@ -141,6 +142,7 @@ def write_moves(path):
     sg = heroine_shotgun
     data["pistol_pickup"] = {"grab_frame": heroine_drop.GRAB_FRAME, "frames": heroine_drop.FRAMES}
     data["shotgun"] = {"frames": sg.FRAMES, "pump": [[f, d] for f, d in sg.PUMP_KEYS], "stroke": sg.STROKE}
+    data["reload"] = heroine_reload.data()
     data["cover"] = heroine_cover.DATA  # preenchido ao montar as animações (CoverL...)
     path.write_text(json.dumps(data, indent=1), encoding="utf8")
     print(f"[heroine] medidas em {path}")

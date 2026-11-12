@@ -79,6 +79,27 @@ func test_layout() -> void:
 	var top := Yard.PLATEAU_Y
 	t.check(not _hit(space, Vector3(-26.0, top + 1.5, 20), Vector3(-34, 1.0, 20)), "da beira do planalto a vista e o tiro descem em S3")
 	t.check(_hit(space, Vector3(-23, top + 1.0, 20), Vector3(-30, top + 1.0, 20), Yard.GRATE_LAYER), "a borda do planalto segura quem quer pular para S3")
+	# do telhado do galpão não se pula para o planalto: o alambrado da borda colada no galpão segura em toda a altura
+	var roof_ok := true
+	for z in [-1.8, 3.0, 8.0, 12.9]:
+		for y in [Roof.Y + 0.5, Roof.Y + Roof.PARAPET_H + 1.0, Roof.Y + Roof.PARAPET_H + 3.0]:
+			if not _hit(space, Vector3(-12.6, y, z), Vector3(-15.0, y, z), Yard.GRATE_LAYER):
+				roof_ok = false
+	t.check(roof_ok, "alambrado entre a mureta oeste do telhado e o planalto")
+	# fim de S1: alambrado do chão para cima na frente da face do planalto; pulando do telhado na diagonal ela não agarra
+	var end_ok := true
+	for x in [-13.6, -18.0, -23.0]:
+		for y in [0.5, 2.5, Yard.PLATEAU_Y + 1.0, Roof.Y + 1.0]:
+			if not _hit(space, Vector3(x, y, -3.0), Vector3(x, y, -1.0), Yard.GRATE_LAYER):
+				end_ok = false
+	t.check(end_ok, "alambrado fecha o fim de S1 (face sul do planalto)")
+	var pl: Player = main.player
+	var no_grab := true
+	for x in [-13.8, -16.0, -22.0]:
+		_put(pl, Vector3(x, Yard.PLATEAU_Y - 1.6, -2.55))  # no ar, de frente para a borda do planalto, ao alcance das mãos
+		if not pl.moves.find_ledge(Vector3.BACK).is_empty():
+			no_grab = false
+	t.check(no_grab, "pela grade, a borda sul do planalto não dá para agarrar")
 	# entradas dos trechos sempre à frente da linha que as solta (ela anda para o norte na faixa do meio)
 	var ahead := Yard.WAVES.all(func(w: Dictionary) -> bool: return w.entries.all(func(e: Vector3) -> bool: return e.z > w.z + 6.0))
 	t.check(ahead, "cada trecho solta raptors à frente dela (6 m ou mais)")
@@ -186,7 +207,12 @@ func test_barranco_and_cliff() -> void:
 	await _tap("jump")
 	await t._frames(40)
 	t.check(p.moves.hanging(), "pula e fica pendurada na beira do barranco", "%s %s" % [p.moves.mode, p.global_position])
-	await _tap("jump")
+	# pular pendurada = sobe (o toque de 2 quadros às vezes cai entre dois passos de física: toca de novo se seguir pendurada)
+	for k in 3:
+		await _tap("jump")
+		await t._frames(4)
+		if not p.moves.hanging():
+			break
 	for i in 240:
 		await t._frames(1)
 		if p.moves.mode == "" and p.is_on_floor():

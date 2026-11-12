@@ -24,44 +24,52 @@ const COLORS := {
 	"m79": Color(0.45, 1.0, 0.3), "sniper": Color(0.2, 0.8, 1.0),
 	"health": Color(1.0, 0.15, 0.12),
 }
-## onde ficam: galpão (as armas dos baús já trazem a munição delas), trilha do pátio da mata (na beira da trilha e
+## onde ficam: galpão (pentes extras; as armas dos baús já trazem um pente cheio), trilha do pátio da mata (na beira da trilha e
 ## das faixas, longe das moitas dos raptors: um pouco antes de cada seção, o que ela pede; no planalto da escopeta, o
 ## prêmio de quem sobe o barranco), túnel da mina e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de
 ## munição dela) ou "health".
 const LAYOUT := [
 	{"pos": Vector3(-11.5, 0, 3.0), "kind": "health", "amount": 35},
+	# pentes extras no galpão (pistola = 1 pente, M16 = meio pente): faixa do painel, meio, ala da M16, sala dos clones e
+	# o canto da porta do pátio
+	{"pos": Vector3(-10.0, 0, 5.6), "kind": "pistol", "amount": 10},
+	{"pos": Vector3(3.0, 0, -4.5), "kind": "pistol", "amount": 10},
+	{"pos": Vector3(11.5, 0, -5.0), "kind": "m16", "amount": 15},
+	{"pos": Vector3(-6.0, CloneLab.FLOOR_Y, -18.5), "kind": "pistol", "amount": 10},
+	{"pos": Vector3(6.0, CloneLab.FLOOR_Y, -25.5), "kind": "m16", "amount": 15},
+	{"pos": Vector3(-12.2, 0, -4.0), "kind": "pistol", "amount": 10},
 	# S1 (faixa leste, até a emboscada) e o fim dela, antes do primeiro portão de grade
-	{"pos": Vector3(-15.0, 0, -15.5), "kind": "pistol", "amount": 8},
-	{"pos": Vector3(-15.2, 0, -21.0), "kind": "m16", "amount": 10},
+	{"pos": Vector3(-15.0, 0, -15.5), "kind": "pistol", "amount": 10},
+	{"pos": Vector3(-15.2, 0, -21.0), "kind": "m16", "amount": 15},
 	{"pos": Vector3(-15.5, 0, -41.0), "kind": "health", "amount": 35},
-	{"pos": Vector3(-19.0, 0, -40.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-19.0, 0, -40.0), "kind": "pistol", "amount": 10},
 	# S2 (7 raptors) e o planalto da escopeta
 	{"pos": Vector3(-28.6, 0, -40.5), "kind": "m16", "amount": 15},
-	{"pos": Vector3(-41.0, 0, -20.5), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-41.0, 0, -20.5), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-41.0, 0, -4.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-15.5, Yard.PLATEAU_Y, 3.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-23.5, Yard.PLATEAU_Y, 25.0), "kind": "shotgun", "amount": 6},
 	# S3 (9 raptors)
 	{"pos": Vector3(-33.5, 0, 3.5), "kind": "shotgun", "amount": 4},
 	{"pos": Vector3(-41.0, 0, 4.0), "kind": "m16", "amount": 15},
-	{"pos": Vector3(-28.6, 0, 18.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-28.6, 0, 18.0), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-41.0, 0, 20.5), "kind": "shotgun", "amount": 4},
 	{"pos": Vector3(-30.0, 0, 37.5), "kind": "health", "amount": 35},
 	# faixa oeste até as torres
 	{"pos": Vector3(-45.0, 0, 40.5), "kind": "health", "amount": 35},
 	{"pos": Vector3(-51.0, 0, 36.0), "kind": "shotgun", "amount": 4},
-	{"pos": Vector3(-51.5, 0, 22.5), "kind": "m16", "amount": 10},
-	{"pos": Vector3(-44.5, 0, 15.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-51.5, 0, 22.5), "kind": "m16", "amount": 15},
+	{"pos": Vector3(-44.5, 0, 15.0), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-52.0, 0, -3.0), "kind": "health", "amount": 35},
 	# túnel da mina: na boca, na câmara do meio (atrás das caixas, perto dos dois guardas) e antes do fundo
-	{"pos": Vector3(-63.0, 0, Tunnel.Z + 2.0), "kind": "pistol", "amount": 8},
-	{"pos": Vector3(-77.0, 0, Tunnel.Z - 3.8), "kind": "m16", "amount": 10},
+	{"pos": Vector3(-63.0, 0, Tunnel.Z + 2.0), "kind": "pistol", "amount": 10},
+	{"pos": Vector3(-77.0, 0, Tunnel.Z - 3.8), "kind": "m16", "amount": 15},
 	{"pos": Vector3(-81.0, 0, Tunnel.Z + 2.6), "kind": "shotgun", "amount": 3},
 	{"pos": Vector3(-82.7, 0, Tunnel.Z - 3.9), "kind": "health", "amount": 35},
-	{"pos": Vector3(-91.0, 0, Tunnel.Z + 1.5), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-91.0, 0, Tunnel.Z + 1.5), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-96.0, 0, Tunnel.Z - 2.0), "kind": "m79", "amount": 2},
 	# pedreira (as posições de antes + Arena.DX, empurrada pelo túnel)
-	{"pos": Vector3(-61.0 + Arena.DX, 0, -1.0), "kind": "pistol", "amount": 8},
+	{"pos": Vector3(-61.0 + Arena.DX, 0, -1.0), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-72.0 + Arena.DX, 0, 0.5), "kind": "m16", "amount": 15},
 	{"pos": Vector3(-82.0 + Arena.DX, 0, -5.5), "kind": "health", "amount": 35},
 	{"pos": Vector3(-83.5 + Arena.DX, 0, -5.5), "kind": "m79", "amount": 3},

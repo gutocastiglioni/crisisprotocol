@@ -169,7 +169,7 @@ const MAZE_STACK := 2.7  # altura da pilha (2,6 debaixo do mezanino)
 const DIVIDERS := [
 	[Vector2(-12.2, 0.4), 2, 0.02], [Vector2(-11.0, 0.4), 2, -0.03], [Vector2(-9.8, 0.4), 2, 0.01],
 	[Vector2(-7.0, 0.4), 2, -0.02], [Vector2(-5.8, 0.4), 1, 0.03],
-	[Vector2(-3.75, -12.2), 2, 0.03], [Vector2(-3.75, -11.0), 2, -0.01], [Vector2(-3.75, -9.8), 1, 0.02],
+	[Vector2(-3.75, -12.2), 2, 0.03], [Vector2(-3.75, -11.0), 2, -0.01], [Vector2(-3.75, -9.8), 2, 0.02],
 	[Vector2(-3.75, -7.0), 2, -0.03], [Vector2(-3.75, -5.8), 2, 0.01],
 	[Vector2(-7.4, -3.6), 1, 0.25], [Vector2(-9.6, -5.2), 1, -0.2], [Vector2(-6.4, -11.4), 1, 0.1],
 	# parede curta separando o canto do baú da M16 do meio do galpão (termina em x = 9: a ronda da ala leste passa ao lado)
@@ -258,11 +258,16 @@ static func _dividers(parent: Node) -> void:
 		var size := Vector3.ONE * DIVIDER_CRATE
 		if d[1] == 1:
 			size.y = LOW_CRATE_H
-		block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, d[2])
+		var sealed := Shed.sealed_crate(d[0])  # parede do canto da porta do pátio: não se escala
+		var base := block(parent, size, at + Vector3(0, size.y * 0.5, 0), "crate", 1.0 / size.x, d[2])
+		if sealed:
+			base.set_meta("no_climb", true)
 		if d[1] > 1:
 			# a de cima um pouco menor e torta, como nas pilhas do labirinto
 			var top := Vector3(size.x - 0.04, size.y, size.z - 0.04)
-			block(parent, top, at + Vector3(0, size.y + top.y * 0.5, 0), "crate", 1.0 / top.x, -d[2] * 1.5)
+			var upper := block(parent, top, at + Vector3(0, size.y + top.y * 0.5, 0), "crate", 1.0 / top.x, -d[2] * 1.5)
+			if sealed:
+				upper.set_meta("no_climb", true)
 
 
 ## Painel de computador na parede (CONSOLE): armário com a bancada por cima, teclado, painel com a tela acesa e as

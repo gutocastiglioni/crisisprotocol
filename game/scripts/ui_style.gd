@@ -3,7 +3,7 @@ class_name UiStyle
 ## Toda tela usa estes tokens em vez de cor/tamanho próprio:
 ##   - cores: INK (texto), ACCENT (título, item escolhido, "?"), ACTION (botão, confirmar, tudo bem), WARN (busca),
 ##     DANGER (alerta, erro, morte), MUTED (desligado, bloqueado); contorno preto de OUTLINE;
-##   - tamanhos: S (HUD, texto, dicas), M (título de caixa, legenda de cena), L (título de tela cheia);
+##   - tamanhos: XS (letra miúda: créditos), S (HUD, texto, dicas), M (título de caixa, legenda de cena), L (título de tela cheia);
 ##   - fundos: SHADE (tela escurecida), DEATH_SHADE (game over), BAND (faixa/caixa de texto);
 ##   - botões: `Hint` mostra "<glifo> VERBO" (vários lado a lado). O glifo vem do mapa de controles (InputSetup) e do
 ##     último aparelho usado (`pad`, atualizado pelo `Watcher` que o main cria): tecla numa moldura no teclado,
@@ -17,6 +17,7 @@ const WARN := Color(1.0, 0.55, 0.15)
 const DANGER := Color(1.0, 0.3, 0.25)
 const MUTED := Color(0.55, 0.55, 0.55)
 const OUTLINE := 2
+const XS := 6
 const S := 8
 const M := 12
 const L := 24

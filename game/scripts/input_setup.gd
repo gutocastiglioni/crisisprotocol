@@ -12,6 +12,7 @@ const KEYS := {
 	"roll": [KEY_SPACE],
 	"jump": [KEY_F],
 	"interact": [KEY_E],
+	"reload": [KEY_G],  # recarregar (survival: armas de pente); o R segue reiniciando
 	"switch_weapon": [KEY_Q, KEY_TAB],
 	"crouch": [KEY_C, KEY_CTRL],
 	"lean": [KEY_V],  # arcade: esgueirar pela quina; survival: encostar/soltar da parede (PlayerCover)
@@ -42,6 +43,7 @@ const JOY_BUTTONS := {
 	"interact": JOY_BUTTON_Y,
 	"switch_weapon": JOY_BUTTON_BACK,
 	"aim": JOY_BUTTON_LEFT_SHOULDER,
+	"reload": JOY_BUTTON_RIGHT_SHOULDER,  # R1
 	# R3 também agacha, mas só no jogo (ação à parte: nos menus o "crouch" é o X de confirmar/voltar); atirar fica no R2
 	"crouch_stick": JOY_BUTTON_RIGHT_STICK,
 	"pause": JOY_BUTTON_START,  # menu de pausa (reiniciar fica lá dentro; no teclado R segue reiniciando)

@@ -49,7 +49,7 @@ const MOVE_SHOTS := [
 	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
 	"roll_side", "jump_side", "sniper_aim", "sniper_zoom",
-	"hit_crouch", "stagger", "getup", "getup_fwd",
+	"hit_crouch", "stagger", "getup", "getup_fwd", "reload_pistol", "reload_m16",
 ]
 ## ela e o guerrilheiro lado a lado, parados (idle_compare = sem arma; carry_compare = com a M16) ou andando no lugar
 ## com a M16 (walk_compare); --yaw gira a câmera em volta (0 = de frente)
@@ -103,7 +103,7 @@ const GAME_OVER_DELAY := 1.5  # depois que ela morre, a tela de game over aparec
 const RESTART_ACTIONS := ["reset", "interact", "crouch", "jump", "shoot", "ui_accept"]
 const NOTICE_TIME := 1.6  # quanto tempo um aviso (munição, vida, "pare para atirar") fica na tela
 const LOW_AMMO := 3  # com tão pouca munição o número fica vermelho
-const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO rolar (O)  C agachar (quadrado / R3)  V esgueirar na quina / sobrevivência: encostar (L3)  F pular/agarrar (X)  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  J guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
+const HELP := "WASD mover  SHIFT corrida forte (L3)  ALT andar devagar (arcade: SHIFT)  MOUSE-D mirar  MOUSE-E atirar (mirando, R2)\nESPAÇO rolar (O)  C agachar (quadrado / R3)  V esgueirar na quina / sobrevivência: encostar (L3)  F pular/agarrar (X)  SNIPER MIRA: X aumenta / O diminui zoom\nE pegar (triângulo)  G recarregar (R1)  Q trocar arma (select)  ESC pausa (start)\nH dano  K morrer  J guerrilheiro ragdoll  R reiniciar  F1 ajuda  F2 PS1/PS2  F3 SOBREVIVÊNCIA/ARCADE"
 
 var player: Player
 var dummies: Array[TargetDummy] = []
@@ -168,6 +168,7 @@ var smelled := false  # o aviso do cheiro de sangue na beira do telhado já apar
 var _headshot_t := 0.0
 var _prompt: UiStyle.Hint
 var _end_hint: UiStyle.Hint
+var _end_credit: Label  # crédito do modelo do raptor (só na tela de fim)
 var _crosshair: Crosshair
 var _capture := ""
 var _shot := "idle"
@@ -722,6 +723,10 @@ func _build_hud() -> void:
 	add_child(layer)
 
 
+## Crédito exigido pela licença CC BY 4.0 do modelo do raptor (também em CREDITOS.txt); vai na tela de fim.
+const CREDIT := "VELOCIRAPTOR BASEADO EM \"PBR VELOCIRAPTOR (ANIMATED)\"\nDE FEROCIOUS INDUSTRIES - CC BY 4.0"
+
+
 ## Tela de fim (o alossauro caiu) e de morte (game over): escurecimento avermelhado na morte, faixa escura no meio com o título, o tempo e os tiros, e como jogar de novo.
 func _build_end(layer: CanvasLayer) -> Control:
 	var box := Control.new()
@@ -736,6 +741,7 @@ func _build_end(layer: CanvasLayer) -> Control:
 	_end_stats = UiStyle.label(box, "", UiStyle.INK, UiStyle.S, HORIZONTAL_ALIGNMENT_CENTER)
 	_end_hint = UiStyle.Hint.new()
 	box.add_child(_end_hint)
+	_end_credit = UiStyle.label(box, "", UiStyle.MUTED, UiStyle.XS, HORIZONTAL_ALIGNMENT_CENTER)
 	layer.add_child(box)
 	return box
 
@@ -759,6 +765,8 @@ func show_end() -> void:
 	title.add_theme_color_override("font_color", UiStyle.ACCENT)
 	title.reset_size()
 	_end_stats.text = "O ALOSSAURO CAIU\nTEMPO %02d:%02d   TIROS %d   VIDA %d" % [t / 60, t % 60, player.shots_fired, player.health]
+	_end_credit.text = CREDIT
+	_end_credit.reset_size()
 	_end_hint.set_items([{"action": "reset", "pad_action": "crouch", "text": "JOGAR DE NOVO"}])
 	_end_stats.reset_size()
 	_layout_overlays(get_viewport().get_visible_rect().size / _hud.scale)
@@ -774,6 +782,7 @@ func show_game_over() -> void:
 	(_end.get_node("Shade") as ColorRect).visible = true
 	var title: Label = _end.get_node("Title")
 	title.text = "GAME OVER"
+	_end_credit.text = ""
 	title.add_theme_color_override("font_color", UiStyle.DANGER)
 	title.reset_size()
 	_end_stats.text = ("VOCÊ MORREU NA QUEDA" if player.death_cause == "fall" else "VOCÊ MORREU") + "\nTEMPO %02d:%02d   TIROS %d" % [t / 60, t % 60, player.shots_fired]
@@ -795,11 +804,12 @@ func _layout_overlays(area: Vector2) -> void:
 	shade.size = area
 	var band: ColorRect = _end.get_node("Band")
 	band.position = Vector2(0, area.y * 0.5 - 46)
-	band.size = Vector2(area.x, 104)
+	band.size = Vector2(area.x, 104 if _end_credit.text == "" else 124)
 	var title: Label = _end.get_node("Title")
 	title.position = Vector2(roundf((area.x - title.size.x) * 0.5), area.y * 0.5 - 42)
 	_end_stats.position = Vector2(roundf((area.x - _end_stats.size.x) * 0.5), area.y * 0.5 - 8)
 	_end_hint.position = Vector2(roundf((area.x - _end_hint.size.x) * 0.5), area.y * 0.5 + 32)
+	_end_credit.position = Vector2(roundf((area.x - _end_credit.size.x) * 0.5), area.y * 0.5 + 52)
 
 
 func _label(parent: Node, text: String, pos: Vector2) -> Label:
@@ -945,8 +955,12 @@ func _update_weapon_hud(area: Vector2) -> void:
 	if GameMode.limited_ammo():
 		var n := player.ammo_of(kind)
 		text = str(n)
+		if kind in GameMode.MAGAZINE:
+			text = "%d/%d" % [player.mag_of(kind), player.reserve_of(kind)]  # pente / reserva
 		if n <= LOW_AMMO:
 			color = UiStyle.DANGER
+		if player.reloading != "":
+			color = UiStyle.MUTED  # recarregando
 	_hud_weapon.text = text
 	_hud_weapon.add_theme_color_override("font_color", color)
 	_hud_weapon.position = Vector2(_weapon_icon.position.x - _hud_weapon.size.x - 2, area.y - 4 - roundf((WeaponIcon.VIEW.y + _hud_weapon.size.y) * 0.5))
@@ -1234,8 +1248,8 @@ func _process(delta: float) -> void:
 		elif tunnel.lair_ready(player, allosaurus):
 			tunnel.lair_armed = false
 			cutscene.play_lair(player, allosaurus)
-	var target := player.pick_target()
-	var key_node := player.pick_key() if target == null else null
+	var key_node := player.pick_key()  # o item no chão antes do baú (o cartão do sniper pode cair junto ao container)
+	var target := player.pick_target() if key_node == null else null
 	var drop_node := player.pick_drop() if target == null and key_node == null else null
 	var plate := player.pick_plate() if target == null and key_node == null and drop_node == null else null
 	var door := player.pick_door() if target == null and key_node == null and drop_node == null and plate == null else null
@@ -1980,6 +1994,7 @@ func _setup_move_shot() -> void:
 		# de frente para a pilha de caixas de madeira, com a coluna de metal à esquerda
 		"fire_pistol": [Vector3(-2.4, 0, 1.6), 0.0], "fire_m16": [Vector3(-2.4, 0, 1.6), 0.0],
 		"fire_shotgun": [Vector3(-2.4, 0, 1.6), 0.0], "pump": [Vector3(-2.4, 0, 1.6), 0.0],
+		"reload_pistol": [Vector3(0, Roof.Y, 0), 0.0], "reload_m16": [Vector3(0, Roof.Y, 0), 0.0],
 		# golpes, no meio do telhado (aberto), empurrada para +Z
 		"hit_crouch": [Vector3(0, Roof.Y, 0), 0.0], "stagger": [Vector3(0, Roof.Y, 0), 0.0],
 		"getup": [Vector3(0, Roof.Y, -2.0), 0.0], "getup_fwd": [Vector3(0, Roof.Y, -2.0), PI],
@@ -1990,13 +2005,13 @@ func _setup_move_shot() -> void:
 		player.rotation.y = spots[_shot][1]
 		player.reset_physics_interpolation()
 		player.camera_rig.yaw = player.rotation.y
-	if _shot.begins_with("rifle") or _shot == "fire_m16":
+	if _shot.begins_with("rifle") or _shot in ["fire_m16", "reload_m16"]:
 		player.give_weapon("m16")
 	if _shot.begins_with("shotgun") or _shot in ["fire_shotgun", "pump"]:
 		player.give_weapon("shotgun")
 	if _shot.begins_with("sniper"):
 		player.give_weapon("sniper")
-	if _shot == "pump" or _shot == "roll_side" or _shot == "jump_side" or _shot in HURT_SHOTS:
+	if _shot in ["pump", "roll_side", "jump_side", "reload_pistol", "reload_m16"] or _shot in HURT_SHOTS:
 		# pump: de lado, perto das mãos, para ver a telha indo e voltando; golpes: de lado, seguindo o corpo;
 		# cambalhota: de lado, parada no meio do caminho
 		_review_cam = Camera3D.new()
@@ -2075,6 +2090,20 @@ func _move_shot(at: Callable) -> void:
 				player.zoom_in()
 			if at.call(0.2):
 				player.zoom_in()
+		"reload_pistol", "reload_m16":
+			# um tiro para o lado, pente extra na reserva e recarrega em 0,5 s; câmera de 3/4 pela frente nas mãos
+			var kind := player.weapon()
+			if at.call(0.3):
+				player.collect(kind, int(GameMode.MAGAZINE.get(kind, 10)))
+				if GameMode.limited_ammo():
+					player.mag[kind] = int(GameMode.MAGAZINE.get(kind, 10)) - 1
+			if at.call(0.5):
+				player.reload()
+			var hands := player.global_position + Vector3.UP * 1.2 - player.global_basis.z * 0.3
+			var around := (0.0 if is_nan(_yaw) else deg_to_rad(_yaw)) + 0.6
+			_review_cam.global_position = hands + (-player.global_basis.z * 1.5).rotated(Vector3.UP, around) + Vector3.UP * 0.25
+			_review_cam.look_at(hands)
+			_review_cam.current = true
 		"fire_pistol", "fire_m16", "fire_shotgun", "pump":
 			Input.action_press("aim")
 			var gap: float = {"fire_pistol": 0.3, "fire_m16": 0.12, "fire_shotgun": 0.85, "pump": 9.0}[_shot]

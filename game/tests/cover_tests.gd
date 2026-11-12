@@ -320,6 +320,29 @@ func test_aim_over_low_crate() -> void:
 	t.check(p.cover.active and p.crouching and p.model.state.begins_with("cover_crouch_"),
 		"soltou a mira: agacha e fica encostada de novo", p.model.state)
 	p.crouching = false
+	# caixa baixa do galpão (Level.LOW_CRATE_H, 1,5 m): também mira por cima, e o tiro (pela linha da câmera) passa
+	var w2: Node3D = await _world_with_wall(Level.LOW_CRATE_H)
+	var r: Player = t._spawn_player(w2, Vector3(0, 0, -0.2))
+	r.crouching = true
+	await t._frames(10)
+	await _command()
+	await t._frames(40)
+	t.check(r.cover.active and r.crouching, "agachada encostada na caixa baixa do galpão (1,5 m)")
+	Input.action_press("aim")
+	await t._frames(40)
+	t.check(r.aiming and r.cover.aim_mode == "over" and not r.crouching, "caixa de 1,5 m: levanta e mira por cima",
+		"modo %s" % r.cover.aim_mode)
+	var cam := r.get_viewport().get_camera_3d()
+	var ray: Array[Vector3] = [cam.global_position, -cam.global_basis.z]
+	var o := r.shot_origin(ray, [r.get_rid()])
+	var space := r.get_world_3d().direct_space_state
+	var blocked := space.intersect_ray(PhysicsRayQueryParameters3D.create(o, o + ray[1] * 3.0, 1, [r.get_rid()]))
+	t.check(blocked.is_empty(), "o tiro sai por cima da caixa de 1,5 m",
+		"origem %s, bateu em %s" % [o, blocked.get("position", "-")])
+	Input.action_release("aim")
+	await t._frames(40)
+	t.check(r.cover.active and r.crouching, "soltou a mira: agacha encostada de novo")
+	r.crouching = false
 	# caixa de 2,4 m (o meio dela, longe das beiradas): alta demais, mira normal sem levantar nem esgueirar
 	var q: Player = await _covered()
 	Input.action_press("aim")

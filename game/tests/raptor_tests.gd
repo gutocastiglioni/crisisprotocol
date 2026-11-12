@@ -43,6 +43,8 @@ func run(runner: SceneTree) -> void:
 	await test_nan_after_leap_hit()
 	await test_feet_planted_turning()
 	await test_turn_sway()
+	await test_hit_flinch()
+	await test_hit_reaction()
 	await test_feet_planted_walking_curve()
 
 
@@ -74,9 +76,9 @@ func test_asset() -> void:
 	var names := []
 	for i in sk.get_bone_count():
 		names.append(sk.get_bone_name(i))
-	check(names.size() == EXPECTED_BONES.size(), "raptor: 25 ossos", str(names))
-	for b in ["Jaw", "Tail4", "Toe_L", "Hand_R"]:
-		check(b in names, "raptor: osso " + b)
+	# os ossos que o jogo usa (pés presos, inércia, ragdoll, boca); o modelo tem outros (dedos, Neck3, Tail5..10, língua)
+	var missing := EXPECTED_BONES.filter(func(b: String) -> bool: return not b in names)
+	check(missing.is_empty(), "raptor: ossos que o jogo usa", str(missing))
 	var ap: AnimationPlayer = inst.find_children("*", "AnimationPlayer", true, false)[0]
 	for a in EXPECTED_ANIMS:
 		check(ap.has_animation(a) and ap.get_animation(a).length > 0.1, "raptor: animação " + a)
@@ -84,7 +86,7 @@ func test_asset() -> void:
 	var tris := 0
 	for s in mi.mesh.get_surface_count():
 		tris += mi.mesh.surface_get_array_index_len(s) / 3
-	check(tris > 800 and tris < 5000, "raptor: orçamento de triângulos, PS2 do começo (800-5000)", str(tris))
+	check(tris > 800 and tris <= 8000, "raptor: orçamento de triângulos (exceção do raptor: até 8000)", str(tris))
 	check(inst.find_child("Mouth", true, false) != null, "raptor: marcador da boca (Mouth)")
 	inst.free()
 
@@ -107,8 +109,17 @@ func test_arms_down() -> void:
 			if anim.track_get_type(k) == Animation.TYPE_ROTATION_3D and anim.track_get_path(k).get_concatenated_subnames() == bone:
 				tr.basis = Basis(anim.rotation_track_interpolate(k, time))
 		return tr
-	var rest_fore: float = elev.call((sk.get_bone_rest(sk.find_bone("Arm_L")) * sk.get_bone_rest(sk.find_bone("Forearm_L"))).basis * Vector3.UP)
-	check(rest_fore < -10.0 and rest_fore > -40.0, "raptor: antebraço em repouso para a frente e para baixo", "%.1f" % rest_fore)
+	# do peito até o osso pela cadeia de verdade (o braço sai de um osso de ombro, Shoulder_*, que também anima)
+	var chain := func(anim: Animation, bone: String, time: float) -> Transform3D:
+		var tr := Transform3D()
+		var i := sk.find_bone(bone)
+		while i >= 0 and sk.get_bone_name(i) != "Chest":
+			tr = local.call(anim, sk.get_bone_name(i), time) * tr
+			i = sk.get_bone_parent(i)
+		return tr
+	var rest_fore: float = elev.call((sk.get_bone_global_rest(sk.find_bone("Chest")).affine_inverse() * sk.get_bone_global_rest(sk.find_bone("Forearm_L"))).basis * Vector3.UP)
+	# repouso = o parado da referência: braço dobrado junto ao peito, antebraço para a frente, sem subir
+	check(rest_fore <= 0.0 and rest_fore > -60.0, "raptor: antebraço em repouso para a frente, sem subir", "%.1f" % rest_fore)
 	var worst := ""
 	var top := -INF
 	for a in EXPECTED_ANIMS:
@@ -116,9 +127,8 @@ func test_arms_down() -> void:
 		var time := 0.0
 		while time <= anim.length + 1e-4:
 			for s in ["L", "R"]:
-				var arm: Transform3D = local.call(anim, "Arm_" + s, time)
-				var fore: Transform3D = arm * local.call(anim, "Forearm_" + s, time)
-				var hand: Transform3D = fore * local.call(anim, "Hand_" + s, time)
+				var fore: Transform3D = chain.call(anim, "Forearm_" + s, time)
+				var hand: Transform3D = chain.call(anim, "Hand_" + s, time)
 				var f: float = elev.call(fore.basis * Vector3.UP)
 				var h: float = elev.call(hand.basis * Vector3.UP)
 				for pair in [[f, 10.0, "antebraço"], [h, 0.0, "mão"]]:
@@ -146,6 +156,24 @@ func test_jaw() -> void:
 	await t._frames(2)
 	check(closed < 5.0, "mandíbula fechada parado", "%.1f°" % closed)
 	check(m.jaw_angle() > 30.0, "mandíbula escancarada no grito", "%.1f°" % m.jaw_angle())
+
+
+## Tiro fora de um golpe: para, toca Hit (a dor) por HIT_TIME e volta a estudá-la; no meio da investida, segue.
+func test_hit_reaction() -> void:
+	var pr := await _pair(Vector3(0, 0, 6))
+	var r: Raptor = pr[1]
+	r.start_study()
+	await t._frames(2)
+	r.take_hit(5, -r.global_basis.z, r.global_position + Vector3.UP)
+	await t._frames(2)
+	check(r.state == "hit" and r.model.current == "Hit", "tiro estudando: recua com a dor (Hit)", "%s %s" % [r.state, r.model.current])
+	await t._frames(int(Raptor.HIT_TIME * 60) + 10)
+	check(r.state != "hit", "depois da dor volta à luta", r.state)
+	r.start_charge()
+	await t._frames(2)
+	r.take_hit(5, -r.global_basis.z, r.global_position + Vector3.UP)
+	await t._frames(2)
+	check(r.state == "charge", "tiro na investida: não para", r.state)
 
 
 func test_roar_on_sight() -> void:
@@ -708,6 +736,37 @@ func test_turn_sway() -> void:
 	check(absf(r.model.sway._tail) < 0.03 and absf(r.model.sway._tip) < 0.05, "parado de novo, a cauda volta com a mola", "%.3f %.3f" % [r.model.sway._tail, r.model.sway._tip])
 
 
+## Tiro: tronco e cabeça dão um tranco para longe do atirador (por cima da animação, sem mudar o estado) e voltam.
+func test_hit_flinch() -> void:
+	var w: Node3D = await t._fresh_world()
+	var r := Raptor.new()
+	w.add_child(r)
+	await t._frames(30)
+	r.set_physics_process(false)
+	r.model.anim_player.pause()  # pose parada: só o tranco mexe
+	var sk := r.model.skeleton
+	var head := sk.find_bone("Head")
+	var poses := {}
+	var grab := func() -> void:
+		poses["head"] = sk.global_transform * sk.get_bone_global_pose(head).origin
+	sk.skeleton_updated.connect(grab)
+	await t._frames(3)
+	var head0: Vector3 = poses["head"]
+	var state0 := r.state
+	# ela atira de frente (o raptor olha para -Z): o golpe vai para +Z, o corpo dele é empurrado para trás
+	var dir := r.global_basis.z
+	r.take_hit(10, dir, head0)
+	var most := 0.0
+	for i in 12:
+		await t._frames(1)
+		most = maxf(most, (poses["head"] - head0).dot(dir))
+	check(most > 0.05, "tiro: a cabeça dá um tranco para longe do atirador", "%.3f m" % most)
+	check(r.state == state0, "tiro sem alvo: só o tranco, o estado fica", r.state)
+	await t._frames(90)
+	sk.skeleton_updated.disconnect(grab)
+	check((poses["head"] - head0).length() < 0.01, "tiro: o corpo volta para a animação", "%.3f m" % (poses["head"] - head0).length())
+
+
 ## Andando em curva fechada (a animação é de andar reto), o pé de apoio não escorrega no chão.
 func test_feet_planted_walking_curve() -> void:
 	var w: Node3D = await t._fresh_world()
@@ -736,5 +795,6 @@ func test_feet_planted_walking_curve() -> void:
 		r.position += -r.global_basis.z * v / 60.0
 		await t._frames(1)
 	sk.skeleton_updated.disconnect(grab)
-	check(m.planted > 60, "andando em curva os pés apoiam (presos)", str(m.planted))
+	# o andar da referência apoia ~25% do ciclo (a bola do pé sobe cedo, o passo é alto): ~50 de 300 quadros
+	check(m.planted > 40, "andando em curva os pés apoiam (presos)", str(m.planted))
 	check(m.drag < 0.01, "andando em curva o pé de apoio não escorrega", "%.3f m" % m.drag)

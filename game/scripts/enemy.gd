@@ -665,6 +665,9 @@ func _reaches(pos: Vector3) -> bool:
 		var lab := get_tree().get_first_node_in_group("clone_lab") as CloneLab
 		if lab and lab.gate and not lab.gate.opened:
 			return false
+	# canto da porta do pátio com o portão dele fechado (Shed.apart): som, grito e alarme não passam
+	if Shed.apart(get_tree(), pos, global_position):
+		return false
 	var a := Level.room_of(pos.x)
 	var b := Level.room_of(global_position.x)
 	if (a == 2 or b == 2) and _flat(pos - global_position).length() > Tunnel.SOUND_REACH:
@@ -937,6 +940,8 @@ func _target_hidden() -> bool:
 func _sees_target() -> bool:
 	if not _has_target() or _target_hidden() or is_distracted():
 		return false
+	if not in_combat() and Shed.apart(get_tree(), target.global_position, global_position):
+		return false  # canto da porta do pátio com o portão fechado: de um lado não se nota o que acontece do outro
 	var to := _to_target()
 	var d := to.length()
 	if d > _sight_range():

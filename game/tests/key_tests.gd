@@ -382,10 +382,14 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 	await t._frames(int(KeyItem.FALL_TIME * 60) + 10)
 	t.check(main.keycard.state == "dropped" and main.keycard.visible, "sniper morto: keycard cai no chão brilhando")
 
-	main.player.global_position = main.keycard.global_position
+	# o cartão caído junto ao container do cadeado (a M79, no mezanino): E pega o cartão, não chacoalha o cadeado
+	var kneel: Vector3 = main.locker.kneel_transform().origin
+	main.keycard.global_position = kneel + Vector3(0.3, 0, 0)
+	main.player.global_position = kneel
 	await t._frames(3)
 	t.check(not main.player.has_key("keycard_gate"), "passar por cima do keycard não pega sozinho")
-	t.check(main.player.pick_key() == main.keycard, "pick_key detecta o keycard")
+	t.check(main.player.pick_target() == main.locker and main.player.pick_key() == main.keycard,
+		"cartão e container ao alcance: pick_key detecta o keycard")
 
 	Input.action_press("interact")
 	await t._frames(2)

@@ -398,6 +398,7 @@ def actions(sk):
     import heroine_jump as J
     import heroine_moves as M
     import heroine_m79 as GL
+    import heroine_reload as RL
     import heroine_rifle as RF
     import heroine_shotgun as SG
     import heroine_strike as ST
@@ -456,6 +457,8 @@ def actions(sk):
         "RifleHold": [(0, hold), (30, hold_breath), (60, hold)],
         "RifleAim": [(0, rifle_aim), (60, rifle_aim)],
         "RifleShoot": [(0, rifle_aim), (2, rifle_recoil), (4, rifle_aim)],
+        "ReloadPistol": RL.pistol_keys(A, sk, dict(IDLE, **pistol_guard(sk, IDLE))),
+        "ReloadRifle": RL.rifle_keys(A, sk, hold),
         "ShotgunShoot": SG.shoot_keys(A, sk, rifle_aim),
         "M79Shoot": GL.shoot_keys(A, sk, rifle_aim),
         "Pickup": RF.pickup_keys(A, sk, hold),

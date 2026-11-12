@@ -14,16 +14,22 @@ signal attacked(kind: String)
 
 const STUDY_DIST := 3.8
 const RUN_SPEED := 8.4
-const RUN_ANIM_SPEED := 4.2  # m/s que a animação Run representa em velocidade 1 (passada 1 m em 0,24 s de apoio)
-const WALK_ANIM_SPEED := 1.071  # idem Walk (passada 0,93 m em 0,868 s de apoio): sem patinar
+## m/s que cada ciclo representa em velocidade 1 (o pé no apoio, medido no build: art/raptor_build.json): sem patinar.
+## A corrida da referência é curta (2,08 m/s); a 8,4 m/s ela toca ~4x (decisão do usuário: velocidade do jogo mantida).
+const RUN_ANIM_SPEED := 2.083
+const WALK_ANIM_SPEED := 1.069
+const JOG_ANIM_SPEED := 2.163  # trote (entre o andar e a corrida, JOG_FROM..JOG_TOP)
+const JOG_FROM := 1.9
+const JOG_TOP := 4.0
+const RUN_GATE := 4.2  # para a IA comum (Enemy._go): corre a partir de RUN_GATE * RUN_MIN_SCALE, como antes
 const STALK_SPEED := 1.1  # rodeando a presa, baixo e devagar
-const STALK_ANIM_SPEED := 0.635  # idem Stalk (passada 0,8 m em 1,26 s de apoio)
+const STALK_ANIM_SPEED := 0.766  # idem Stalk (o andar da referência 1,6x mais lento)
 const CLAW_REACH := 0.5  # garra a esta distância do corpo dela = acertou
 const LEAP_UP := 5.0
 const LEAP_MAX_SPEED := 12.0
-const LEAP_PREP := 0.24
+const LEAP_PREP := 0.167  # LeapPrep: agacha até os pés saírem do chão
 const BITE_REACH := 2.1
-const BITE_SNAP := 0.4  # quadro 12 da animação Bite
+const BITE_SNAP := 0.467  # a boca fecha na animação Bite
 const TAIL_REACH := 2.9
 const TAIL_HIT := 0.38
 const TAIL_SPIN := deg_to_rad(80.0)
@@ -53,7 +59,10 @@ const SLOT_BAND := Vector2(3.4, 6.5)
 const BITE_CHANCE := 0.8  # perto e de frente: morde ou recua
 const STUDY_TIME := Vector2(0.9, 1.6)  # rodeando antes de atacar
 const RECOVER_SCALE := 0.65  # pausa depois de cada golpe (fração dos tempos de `_recover`)
-const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover"]
+const COMBAT := ["roar", "study", "charge", "leap_prep", "leap", "bite", "hold", "tail", "counter", "recover", "hit"]
+const HIT_TIME := 0.45  # leva tiro fora de um golpe: para, toca Hit (a dor da referência) e volta a estudá-la
+## no meio destes o tiro não interrompe (só o tranco do HitFlinch por cima)
+const HIT_KEEPS := ["roar", "charge", "leap_prep", "leap", "bite", "hold", "tail", "down", "counter"]
 ## Saindo da moita (`emerge`): agacha EMERGE_PREP s, pula e cai a EMERGE_GAP m dela (no máximo EMERGE_MAX m de onde
 ## estava), sem golpe; no chão, estuda e entra na vez da matilha.
 const EMERGE_PREP := 0.35
@@ -100,7 +109,7 @@ func _ready() -> void:
 	model = RaptorModel.new()
 	add_child(model)
 	patrol_speed = 1.4
-	investigate_speed = RUN_ANIM_SPEED * JOG_SCALE  # trote (2,4 m/s era o andar acelerado a 2,2x)
+	investigate_speed = RUN_GATE * JOG_SCALE  # trote (3,36 m/s, animação Jog)
 	hunt_speed = 5.6
 	head_mult = 1.0  # cabeçudo: tiro na cabeça vale como no corpo (sem headshot)
 	can_stealth = true
@@ -137,11 +146,27 @@ func _threat() -> float:
 
 
 func _play(anim: String, blend := 0.15, speed := 1.0, restart := false) -> void:
-	model.play(anim, blend, speed, restart)
+	# a IA comum pede Run/Walk com a velocidade em relação a _anim_speed: volta a m/s e escolhe o passo
+	if anim == "Run" and not restart:
+		_gait(speed * RUN_GATE, blend)
+	elif anim == "Walk" and not restart:
+		_gait(speed * WALK_ANIM_SPEED, blend)
+	else:
+		model.play(anim, blend, speed, restart)
+
+
+## Andar, trote ou corrida pela velocidade `v` (m/s), cada um no ritmo em que o pé não patina.
+func _gait(v: float, blend := 0.25) -> void:
+	if v > JOG_TOP:
+		model.play("Run", blend, maxf(v / RUN_ANIM_SPEED, RUN_MIN_SCALE))
+	elif v > JOG_FROM:
+		model.play("Jog", blend, v / JOG_ANIM_SPEED)
+	else:
+		model.play("Walk", blend, maxf(v, 0.4) / WALK_ANIM_SPEED)
 
 
 func _anim_speed(run: bool) -> float:
-	return RUN_ANIM_SPEED if run else WALK_ANIM_SPEED
+	return RUN_GATE if run else WALK_ANIM_SPEED
 
 
 func _on_spotted() -> void:
@@ -187,9 +212,9 @@ func _combat_state(delta: float) -> void:
 				start_counter()
 		"counter":
 			_counter(delta)
-		"recover":
+		"recover", "hit":
 			_stop(delta)
-			if _t > 0.3 and _behind_close() and _may_attack():
+			if state == "recover" and _t > 0.3 and _behind_close() and _may_attack():
 				start_tail()
 			elif _has_target():
 				_face(_to_target(), delta, 3.0)
@@ -326,8 +351,7 @@ func _ambush(delta: float) -> void:
 	var v := speed * maxf(fwd.dot(move), 0.2)
 	velocity.x = fwd.x * v
 	velocity.z = fwd.z * v
-	var run := v > 3.0
-	model.play("Run" if run else "Walk", 0.25, maxf(v / RUN_ANIM_SPEED, RUN_MIN_SCALE) if run else maxf(v, 0.4) / WALK_ANIM_SPEED)
+	_gait(v)
 
 
 ## Sai da moita onde está escondido (`ForestTrail`): visível, com corpo, já sabendo onde ela está; agacha e pula na direção
@@ -646,11 +670,20 @@ func take_hit(amount: int, dir: Vector3, at: Vector3, _head := false) -> void:
 	if health == 0:
 		die(dir, at)
 		return
-	Sfx.play(model, "raptor_hurt", model.mouth_position(), 0.0, model.voice_pitch)
-	# o tiro não interrompe o que ele está fazendo (golpe, mordida, investida): só quem não tinha notado ninguém reage
+	# fora de um golpe (golpe, mordida, investida, salto, rugido seguem), recua com a dor e volta a estudá-la
+	var reacts := not state in HIT_KEEPS and _has_target()
+	if not reacts:
+		Sfx.play(model, "raptor_hurt", model.mouth_position(), 0.0, model.voice_pitch)  # com a dor, o grito vem da animação Hit
+	model.flinch.hit(dir, amount / 15.0)  # tranco no corpo, por cima do que estiver fazendo
 	if not state in COMBAT and not state in ["down", "counter"] and _has_target():
-		_raise_alarm()  # já sabe onde ela está e avisa os outros
-		start_study()
+		_raise_alarm()  # levou tiro sem ter notado ninguém: já sabe onde ela está e avisa os outros
+	if reacts:
+		if state == "hit":
+			model.play("Hit", 0.05, 1.0, true)  # outro tiro recomeça a dor
+			_t = 0.0
+		else:
+			_enter("hit", "Hit", 0.05)
+		_dur = HIT_TIME
 
 
 ## Golpe crítico disponível quando o raptor está caído no chão ("down") a até CRIT_RANGE, de qualquer direção.
@@ -845,8 +878,7 @@ func _hold_slot(delta: float, dir: Vector3) -> void:
 		var speed := minf(top, far * 1.5 + 0.4) * maxf(fwd.dot(move), 0.0)
 		velocity.x = fwd.x * speed
 		velocity.z = fwd.z * speed
-		var run := speed > 3.0
-		model.play("Run" if run else "Walk", 0.3, maxf(speed / RUN_ANIM_SPEED, RUN_MIN_SCALE) if run else maxf(speed, 0.4) / WALK_ANIM_SPEED)
+		_gait(speed, 0.3)
 	else:
 		_stop(delta)
 		_face(dir, delta, 4.0)

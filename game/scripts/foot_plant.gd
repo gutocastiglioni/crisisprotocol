@@ -25,7 +25,6 @@ var grounded := true  ## o dono está no chão (o modelo atualiza)
 var _size := 1.0
 var _rest_h := 0.05
 var _bones := {}  # lado -> [coxa, canela, metatarso, dedo]
-var _hips := -1
 var _mode := [FREE, FREE]
 var _lock: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]  # mundo
 var _offset: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]  # mundo: alvo - animação, some no balanço
@@ -34,7 +33,6 @@ var _step_t := [0.0, 0.0]
 
 
 func _setup(sk: Skeleton3D) -> void:
-	_hips = sk.find_bone("Hips")
 	var leg := 0.0
 	for s in LEGS:
 		var ids: Array[int] = []
@@ -158,7 +156,8 @@ func _solve(sk: Skeleton3D, ids: Array[int], target: Vector3) -> void:
 	var shin_dir := r0 * (ankle - knee)
 	var r1 := Basis(Quaternion(shin_dir.normalized(), (want - new_knee).normalized()))
 	var b1 := r1 * r0 * g1.basis
-	var parent := sk.get_bone_global_pose(_hips).basis if _hips >= 0 else Basis()
+	var up := sk.get_bone_parent(ids[0])  # quadril (no raptor de agora a coxa sai de Pelvis/Hip, não direto do Hips)
+	var parent := sk.get_bone_global_pose(up).basis if up >= 0 else Basis()
 	sk.set_bone_pose_rotation(ids[0], (parent.inverse() * b0).get_rotation_quaternion())
 	sk.set_bone_pose_rotation(ids[1], (b0.inverse() * b1).get_rotation_quaternion())
 	sk.set_bone_pose_rotation(ids[2], (b1.inverse() * g2.basis).get_rotation_quaternion())

@@ -155,6 +155,35 @@ def dry_fire():
     return finish(x, 0.6)
 
 
+def mag_out(name="mag_out", base=2400, strength=0.8):
+    # pente saindo: o retém estala e o pente desliza para fora (raspado curto)
+    r = rng_for(name)
+    dur = 0.3
+    x = metal_clack(r, dur, 0.0, base * 1.3, strength * 0.6)
+    x += bp(noise(r, dur), 2200, 1.5) * bell(dur, 0.01, 0.05, 0.12) * 0.3
+    x += metal_clack(r, dur, 0.09, base * 0.8, strength * 0.4)
+    return finish(x, 0.75)
+
+
+def mag_in(name="mag_in", base=2000, strength=1.0):
+    # pente cheio entrando: raspado, encaixe firme e a palma batendo
+    r = rng_for(name)
+    dur = 0.35
+    x = bp(noise(r, dur), 1900, 1.4) * bell(dur, 0.0, 0.04, 0.08) * 0.3
+    x += metal_clack(r, dur, 0.07, base, strength)
+    x += lp(noise(r, dur), 700) * decay(dur, 0.01, 0.0005, 0.12) * 0.5  # a palma
+    return finish(x, 0.85)
+
+
+def slide_rack(name="slide_rack", base=2700, travel=0.07):
+    # ferrolho puxado e solto: arrasta, bate atrás e volta à frente com estalo
+    r = rng_for(name)
+    dur = 0.35
+    x = bp(noise(r, dur), 3000, 2.0) * bell(dur, 0.0, travel * 0.5, travel) * 0.3
+    x += metal_clack(r, dur, travel, base, 0.8) + metal_clack(r, dur, travel + 0.09, base * 1.2, 1.0)
+    return finish(x, 0.85)
+
+
 # ------------------------------------------------------------------ impactos
 def impact_concrete(i):
     r = rng_for(f"impact_concrete_{i}")
@@ -436,6 +465,12 @@ SOUNDS = {
     "weapon_switch": weapon_switch,
     "weapon_pickup": weapon_pickup,
     "dry_fire": dry_fire,
+    "mag_out": mag_out,
+    "mag_in": mag_in,
+    "slide_rack": slide_rack,
+    "mag_out_rifle": lambda: mag_out("mag_out_rifle", 1700, 1.0),
+    "mag_in_rifle": lambda: mag_in("mag_in_rifle", 1500, 1.2),
+    "slide_rack_rifle": lambda: slide_rack("slide_rack_rifle", 2100, 0.1),
     "chest_open": chest_open,
     "m79_shot": m79_shot,
     "explosion": explosion,

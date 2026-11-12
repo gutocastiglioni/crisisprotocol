@@ -37,7 +37,7 @@ const STEP_RATE := 1.35  # o passo lateral encostada toca no máximo a isto do r
 const RESUME_DIST := 0.35  # pausada (mira/quina/levantou), volta a encostar se ficou a até isto da distância da pose
 const HELD_MOVE := 0.1  # pausada e sem conseguir voltar, direcional empurrado mais que isto: solta de vez
 const PEEK_EDGE := 0.4  # mirando encostada: a parede acaba a até isto dela = está na beirada, esgueira por ela
-const OVER_MAX := 1.2  # mirando encostada: o alto do bloco até isto acima do chão dela = mira em pé por cima dele
+const OVER_MAX := Level.LOW_CRATE_H + 0.1  # mirando encostada: o alto do bloco até isto acima do chão dela = mira em pé por cima dele (as caixas baixas do galpão contam)
 const TOWARD := 0.2  # a câmera olha para o lado da parede (frente da câmera . -normal acima disto): mirar usa a cobertura
 
 var p: Player

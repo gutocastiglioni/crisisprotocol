@@ -197,15 +197,15 @@ func test_gunshot_investigates() -> void:
 	check(r.state == "investigate", "tiro a 10 m: vai investigar", r.state)
 
 
-## Passo do raptor no `_go`: andar até a ronda, trote/corrida acima disso; nunca a corrida em câmera lenta (nem na curva,
-## em que freia para o andar) nem o andar acelerado ao investigar.
+## Passo do raptor no `_go`: andar até a ronda, trote (Jog) ao investigar, corrida acima disso; nunca a corrida/trote em
+## câmera lenta (nem na curva, em que freia para o andar) nem o andar acelerado ao investigar.
 func test_raptor_gait() -> void:
 	var pr := await _spawn(Vector3(0, 0, 30), Vector3(-6, 0, 0), -PI * 0.5)
 	var r: Raptor = pr[1]
 	r.sight_range = 0.0
 	r.set_physics_process(false)
 	var max_walk := r.patrol_speed / Raptor.WALK_ANIM_SPEED + 0.01
-	for c in [[r.patrol_speed, -PI * 0.5, "Walk"], [r.investigate_speed, -PI * 0.5, "Run"], [r.hunt_speed, -PI * 0.5, "Run"],
+	for c in [[r.patrol_speed, -PI * 0.5, "Walk"], [r.investigate_speed, -PI * 0.5, "Jog"], [r.hunt_speed, -PI * 0.5, "Run"],
 			[r.hunt_speed, PI * 0.5, "Run"]]:
 		r.global_position = Vector3(-6, 0, 0)
 		r.rotation.y = c[1]
@@ -216,7 +216,7 @@ func test_raptor_gait() -> void:
 			r._go(Vector3(6, 0, 0), c[0], 1.0 / 60.0)
 			if r.model.current == "Walk":
 				worst_walk = maxf(worst_walk, r.model.anim_player.speed_scale)
-			elif r.model.current == "Run":
+			elif r.model.current in ["Run", "Jog"]:
 				slowest_run = minf(slowest_run, r.model.anim_player.speed_scale)
 			await t._frames(1)
 		check(r.model.current == c[2] and worst_walk <= max_walk and slowest_run >= Enemy.RUN_MIN_SCALE - 0.01,
@@ -285,7 +285,9 @@ func test_damage_while_unaware_alarms() -> void:
 	await t._frames(2)
 	check(a.state == "idle" and b.state == "idle", "ninguém a percebeu ainda")
 	a.take_hit(10, Vector3.BACK, a.global_position + Vector3.UP)
-	check(a.alert_t > 0.0 and a.state == "study", "levou tiro sem ver: alertado, vai para cima dela", a.state)
+	check(a.alert_t > 0.0 and a.state == "hit", "levou tiro sem ver: alertado, recua com a dor", a.state)
+	await t._frames(int(Raptor.HIT_TIME * 60) + 5)
+	check(a.state in Raptor.COMBAT and a.state != "hit", "depois da dor vai para cima dela", a.state)
 	for i in 120:
 		await t._frames(1)
 		if b.state == "hunt":

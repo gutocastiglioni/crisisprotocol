@@ -1,0 +1,8 @@
+CRÉDITOS DE TERCEIROS
+
+Velociraptor (malha, mapa de UV, pesos, animações e a textura dos olhos, dentes e garras; a pele foi repintada com as
+cores do jogo e as animações adaptadas ao esqueleto do jogo, com algumas montadas em cima delas):
+  This work is based on "PBR Velociraptor (Animated)"
+  (https://sketchfab.com/3d-models/pbr-velociraptor-animated-8f1744af7b0847a2aabe3df90be802f0)
+  by Ferocious Industries (https://sketchfab.com/ferociousindustries.matthias)
+  licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -12,6 +12,7 @@ func run(runner: SceneTree) -> void:
 	await test_profiles()
 	await test_enemy_damage()
 	await test_aim_to_shoot_and_ammo()
+	await test_reload()
 	await test_weapon_ammo_and_collect()
 	await test_pickup_in_world()
 	await test_layout_clear()
@@ -69,9 +70,10 @@ func test_profiles() -> void:
 	t.check(a.cooldown == Player.WEAPON_STATS.m16.cooldown and a.bloom == Player.WEAPON_STATS.m16.bloom and a.kick == 0.0 and a.aim_speed > Player.RUN_SPEED, "arcade: armas como eram")
 	t.check(GameMode.enemy_damage(7) == 7 and not GameMode.limited_ammo() and not GameMode.shoulder_cam() and not GameMode.aim_to_shoot() and not GameMode.pickups(), "arcade: dano normal, munição infinita, câmera livre, mira temporária, sem itens")
 	GameMode.set_mode(GameMode.SURVIVAL)
+	# os pentes extras do galpão são para os guardas de lá: contam os de fora (pátio, túnel, pedreira)
 	var pistol_total := int(GameMode.START_AMMO.pistol)
 	for e in Pickup.LAYOUT:
-		if e.kind == "pistol":
+		if e.kind == "pistol" and Level.room_of(e.pos.x) != 0:
 			pistol_total += int(e.amount)
 	t.check(pistol_total * Player.DAMAGE < 2 * (5 * Raptor.MAX_HEALTH + Allosaurus.MAX_HEALTH), "munição escassa: a pistola sozinha não mata tudo", str(pistol_total))
 
@@ -137,6 +139,56 @@ func test_aim_to_shoot_and_ammo() -> void:
 		await t._frames(2)
 		p.fire()
 	t.check(notices.size() == n, "o aviso de arma vazia não se repete a cada quadro", str(notices.size() - n))
+	_release_all()
+	p.queue_free()
+
+
+## Pente e reserva (GameMode.MAGAZINE): o tiro gasta o pente; vazio com reserva, recarrega sozinha (animação por cima, o tiro
+## espera); o botão recarrega o pente pela metade; trocar de arma corta a recarga.
+func test_reload() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+	await t._frames(10)
+	t.check(p.mag_of("pistol") == 10 and p.reserve_of("pistol") == 0, "pistola começa com o pente cheio, sem reserva",
+		"%d/%d" % [p.mag_of("pistol"), p.reserve_of("pistol")])
+	t.check(p.collect("pistol", 10) and p.mag_of("pistol") == 10 and p.reserve_of("pistol") == 10, "pente extra no chão vai para a reserva")
+	Input.action_press("aim")
+	await t._frames(30)
+	var gap := int(p.weapon_stats("pistol").cooldown * 60) + 2
+	for i in 10:
+		p.fire()
+		await t._frames(gap)
+	t.check(p.shots_fired == 10, "10 tiros no pente", str(p.shots_fired))
+	await t._frames(2)
+	t.check(p.reloading == "pistol" and p.model.tree.get("parameters/reload/active"), "pente vazio com reserva: recarrega sozinha (animação)",
+		"recarregando '%s'" % p.reloading)
+	p.fire()
+	t.check(p.shots_fired == 10, "recarregando não atira")
+	var dur := float(Moves.data().reload.pistol.frames) / Moves.fps()
+	await t._frames(int(dur * 60) + 5)
+	t.check(p.reloading == "" and p.mag_of("pistol") == 10 and p.reserve_of("pistol") == 0, "acabou a recarga: pente cheio da reserva",
+		"%d/%d" % [p.mag_of("pistol"), p.reserve_of("pistol")])
+	p.collect("pistol", 10)
+	for i in 3:
+		p.fire()
+		await t._frames(gap)
+	t.check(p.mag_of("pistol") == 7, "3 tiros: 7 no pente", str(p.mag_of("pistol")))
+	Input.action_press("reload")
+	await t._frames(2)
+	Input.action_release("reload")
+	await t._frames(int(dur * 60) + 5)
+	t.check(p.mag_of("pistol") == 10 and p.reserve_of("pistol") == 7, "botão de recarregar completa o pente", "%d/%d" % [p.mag_of("pistol"), p.reserve_of("pistol")])
+	# M16 do baú: pente cheio; trocar de arma no meio da recarga corta e o pente fica como estava
+	p.give_weapon("m16")
+	t.check(p.mag_of("m16") == GameMode.MAGAZINE.m16 and p.reserve_of("m16") == 0, "M16 do baú vem com o pente cheio (30)", "%d/%d" % [p.mag_of("m16"), p.reserve_of("m16")])
+	t.check(p.collect_weapon("m16", 15) and p.reserve_of("m16") == 15, "M16 largado no chão (já tem): meio pente na reserva")
+	await t._frames(30)
+	p.fire()
+	await t._frames(10)
+	t.check(p.reload() and p.reloading == "m16", "M16 com 29: recarrega")
+	p.switch_weapon()
+	await t._frames(2)
+	t.check(p.reloading == "" and p.mag_of("m16") == 29, "trocou de arma: a recarga para, o pente fica com 29", str(p.mag_of("m16")))
 	_release_all()
 	p.queue_free()
 
@@ -848,7 +900,8 @@ func test_pack_turns() -> void:
 	t.check(starts >= 3, "matilha: os ataques continuam vindo", str(starts))
 	t.check(gap_min >= Raptor.PACK_GAP.x - 0.6, "matilha: espera entre um ataque e o próximo", "%.2f s" % gap_min)
 	t.check(pairs > 60 and spread_min > deg_to_rad(60.0), "matilha: quem espera cerca espalhado", "%.0f° (%d)" % [rad_to_deg(spread_min), pairs])
-	t.check(wait_frames > 120 and still_frames > wait_frames * 0.9, "matilha: quem espera fica parado observando (não rodeia)", "%d/%d" % [still_frames, wait_frames])
+	# o que sobra é quem anda até o lugar novo depois do próprio ataque (Walk a SLOT_SPEED pela beira da faixa), não rodear
+	t.check(wait_frames > 120 and still_frames > wait_frames * 0.85, "matilha: quem espera fica parado observando (não rodeia)", "%d/%d" % [still_frames, wait_frames])
 
 
 ## Giro da mira quase de costas: o lado do giro escolhido no começo segue até o fim, mesmo com o alvo pulando para o outro

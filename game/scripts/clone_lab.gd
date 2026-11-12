@@ -3,7 +3,7 @@ extends Node3D
 ## Sala dos clones: anexo atrás da plataforma de carga, ao norte do galpão. O portão de enrolar (Door, `room` -1: fora da
 ## corrente galpão -> pátio -> pedreira) fica na parede do fundo do galpão, na altura da plataforma (o piso da sala é o
 ## da doca). Dentro, duas fileiras de tubos de vidro com velociraptors clonados suspensos no líquido, parados como se
-## estivessem congelados (RaptorModel sem animação, encolhidos na pose de embrião `EMBRYO`, azulados), bolhas subindo, névoa fria no chão e um console no
+## estivessem congelados (RaptorModel parado na pose de embrião, animação `Embryo`, azulados), bolhas subindo, névoa fria no chão e um console no
 ## fundo. Ela entra pela primeira vez: sinal `entered` (o main toca a cena do choque, Cutscene.play_clones).
 ## Cada tubo tem uma plaqueta (SubjectPlate, "SUBJECT XXXX", lida com E). No canto do fundo à esquerda fica o tanque
 ## enorme do alossauro, inteiro, drenado e com a porta de vidro aberta (vazio: ele está na pedreira); o número da
@@ -28,18 +28,7 @@ const CAP_H := 0.4
 const RAPTOR_PITCH := 25.0  # o novelo boiando um pouco de focinho para baixo
 const RAPTOR_SCALE := 0.92  # um pouco menor que o adulto do pátio: cauda e garras longe do vidro
 const RAPTOR_MID := 0.5  # altura do meio do novelo no tubo (fração do vidro)
-## pose de embrião (graus XYZ sobre o repouso do osso, convenção de art/raptor_anims.py): costas arqueadas, pescoço e
-## cabeça dobrados até os joelhos, pernas recolhidas contra a barriga, braços encolhidos e a cauda enrolada por baixo
-## e em volta do lado do corpo
-const EMBRYO := {
-	"Hips": [-10, 0, 0], "Spine": [-26, 0, 0], "Chest": [-26, 0, 0],
-	"Neck1": [-40, 0, 6], "Neck2": [-42, 0, 6], "Head": [-38, 0, 4], "Jaw": [0, 0, 0],
-	"Tail1": [-45, 0, 6], "Tail2": [-45, 0, 10], "Tail3": [-42, 0, 14], "Tail4": [-38, 0, 16],
-	"Thigh_L": [75, 0, 8], "Shin_L": [-55, 0, 0], "Meta_L": [70, 0, 0], "Toe_L": [-40, 0, 0],
-	"Thigh_R": [75, 0, -8], "Shin_R": [-55, 0, 0], "Meta_R": [70, 0, 0], "Toe_R": [-40, 0, 0],
-	"Arm_L": [45, 0, -10], "Forearm_L": [-70, 0, 0], "Hand_L": [-50, 0, 0],
-	"Arm_R": [45, 0, 10], "Forearm_R": [-70, 0, 0], "Hand_R": [-50, 0, 0],
-}
+const GLASS_GAP := 0.22  # nenhum osso do clone a menos que isto do vidro (a pele da cauda e das garras fica por dentro)
 const FROZEN_TINT := Color(0.62, 0.86, 1.08)
 const ENTER_Z := Z_NEAR - 1.2  # passou do portão
 const SUBJECTS := ["0412", "0413", "0414", "0415", "0416", "0417"]  # um por tubo, na ordem em que são montados
@@ -213,12 +202,21 @@ func _tube(at: Vector3, yaw: float) -> void:
 	r.scale = Vector3.ONE * RAPTOR_SCALE
 	holder.add_child(r)
 	_freeze(r)
-	# o meio do novelo (caixa dos ossos) no eixo do tubo, na altura RAPTOR_MID do vidro
-	var box := AABB(holder.to_local(r.global_position), Vector3.ZERO)
-	var sk := r.skeleton
-	for b in sk.get_bone_count():
-		box = box.expand(holder.to_local(sk.global_transform * sk.get_bone_global_pose(b).origin))
-	r.position += Vector3(0, BASE_H + TUBE_H * RAPTOR_MID, 0) - box.get_center()
+	# o meio do novelo (caixa dos ossos) no eixo do tubo, na altura RAPTOR_MID do vidro; se algum osso (a ponta da cauda,
+	# o focinho) passa de `GLASS_GAP` do vidro, encolhe o clone até caber e centra de novo
+	for i in 3:
+		var bones := _bone_points(r, holder)
+		var box := AABB(bones[0], Vector3.ZERO)
+		for q: Vector3 in bones:
+			box = box.expand(q)
+		r.position += Vector3(0, BASE_H + TUBE_H * RAPTOR_MID, 0) - box.get_center()
+		var reach := 0.0
+		for q: Vector3 in _bone_points(r, holder).slice(1):  # só os ossos (a origem do modelo não é corpo)
+			reach = maxf(reach, Vector2(q.x, q.z).length())
+		var room := TUBE_R - GLASS_GAP
+		if reach <= room:
+			break
+		r.scale *= room / reach
 	clones.append(r)
 	# luz de dentro (embaixo e no meio, para o clone não virar só silhueta) e bolhas
 	var o := OmniLight3D.new()
@@ -231,18 +229,23 @@ func _tube(at: Vector3, yaw: float) -> void:
 	tube.add_child(_mist())
 
 
-## Desliga a animação, encolhe o corpo na pose de embrião e o deixa azulado e desbotado (congelado).
-static func _freeze(r: RaptorModel) -> void:
-	r.anim_player.stop()
-	r.anim_player.active = false
+## Pontos dos ossos do clone (com a pose aplicada) no espaço de `holder` (o eixo do tubo passa pela origem dele).
+static func _bone_points(r: RaptorModel, holder: Node3D) -> Array[Vector3]:
 	var sk := r.skeleton
-	sk.reset_bone_poses()
-	for bone: String in EMBRYO:
-		var i := sk.find_bone(bone)
-		if i < 0:
-			continue
-		var e := Vector3(EMBRYO[bone][0], EMBRYO[bone][1], EMBRYO[bone][2]) * (PI / 180.0)
-		sk.set_bone_pose_rotation(i, sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(e))
+	var out: Array[Vector3] = [holder.to_local(r.global_position)]
+	for b in sk.get_bone_count():
+		out.append(holder.to_local(sk.global_transform * sk.get_bone_global_pose(b).origin))
+	return out
+
+
+## Para o corpo na pose de embrião (animação Embryo do raptor: costas arqueadas, cabeça nos joelhos, pernas
+## recolhidas, cauda enrolada) e o deixa azulado e desbotado (congelado), sem piar.
+static func _freeze(r: RaptorModel) -> void:
+	r.chirps = false
+	r.play("Embryo", 0.0)
+	r.anim_player.seek(0.0, true)
+	r.anim_player.advance(0.0)  # a pose já no esqueleto: o centro do novelo é medido logo depois
+	r.anim_player.pause()
 	for mi: MeshInstance3D in r.find_children("*", "MeshInstance3D", true, false):
 		for i in mi.mesh.get_surface_count():
 			var m := mi.get_surface_override_material(i) as ShaderMaterial

@@ -543,6 +543,7 @@ func test_soldier_drops() -> void:
 	await t._frames(5)
 	check("sniper" in p.weapons and p.weapon() == "sniper", "jogadora pegou o rifle Sniper dropado")
 	check(p.ammo_of("sniper") == 5, "jogadora recebeu municao do Sniper", str(p.ammo_of("sniper")))
+	GameMode.set_mode(GameMode.ARCADE)  # os testes seguintes são do arcade
 
 
 func test_soldier_catwalk_los_and_boundaries() -> void:

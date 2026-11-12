@@ -40,7 +40,7 @@ static func capture(main: Node, id: String) -> Dictionary:
 	var data := {
 		"id": id,
 		"player": {"health": p.health, "weapons": p.weapons.duplicate(), "silencer": p.silencer, "keys": p.keys.duplicate(),
-			"ammo": p.ammo.duplicate(), "weapon": p.weapon(), "shots": p.shots_fired},
+			"ammo": p.ammo.duplicate(), "mag": p.mag.duplicate(), "weapon": p.weapon(), "shots": p.shots_fired},
 		"play_t": main._play_t,
 		"smelled": main.smelled,
 		"standoff_armed": main.standoff_armed,
@@ -80,6 +80,11 @@ static func restore(main: Node, data: Dictionary) -> void:
 	p.silencer = s.silencer
 	p.keys.assign(s.keys)
 	p.ammo = (s.ammo as Dictionary).duplicate()
+	if s.has("mag"):
+		p.mag = (s.mag as Dictionary).duplicate()
+	else:
+		p._fill_mags()
+	p.cancel_reload()
 	p.model.set_weapon(s.weapon)
 	p.health = s.health
 	p.health_changed.emit(p.health)

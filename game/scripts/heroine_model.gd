@@ -84,6 +84,8 @@ const LAND_AIR_TIME := 0.25  # no ar por mais que isto: barulho de aterrissagem 
 ## entram mais rápido
 const QUICK := ["assassinate", "crit_strike", "stagger_back", "stagger_fwd", "jump", "jump_up", "land"]  # pulos: o impulso dura 5 quadros
 const XFADE := 0.15
+## Sons da recarga: [quadro no heroine_moves.json "reload", som (o do fuzil com "_rifle")]
+const RELOAD_SOUNDS := [["out", "mag_out"], ["in", "mag_in"], ["rack", "slide_rack"]]
 const QUICK_XFADE := 0.05
 ## levantar do chão: sem mistura com o estado de antes do ragdoll (o PoseFade parte da pose em que o corpo caiu)
 const GETUP := ["getup_front", "getup_back"]
@@ -131,6 +133,9 @@ var hands_up := false  # rendida: mãos ao alto por cima do andar/agachar (HANDS
 var _pump: Node3D
 var _pump_rest: Transform3D
 var _pump_t := -1.0  # segundos desde o tiro da escopeta (-1 = parada)
+var _reload_t := -1.0  # segundos desde o começo da recarga (-1 = parada)
+var _reload_kind := ""
+var _reload_sounds := 0  # quantos dos sons da recarga (RELOAD_SOUNDS) já tocaram
 var _ejected := false
 var _pump_sounds := 0  # 1 = já tocou a ida da telha, 2 = a volta
 var _foot_bones: Array[int] = []
@@ -350,8 +355,24 @@ func _build_tree() -> void:
 		for k in ["a", "b"]:
 			bt.connect_node("hit_dir", j, "a_hit_" + d + k)
 			j += 1
+	# recarga (só a parte de cima, por cima da mira e do tiro): pistola (0) ou fuzil (1)
+	var under_hit := "shoot"
+	if anim_player.has_animation("ReloadPistol"):  # o guerrilheiro pode ter sido gerado antes dela
+		var reload := AnimationNodeOneShot.new()
+		reload.fadein_time = 0.15
+		reload.fadeout_time = 0.2
+		_filter_upper_body(reload)
+		bt.add_node("a_reload_pistol", _anim("ReloadPistol"))
+		bt.add_node("a_reload_rifle", _anim("ReloadRifle"))
+		bt.add_node("reload_pose", AnimationNodeBlend2.new())
+		bt.connect_node("reload_pose", 0, "a_reload_pistol")
+		bt.connect_node("reload_pose", 1, "a_reload_rifle")
+		bt.add_node("reload", reload)
+		bt.connect_node("reload", 0, "shoot")
+		bt.connect_node("reload", 1, "reload_pose")
+		under_hit = "reload"
 	bt.add_node("hit", AnimationNodeAdd2.new())
-	bt.connect_node("hit", 0, "shoot")
+	bt.connect_node("hit", 0, under_hit)
 	bt.connect_node("hit", 1, "hit_dir")
 	bt.connect_node("output", 0, "hit")
 	tree.tree_root = bt
@@ -383,6 +404,7 @@ func _filter_bones(node: AnimationNode, bones: Array) -> void:
 func _process(delta: float) -> void:
 	if tree == null or not tree.active:
 		return
+	_reload_step(delta)
 	_aim = move_toward(_aim, _aim_target, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim)
 	aim_pitch.influence = _aim
@@ -569,6 +591,41 @@ func shoot() -> void:
 		_pump_t = 0.0
 		_ejected = false
 		_pump_sounds = 0
+
+
+## Recarga da arma `kind` ("pistol" ou "m16"): toca ReloadPistol/ReloadRifle por cima e os sons nos quadros do
+## heroine_moves.json "reload". Devolve a duração (s).
+func reload(kind: String) -> float:
+	var r: Dictionary = Moves.data().get("reload", {}).get(kind, {})
+	var dur := float(r.get("frames", 40)) / Moves.fps()
+	if anim_player.has_animation("ReloadPistol"):
+		tree.set("parameters/reload_pose/blend_amount", 0.0 if kind == "pistol" else 1.0)
+		tree.set("parameters/reload/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	_reload_t = 0.0
+	_reload_kind = kind
+	_reload_sounds = 0
+	return dur
+
+
+func cancel_reload() -> void:
+	_reload_t = -1.0
+	if anim_player.has_animation("ReloadPistol"):
+		tree.set("parameters/reload/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+
+
+## Sons da recarga no quadro deles: pente sai, pente entra, ferrolho.
+func _reload_step(delta: float) -> void:
+	if _reload_t < 0.0:
+		return
+	_reload_t += delta
+	var r: Dictionary = Moves.data().get("reload", {}).get(_reload_kind, {})
+	if _reload_sounds < RELOAD_SOUNDS.size():
+		var ev: Array = RELOAD_SOUNDS[_reload_sounds]
+		if _reload_t >= float(r.get(ev[0], 0)) / Moves.fps():
+			Sfx.play(self, ev[1] + ("" if _reload_kind == "pistol" else "_rifle"), muzzle_position())
+			_reload_sounds += 1
+	if _reload_t >= float(r.get("frames", 40)) / Moves.fps():
+		_reload_t = -1.0
 
 
 ## Golpe que anda na direção `dir` (do atirador para ela; zero = de frente), com força `strength` (1 = normal).

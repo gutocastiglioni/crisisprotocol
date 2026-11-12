@@ -399,6 +399,20 @@
   ],
   "stroke": 0.085
  },
+ "reload": {
+  "pistol": {
+   "out": 7,
+   "in": 30,
+   "rack": 37,
+   "frames": 45
+  },
+  "m16": {
+   "out": 10,
+   "in": 42,
+   "rack": 56,
+   "frames": 66
+  }
+ },
  "cover": {
   "wall": 0.3,
   "back_stand": [

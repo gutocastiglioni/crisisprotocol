@@ -52,6 +52,16 @@ const PLATEAU := Rect2(WALL_A - BAND * 0.5, -2.0, X_NEAR - 0.2 - (WALL_A - BAND 
 const SHELF := Rect2(-30.5, -6.0, 6.5, 4.0)
 const ROCK1 := Rect2(-31.4, -6.0, 0.9, 3.5)  # raso: de cima dele a beira do SHELF fica ao alcance das mãos
 const ROCK1_H := 1.2
+## Alambrado na borda do planalto colada na parede oeste do galpão (logo fora da laje do telhado, Roof.EDGE): sem ele ela
+## pula da mureta do telhado para o planalto (~3 m, sem dano) e pula o galpão inteiro.
+const ROOF_FENCE_X := X_NEAR - 0.35
+## Alambrado que fecha o fim de S1 (do chão até WALL_H, 0,2 m na frente das faces de pedra): face sul do planalto, face
+## leste e face sul da beira (SHELF) até a WALL_A. [de, até] no chão.
+const S1_END_FENCE := [
+	[Vector2(X_NEAR - 0.2, PLATEAU.position.y - 0.2), Vector2(SHELF.end.x + 0.2, PLATEAU.position.y - 0.2)],
+	[Vector2(SHELF.end.x + 0.2, PLATEAU.position.y - 0.2), Vector2(SHELF.end.x + 0.2, SHELF.position.y - 0.2)],
+	[Vector2(SHELF.end.x + 0.2, SHELF.position.y - 0.2), Vector2(WALL_A + BAND * 0.5, SHELF.position.y - 0.2)],
+]
 const CLIFF_RAPTORS := [Vector3(-21.0, PLATEAU_Y, 6.0), Vector3(-16.0, PLATEAU_Y, 11.5)]
 ## Eixo da trilha de terra batida, da porta do galpão até o portão de ferro do fundo (o último ponto é a boca do túnel).
 const ROAD := [Vector2(-13.5, -8.5), Vector2(-19.0, -10.0), Vector2(-22.0, -17.0), Vector2(-22.0, -30.0), Vector2(-21.0, -38.0),
@@ -386,6 +396,13 @@ static func _plateau(parent: Node, rng: RandomNumberGenerator) -> void:
 	_grate_box(parent, Vector3(px1 - SHELF.end.x, top, 0.3), Vector3((SHELF.end.x + px1) * 0.5, y, PLATEAU.position.y))
 	_grate_box(parent, Vector3(0.3, top, SHELF.size.y), Vector3(SHELF.end.x, y, SHELF.get_center().y))
 	_grate_box(parent, Vector3(SHELF.size.x, top, 0.3), Vector3(SHELF.get_center().x, y, SHELF.position.y))
+	# borda colada no galpão: o alto da mureta do telhado fica só ROOF_DROP acima do planalto (o pulo não machuca);
+	# alambrado de verdade (visível) do planalto até WALL_H, da beira sul do planalto até a parede que continua o galpão
+	Shed.fence(parent, Vector2(ROOF_FENCE_X, PLATEAU.position.y - 0.15), Vector2(ROOF_FENCE_X, Level.SIZE * 0.5 + 0.2), PLATEAU_Y, WALL_H)
+	# fim de S1 (a faixa de baixo, ao norte): alambrado do chão até WALL_H na frente da face do planalto e da beira, da
+	# parede do galpão até a WALL_A. Sem ele, do telhado ela pulava na diagonal e se agarrava na borda do planalto.
+	for seg: Array in S1_END_FENCE:
+		Shed.fence(parent, seg[0], seg[1], 0.0, WALL_H)
 	# a borda de cima da beira (para o norte, sobre o fim de S2) e a do degrau ficam abertas: é por ali que ela desce
 	# mureta de pedra baixa na borda que dá para S3 (só enfeite: a grade invisível é que segura)
 	var z := PLATEAU.position.y + 1.0

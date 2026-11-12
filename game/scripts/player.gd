@@ -91,6 +91,7 @@ const NOTICE_GAP := 0.8  # o mesmo aviso de "vazia"/"pare" no máximo a cada tan
 const SNIPER_ZOOM_LEVELS: Array[float] = [2.0, 4.0, 8.0, 16.0]
 const SNIPER_ZOOM_LABELS: Array[String] = ["2.0x", "4.0x", "8.0x", "16.0x"]
 const MAX_HEALTH := 100
+const BLEED_AT := 30  # vida até isto: ela pinga sangue (rastro `Blood.Trail`); acima, não sangra
 const PICK_RANGE := 0.9  # distância até o lugar de ajoelhar para poder pegar
 const HIP_AIM_TIME := 0.6
 const SHOT_MASK := 1 | 2 | Ragdoll.LAYER
@@ -124,8 +125,13 @@ var silencer := false:
 			model.silenced = v
 ## chaves pegas (id de KeyItem / Chest.lock); usar a chave a tira daqui
 var keys: Array[String] = []
-## munição de cada arma (só vale com GameMode.limited_ammo)
+## munição de cada arma (só vale com GameMode.limited_ammo): o total, pente incluído
 var ammo := GameMode.START_AMMO.duplicate()
+## balas no pente de cada arma de pente (GameMode.MAGAZINE); a reserva é ammo - pente
+var mag := {}
+## recarregando a arma deste nome ("" = não): o tiro espera; acaba em `_reload_t` s (o tempo da animação)
+var reloading := ""
+var _reload_t := 0.0
 var moves: PlayerMoves
 var _shape: CollisionShape3D
 var _air_t := 0.0
@@ -175,6 +181,7 @@ var _trail := Blood.Trail.new()
 
 
 func _ready() -> void:
+	_fill_mags()  # começa com o pente cheio (o reset_loadout repete ao reiniciar)
 	collision_layer = 2
 	collision_mask = 1 | Yard.GRATE_LAYER  # portões de grade e bordas do planalto da trilha do pátio
 	add_to_group("player")
@@ -203,7 +210,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	stealth.update(delta)
 	if not dead and not grabbed:
-		_trail.update(self, delta, 1.0 - health / 100.0)
+		_trail.update(self, delta, bleed())
 	if grabbed or dead or cutscene or surrendered or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
 		lean.cancel()
 		cover.cancel()
@@ -234,6 +241,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if surrendered and _hold_surrender(delta):
 		return
+	_update_reload(delta)
 	_shot_cd -= delta
 	_hip_aim_t -= delta
 	_lock_t -= delta
@@ -305,18 +313,19 @@ func _physics_process(delta: float) -> void:
 			if shut:
 				ladder_locked.emit(shut)
 				return
+			# chave/cartão no chão antes do baú: o cartão do sniper do mezanino pode cair junto ao container do cadeado
+			var key_node := pick_key()
+			if key_node:
+				if camera_rig:
+					camera_rig.focus_pulse(true)  # corta para ela antes da tela do item; ao fechar, afasta
+				key_node.take(self)
+				return
 			var chest := pick_target()
 			if chest and chest.is_locked():
 				locked.emit(chest)
 				return
 			if chest:
 				moves.start_pickup(chest)
-				return
-			var key_node := pick_key()
-			if key_node:
-				if camera_rig:
-					camera_rig.focus_pulse(true)  # corta para ela antes da tela do item; ao fechar, afasta
-				key_node.take(self)
 				return
 			var drop := pick_drop()
 			if drop:
@@ -356,6 +365,8 @@ func _physics_process(delta: float) -> void:
 				return
 	if Input.is_action_just_pressed("switch_weapon"):
 		switch_weapon()
+	if Input.is_action_just_pressed("reload") or (_shot_cd <= 0.0 and needs_reload(weapon())):
+		reload()  # o botão, ou o pente acabou e há reserva
 
 	# encostada na caixa/parede (PlayerCover, pelo comando): mirar/esgueirar só pausam e ela volta a encostar depois
 	var covering := false
@@ -446,7 +457,17 @@ func visibility_from(eye: Vector3) -> float:
 
 
 ## Para onde os inimigos olham e miram: o peito; esgueirada pela quina, a cabeça que ficou de fora (PlayerLean).
+## Quanto ela sangra (0..1 para o `Blood.Trail`): nada acima de BLEED_AT de vida; dali até 0, de leve a grave.
+func bleed() -> float:
+	if health > BLEED_AT:
+		return 0.0
+	return lerpf(0.3, 1.0, 1.0 - float(health) / BLEED_AT)
+
+
 func sight_point() -> Vector3:
+	if cover.aim_mode == "over" and not crouching:
+		# mirando por cima da caixa baixa: a cabeça e os ombros estão de fora (o peito fica atrás da caixa)
+		return global_position + Vector3.UP * PlayerLean.HEAD_Y
 	return lean.sight_point()
 
 
@@ -652,9 +673,71 @@ func weapon_stats(kind: String) -> Dictionary:
 	return s
 
 
-## Munição da arma `kind` (sempre cheia no "arcade", onde não acaba).
+## Munição da arma `kind` (sempre cheia no "arcade", onde não acaba), pente incluído.
 func ammo_of(kind: String) -> int:
 	return ammo.get(kind, 0) if GameMode.limited_ammo() else 999
+
+
+## Balas no pente (arma sem pente: toda a munição dela).
+func mag_of(kind: String) -> int:
+	if not GameMode.limited_ammo():
+		return 999
+	if not kind in GameMode.MAGAZINE:
+		return ammo_of(kind)
+	return mini(int(mag.get(kind, 0)), ammo_of(kind))
+
+
+## Balas fora do pente (as que a recarga pode pôr nele).
+func reserve_of(kind: String) -> int:
+	return ammo_of(kind) - mag_of(kind)
+
+
+## Pente vazio com reserva: a recarga entra sozinha.
+func needs_reload(kind: String) -> bool:
+	return GameMode.limited_ammo() and kind in GameMode.MAGAZINE and reloading == "" and mag_of(kind) <= 0 and reserve_of(kind) > 0
+
+
+## Recarrega a arma da mão (pente que não está cheio e reserva): toca a animação (ReloadPistol/ReloadRifle) e o pente só
+## enche no fim dela. Devolve false se não deu.
+func reload() -> bool:
+	var kind := weapon()
+	if not GameMode.limited_ammo() or not kind in GameMode.MAGAZINE or reloading != "":
+		return false
+	if dead or grabbed or cutscene or surrendered or moves.busy() or _down_t > 0.0 or _rising:
+		return false
+	if mag_of(kind) >= int(GameMode.MAGAZINE[kind]) or reserve_of(kind) <= 0:
+		return false
+	reloading = kind
+	_reload_t = model.reload(kind)
+	return true
+
+
+## Corta a recarga no meio (trocou de arma, rolou, foi agarrada...): o pente fica como estava.
+func cancel_reload() -> void:
+	if reloading == "":
+		return
+	reloading = ""
+	_reload_t = 0.0
+	model.cancel_reload()
+
+
+func _update_reload(delta: float) -> void:
+	if reloading == "":
+		return
+	if reloading != weapon() or dead or grabbed or cutscene or surrendered or moves.busy() or _down_t > 0.0 or _rising:
+		cancel_reload()
+		return
+	_reload_t -= delta
+	if _reload_t <= 0.0:
+		mag[reloading] = mini(int(GameMode.MAGAZINE[reloading]), ammo_of(reloading))
+		reloading = ""
+
+
+## Pentes cheios com o que ela tem (começo, checkpoint antigo sem pente gravado).
+func _fill_mags() -> void:
+	mag = {}
+	for k: String in GameMode.MAGAZINE:
+		mag[k] = mini(int(GameMode.MAGAZINE[k]), int(ammo.get(k, 0)))
 
 
 func has_ammo(kind: String) -> bool:
@@ -666,6 +749,9 @@ func reset_loadout() -> void:
 	weapons = ["pistol"]
 	silencer = false
 	ammo = GameMode.START_AMMO.duplicate()
+	_fill_mags()
+	reloading = ""
+	_reload_t = 0.0
 	model.set_weapon("pistol")
 
 
@@ -694,7 +780,7 @@ func collect_weapon(w: String, ammo_amount := -1) -> bool:
 	if dead or grabbed:
 		return false
 	if not w in weapons:
-		give_weapon(w)
+		give_weapon(w, ammo_amount)
 		return true
 	if not GameMode.limited_ammo():
 		return false
@@ -710,15 +796,18 @@ func _say(text: String) -> void:
 	notice.emit(text)
 
 
-## Recebe uma arma (do baú): entra no inventário e já vai para a mão.
-func give_weapon(w: String) -> void:
+## Recebe uma arma (do baú: pente cheio, `WEAPON_AMMO`; largada no chão: `grant`): entra no inventário e já vai para a mão.
+func give_weapon(w: String, grant := -1) -> void:
 	if w == "":
 		return
 	if not w in weapons:
 		weapons.append(w)
 		if GameMode.limited_ammo():
-			ammo[w] = ammo_of(w) + int(GameMode.WEAPON_AMMO[w])
-			notice.emit("%s +%d" % [WEAPON_STATS[w].name, GameMode.WEAPON_AMMO[w]])
+			var n: int = grant if grant > 0 else int(GameMode.WEAPON_AMMO[w])
+			ammo[w] = ammo_of(w) + n
+			if w in GameMode.MAGAZINE:
+				mag[w] = mini(int(GameMode.MAGAZINE[w]), ammo_of(w))
+			notice.emit("%s +%d" % [WEAPON_STATS[w].name, n])
 		else:
 			notice.emit(WEAPON_STATS[w].name)
 	model.set_weapon(w)
@@ -729,6 +818,7 @@ func give_weapon(w: String) -> void:
 func switch_weapon() -> void:
 	if weapons.size() < 2 or moves.busy():
 		return
+	cancel_reload()
 	model.set_weapon(weapons[(weapons.find(weapon()) + 1) % weapons.size()])
 	_shot_cd = 0.15
 
@@ -838,14 +928,21 @@ func fire() -> void:
 	var stats := weapon_stats(kind)
 	if GameMode.aim_to_shoot() and not (aiming and model.is_aimed()):
 		return  # sem mira apertada não há tiro (nem retícula): nada de tiro do quadril
+	if reloading != "":
+		return  # recarregando: o tiro espera o pente
 	if not has_ammo(kind):
 		_shot_cd = DRY_FIRE_TIME
 		Sfx.play(self, "dry_fire", model.muzzle_position())
 		_say("SEM MUNIÇÃO")
 		return
+	if mag_of(kind) <= 0:
+		reload()  # pente vazio: recarrega da reserva
+		return
 	_shot_cd = stats.cooldown
 	_lock_t = stats.lock
 	if GameMode.limited_ammo():
+		if kind in GameMode.MAGAZINE:
+			mag[kind] = mag_of(kind) - 1
 		ammo[kind] = ammo_of(kind) - 1
 	shots_fired += 1
 	if stats.get("loud", true):

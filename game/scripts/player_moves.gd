@@ -174,6 +174,12 @@ func find_ledge(fwd: Vector3) -> Dictionary:
 	q.transform = Transform3D(Basis(), Vector3(face.x, top + 0.9, face.z) - n * 0.5)
 	if not space.intersect_shape(q, 1).is_empty():
 		return {}
+	# grade entre a beira e o lugar de ficar de pé (alambrado em cima da borda ou na frente dela): não sobe nem se pendura
+	for dy in [0.5, 1.2]:
+		var gq := PhysicsRayQueryParameters3D.create(Vector3(face.x, top + dy, face.z) + n * 0.45,
+			Vector3(face.x, top + dy, face.z) - n * 0.5, Yard.GRATE_LAYER, ex)
+		if not space.intersect_ray(gq).is_empty():
+			return {}
 	return {"n": n, "face": Vector3(face.x, top, face.z), "top": top, "height": top - feet.y}
 
 

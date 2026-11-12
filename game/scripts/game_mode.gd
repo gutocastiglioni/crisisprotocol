@@ -33,10 +33,14 @@ const PROFILES := {
 	},
 }
 
-## Munição que ela tem ao começar (e ao reiniciar), a que vem junto ao pegar a arma no baú e o máximo que carrega.
+## Munição que ela tem ao começar (e ao reiniciar), a que vem junto ao pegar a arma no baú (pente cheio) e o máximo que
+## carrega (pente + reserva; pistola 10 + 50, M16 30 + 150).
 const START_AMMO := {"pistol": 10, "m16": 0, "shotgun": 0, "m79": 0, "sniper": 0}
-const WEAPON_AMMO := {"pistol": 0, "m16": 15, "shotgun": 5, "m79": 4, "sniper": 5}
-const AMMO_CAP := {"pistol": 40, "m16": 90, "shotgun": 25, "m79": 10, "sniper": 15}
+const WEAPON_AMMO := {"pistol": 0, "m16": 30, "shotgun": 5, "m79": 4, "sniper": 5}
+const AMMO_CAP := {"pistol": 60, "m16": 180, "shotgun": 25, "m79": 10, "sniper": 15}
+## Armas de pente (só no survival, `limited_ammo`): o tiro gasta o pente; vazio, recarrega da reserva (Player.reload, animação
+## ReloadPistol/ReloadRifle). No chão: pistola 1 pente, M16 meio pente (Pickup.LAYOUT, o que os guardas largam).
+const MAGAZINE := {"pistol": 10, "m16": 30}
 
 ## Valores das armas que mudam em "survival" (os do "arcade" estão em Player.WEAPON_STATS). Além dos de lá: `aim_speed` =
 ## velocidade máxima enquanto o botão de mirar está apertado (m/s; 0 = o movimento trava sozinho, ela só gira a mira); `lock`/

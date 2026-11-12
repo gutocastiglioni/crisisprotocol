@@ -25,10 +25,12 @@ const NAMES := {
 	"Headbutt": "CABEÇADA (ESQ.)", "HeadbuttR": "CABEÇADA (DIR.)", "Stomp": "PISADA", "Throw": "ARREMESSO",
 	"Hit": "LEVA TIRO", "Death": "MORTE",
 	"HopL": "PULINHO (ESQ.)", "HopR": "PULINHO (DIR.)",
+	"Jog": "TROTE", "CallAlert": "CHAMA A MATILHA", "Sniff": "FAREJA", "Embryo": "EMBRIÃO (TUBO)",
 }
 ## ciclos de locomoção: m/s em velocidade 1 (o mesmo que o jogo usa) = andam no modo EM CÍRCULO
 const GAITS := {
-	"raptor": {"Walk": Raptor.WALK_ANIM_SPEED, "Run": Raptor.RUN_ANIM_SPEED, "Stalk": Raptor.STALK_ANIM_SPEED},
+	"raptor": {"Walk": Raptor.WALK_ANIM_SPEED, "Run": Raptor.RUN_ANIM_SPEED, "Jog": Raptor.JOG_ANIM_SPEED,
+		"Stalk": Raptor.STALK_ANIM_SPEED},
 	"allosaurus": {"Walk": Allosaurus.WALK_ANIM_SPEED, "Run": Allosaurus.RUN_ANIM_SPEED},
 }
 const SIZE := {"raptor": 1.0, "allosaurus": 3.0}  # escala do palco (câmera, roda, alvo)
