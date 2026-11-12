@@ -70,7 +70,8 @@ const FLAK_TEXT := "FLAK JACKET"
 ##   `Enemy.distracted`): de costas e distraído não vê nada; o barulho o tira de lá e aí é um guarda como os outros
 ##   (desconfia, vai ver, procura); quando desiste volta ao painel
 const GUARDS := [
-	{"route": [Vector3(-8.5, 0, -10.5), Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
+	# barra do T na faixa entre o canto da porta do pátio e a grade do painel (o tronco pelo vão do canto fechou: Shed)
+	{"route": [Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
 	{"route": [Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0), Vector3(10.5, 0, -9.0), Vector3(11.4, 0, 1.4)]},
 	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
 	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": [], "post": "patio"},
@@ -78,7 +79,7 @@ const GUARDS := [
 	# colado atrás da parede de caixas do sul, a oeste do vão, olhando para a ala leste: vê o canto (o tronco do 0) e o vão de
 	# lado, mas as caixas tapam a vista dele para fora, para a saída do labirinto
 	{"pos": Vector3(-10.6, 0, -1.6), "rot_y": -PI * 0.5, "route": [], "hold": true, "post": "patio"},
-	{"route": [Vector3(-6.0, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
+	{"route": [Vector3(-2.6, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
 	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true, "post": "patio"},
 	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
 	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
@@ -126,7 +127,7 @@ var _char_tw: Tween
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | Yard.GRATE_LAYER  # grades do galpão (Shed) e da trilha seguram o corpo dele
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.3

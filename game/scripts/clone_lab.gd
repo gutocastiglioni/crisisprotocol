@@ -52,6 +52,9 @@ const TANK_BASE := 0.5
 const TANK_CAP := 0.5
 const TANK_SIDES := 16
 const TANK_DOOR_OPEN := 100.0  # graus: a porta de vidro (3 lados) aberta para fora
+## Caixas de equipamento (baixas: escondem ela agachada) para entrar sem ser vista pelos guardas do tanque e do computador
+## (Shed.LAB_GUARDS): [x, giro, z]. A primeira fica na frente de onde a cena do susto a deixa.
+const COVER := [Vector3(0.2, 0.05, -18.4), Vector3(2.0, -0.1, -22.2), Vector3(-2.1, 0.08, -24.4)]
 
 var gate: Door
 var clones: Array[RaptorModel] = []
@@ -61,6 +64,7 @@ var played := false
 
 
 func _ready() -> void:
+	add_to_group("clone_lab")
 	_build_room()
 	_build_gate()
 	for s in [-1, 1]:
@@ -92,8 +96,18 @@ func _build_room() -> void:
 	var wall_h := CEIL_Y - FLOOR_Y  # até debaixo da laje do teto: topo da parede no plano da laje piscava na beira
 	# base maciça até a altura da doca e o piso
 	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, FLOOR_Y, depth + 0.4), Vector3(0, FLOOR_Y * 0.5, mid_z), "concrete", 0.35)
-	for s in [-1, 1]:
-		Level.block(self, Vector3(0.4, wall_h, depth + 0.4), Vector3(s * HALF_W, FLOOR_Y + wall_h * 0.5, mid_z), "wall", 0.5)
+	Level.block(self, Vector3(0.4, wall_h, depth + 0.4), Vector3(-HALF_W, FLOOR_Y + wall_h * 0.5, mid_z), "wall", 0.5)
+	# parede leste com o vão da porta de serviço dos reforços (Shed.SERVICE 0)
+	var dz: float = Shed.SERVICE[0].door.z
+	var dw := Shed.SERVICE_W * 0.5
+	var z0 := Z_FAR - 0.2
+	var z1 := Z_NEAR + 0.2
+	Level.block(self, Vector3(0.4, wall_h, (dz - dw) - z0), Vector3(HALF_W, FLOOR_Y + wall_h * 0.5, (z0 + dz - dw) * 0.5), "wall", 0.5)
+	Level.block(self, Vector3(0.4, wall_h, z1 - (dz + dw)), Vector3(HALF_W, FLOOR_Y + wall_h * 0.5, (dz + dw + z1) * 0.5), "wall", 0.5)
+	Level.block(self, Vector3(0.4, wall_h - Shed.SERVICE_H, dw * 2.0), Vector3(HALF_W, FLOOR_Y + (wall_h + Shed.SERVICE_H) * 0.5, dz), "wall", 0.5)
+	# cobertura baixa para entrar escondida (caixas de equipamento no corredor do meio e perto dos tubos)
+	for c: Vector3 in COVER:
+		Level.block(self, Vector3(1.2, Level.LOW_CRATE_H, 0.9), Vector3(c.x, FLOOR_Y + Level.LOW_CRATE_H * 0.5, c.z), "crate", 1.0 / 1.2, c.y)
 	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, wall_h, 0.4), Vector3(0, FLOOR_Y + wall_h * 0.5, Z_FAR), "wall", 0.5)
 	# parede de cima, acima da parede do galpão (o anexo é mais alto)
 	var top_h := CEIL_Y - Level.WALL_H

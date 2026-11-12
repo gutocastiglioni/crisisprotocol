@@ -332,6 +332,12 @@ func _physics_process(delta: float) -> void:
 				if camera_rig:
 					camera_rig.focus_pulse()
 				return
+			var term := pick_terminal()
+			if term:
+				term.use()
+				if camera_rig:
+					camera_rig.focus_pulse()
+				return
 			var door := pick_door()
 			if door:
 				if door.is_locked() and door.code != "":
@@ -779,6 +785,16 @@ func pick_drop() -> SupplyDrop:
 	for d: SupplyDrop in get_tree().get_nodes_in_group("drops"):
 		if d.can_pick(global_position):
 			return d
+	return null
+
+
+## Computador do galpão ao alcance para usar (Shed: destrava uma grade), ou null.
+func pick_terminal() -> Terminal:
+	if dead or grabbed or moves.busy():
+		return null
+	for t: Terminal in get_tree().get_nodes_in_group("terminals"):
+		if t.can_use(global_position):
+			return t
 	return null
 
 

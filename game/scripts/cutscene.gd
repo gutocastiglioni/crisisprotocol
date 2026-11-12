@@ -5,7 +5,8 @@ extends Node
 ##   1. atrás dela, baixo, enquanto ela anda devagar entre os tubos (WALK_TIME);
 ##   2. perto do primeiro clone, a câmera chegando no focinho parado no líquido;
 ##   3. o rosto dela: recua com as mãos para cima (animação Shocked) e a legenda "O QUE...?!";
-##   4. do alto do fundo da sala, ela pequena no meio das duas fileiras de tubos.
+##   4. por cima do ombro dela, agachando: no fundo o tanque vazio do alossauro com os guardas examinando e o do
+##      computador (Shed.LAB_GUARDS, de costas, distraídos); no fim ela fica agachada atrás da caixa de equipamento.
 ## Cada cena só pode ser pulada depois de vista até o fim uma vez (`Settings.cutscene_seen`, guardado no arquivo de config):
 ## da segunda vez em diante (reinício, outra partida) aparece "<glifo> PULAR" na faixa de baixo e interagir (E/X) depois de
 ## SKIP_AFTER pula o resto. No fim a câmera volta para a dela, atrás dela, na inclinação inicial (`CameraRig.reset_view`).
@@ -281,6 +282,8 @@ func _physics_process(delta: float) -> void:
 	if t >= FACE_AT and not _shocked:
 		_shocked = true
 		player.model.play("shocked")
+	if t >= WIDE_AT and t - get_physics_process_delta_time() < WIDE_AT:
+		player.model.set_state("crouch")  # vê os guardas no fundo e se abaixa atrás da caixa
 	_sub.visible = t >= SUB_AT and t < WIDE_AT + 0.6
 	if t >= END_AT:
 		_finish()
@@ -536,9 +539,10 @@ func _place_camera() -> void:
 		_cam.look_at(head + Vector3.UP * (-0.2))
 	else:
 		var k := (t - WIDE_AT) / (END_AT - WIDE_AT)
-		_cam.fov = 55.0
-		_cam.global_position = Vector3(3.2 - 1.4 * k, CloneLab.CEIL_Y - 0.9, CloneLab.Z_FAR + 1.6)
-		_cam.look_at(her + Vector3.UP * 0.8)
+		var tank := CloneLab.TANK + Vector3(1.2, 1.2, 1.5)
+		_cam.fov = 48.0
+		_cam.global_position = her + Vector3(0.9 + 0.3 * k, 1.75 - 0.35 * k, 1.5 - 0.3 * k)
+		_cam.look_at(tank.lerp(her + Vector3.UP * 0.9, 0.18))
 
 
 func _ambush_camera() -> void:
@@ -716,6 +720,8 @@ func stop() -> void:
 	if is_instance_valid(player):
 		player.cutscene = false
 		player.cutscene_walk = Vector3.ZERO
+		if scene == "clones":
+			player.crouching = true  # termina escondida atrás da caixa de equipamento (CloneLab.COVER)
 		player.model.holster(false)
 		player.model.set_state("idle")
 		player.camera_rig.reset_view(player.rotation.y)

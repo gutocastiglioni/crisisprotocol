@@ -390,7 +390,7 @@ func test_yard_nav() -> void:
 			if NavigationServer3D.map_get_closest_point(map, p).distance_to(p) > 0.5:
 				bad.append(p)
 	check(bad.is_empty(), "todos os pontos de patrulha estão na malha (fora das árvores)", str(bad))
-	var shed := Vector3(2.4, 0, -5)  # chão livre no meio do galpão (rota do 11); na frente do labirinto o raptor não cabe entre as caixas
+	var shed := Vector3(-7.5, 0, -7.0)  # chão livre no canto da porta do pátio (o resto do galpão fica atrás das grades: Shed)
 	var cut := []
 	for post in Yard.POSTS:
 		var path := NavigationServer3D.map_get_path(map, post.pos, shed, true)
@@ -497,7 +497,7 @@ func test_blind_spot_kills() -> void:
 	check(covered.size() == Soldier.BLIND_SPOTS.size(), "toda ronda com ponto cego é morta numa das cenas", str(covered.keys()))
 	for run: Array in runs:
 		var silent: bool = run[0]
-		var main: Node = await _main_scene()
+		var main: Node = await _main_scene(true)
 		var left: Array = run[1].duplicate()
 		var killed_at := {}
 		var alerted := ""
@@ -529,7 +529,7 @@ func test_blind_spot_kills() -> void:
 	for c in [[0, Vector3(-7.2, 0, -5.4), "no canto que o guarda de posto 5 vigia"],
 			[6, Vector3(-1.5, 0, -5.5), "do 6 no meio da descida (o 11 desce paralelo)"],
 			[6, Vector3(-1.8, 0, 1.7), "do 6 no fim, bem na frente da rota do 8"]]:
-		var main: Node = await _main_scene()
+		var main: Node = await _main_scene(true)
 		var v: Soldier = main.soldiers[c[0]]
 		v.global_position = c[1]
 		v.route.clear()
@@ -552,7 +552,7 @@ func test_blind_spot_kills() -> void:
 ## `_known_dead`) e, com ela vista (vermelho), o posto libera todos.
 func test_post_keeps_half() -> void:
 	for spot: Vector3 in [Vector3(-8.5, 0, -8.4), Vector3(-7.2, 0, -5.4)]:
-		var main: Node = await _main_scene()
+		var main: Node = await _main_scene(true)
 		var post: Array = main.soldiers.filter(func(s: Soldier) -> bool: return s.post == "patio")
 		var v: Soldier = main.soldiers[0]
 		v.global_position = spot
@@ -599,9 +599,13 @@ func test_post_keeps_half() -> void:
 func test_shout_earshot() -> void:
 	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto colado na parede do sul (5); as rondas
 	# dependem de onde estão na hora do grito
-	var far := [2, 3, 4, 5]
+	# (3 e 5, do posto do canto, ouvem pelo portão de grade do canto quando o 7 ouve: o alambrado não abafa o grito)
+	var far := [2, 4]
 	# ronda 6 morta no alto do corredor: o sentinela 9 ouve o corpo cair e vai lá; achando o corpo, grita
-	var main: Node = await _main_scene()
+	var main: Node = await _main_scene(true)
+	# a ronda 0 (barra do T fora do canto, atrás da grade do painel) acharia o corpo também e gritaria pela grade da quina:
+	# aqui só conta o grito de quem acha primeiro
+	main.soldiers[0].process_mode = Node.PROCESS_MODE_DISABLED
 	var v: Soldier = main.soldiers[6]
 	v.global_position = Vector3(-1.5, 0, -6.0)
 	v.route.clear()
@@ -625,7 +629,7 @@ func test_shout_earshot() -> void:
 	main.queue_free()
 	await t.process_frame
 	# ferido e morto logo em seguida (no ponto cego do 6): ninguém fica sabendo
-	main = await _main_scene()
+	main = await _main_scene(true)
 	v = main.soldiers[6]
 	v.global_position = Soldier.BLIND_SPOTS[6][0]
 	v.route.clear()
@@ -642,7 +646,7 @@ func test_shout_earshot() -> void:
 	main.queue_free()
 	await t.process_frame
 	# ferido e vivo: grita depois de SHOUT_DELAY, o vizinho vem e os de longe não
-	main = await _main_scene()
+	main = await _main_scene(true)
 	var w: Soldier = main.soldiers[9]
 	await t._frames(5)
 	w.take_hit(5, Vector3.FORWARD, w.global_position + Vector3.UP * 1.2)
@@ -658,7 +662,9 @@ func test_shout_earshot() -> void:
 	await t.process_frame
 
 
-func _main_scene() -> Node:
+## `only_shed`: os inimigos das outras salas (túnel, pátio, pedreira, torres) ficam parados: os testes do galpão daqui
+## não precisam deles e eles pesavam metade de cada passo de física (os testes filhos que usam o túnel não ligam isso).
+func _main_scene(only_shed := false) -> Node:
 	if t._world:
 		t._world.queue_free()
 		t._world = null
@@ -666,6 +672,10 @@ func _main_scene() -> Node:
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	t.get_root().add_child(main)
 	await t._frames(3)
+	if only_shed:
+		for e in main.all_enemies():
+			if Level.room_of(e.global_position.x) != 0:
+				e.process_mode = Node.PROCESS_MODE_DISABLED
 	return main
 
 
@@ -681,14 +691,17 @@ func test_doors_seal_rooms() -> void:
 	await t._frames(3)
 	var doors := t.get_nodes_in_group("doors")
 	var grates := doors.filter(func(d: Door) -> bool: return d.solid_layer == Yard.GRATE_LAYER)
-	check(doors.size() - grates.size() == 4 and grates.size() == Yard.GRATES.size(),
-		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + os portões de grade da trilha",
-		str([doors.size(), grates.size()]))
+	var service := doors.filter(func(d: Door) -> bool: return d.sealed and d.room == -1)
+	check(doors.size() - grates.size() - service.size() == 4 and grates.size() == Yard.GRATES.size() + 2 and service.size() == Shed.SERVICE.size(),
+		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + grades da trilha e do galpão + portas de serviço",
+		str([doors.size(), grates.size(), service.size()]))
 	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
 	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2 and Level.room_of(-140.0) == 3,
 		"quatro salas: galpão, pátio, túnel da mina e pedreira")
 	var yard_r: Raptor = main.raptors[0]
 	yard_r.reset()  # fora da moita da emboscada: um raptor comum no pátio
+	yard_r.global_position = Vector3(-18.0, 0, -13.0)  # no começo da trilha, ao alcance do tiro perto da porta
+	yard_r.reset_physics_interpolation()
 	var p: Player = main.player
 	# depois de matar os guardas a tiros, nada vem: tiro e grito não atravessam a porta fechada
 	p.global_position = Vector3(-11.5, 0, Yard.DOOR_Z)
@@ -742,6 +755,8 @@ func test_unreachable_hunt_gives_up() -> void:
 		var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 		t.get_root().add_child(main)
 		await t._frames(3)
+		main.shed.mid_gate.set_held(false, true)  # a grade do painel aberta: o meio do galpão chega ao labirinto
+		main.shed.mid_gate.open()
 		var people: RID = main.soldiers[0].nav_map
 		check(people.is_valid() and main.soldiers.all(func(s: Soldier) -> bool: return s.nav_map == people), "soldados andam na malha de gente")
 		# a sincronização do mapa roda em outra thread: espera por relógio

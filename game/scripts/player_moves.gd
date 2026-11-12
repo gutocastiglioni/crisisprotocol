@@ -170,7 +170,7 @@ func find_ledge(fwd: Vector3) -> Dictionary:
 	cap.radius = 0.28
 	cap.height = 1.7
 	q.shape = cap
-	q.collision_mask = 1
+	q.collision_mask = 1 | Yard.GRATE_LAYER  # grade por cima das caixas (canto da porta do pátio, Shed): não sobe
 	q.transform = Transform3D(Basis(), Vector3(face.x, top + 0.9, face.z) - n * 0.5)
 	if not space.intersect_shape(q, 1).is_empty():
 		return {}

@@ -113,6 +113,7 @@ var locker: Chest  # container trancado com a M79
 var key: KeyItem  # chave do container da M79 (etiqueta "0M79"), na mão do guerrilheiro morto
 var corpse: Corpse  # guerrilheiro morto no meio do pátio, com a chave do container na mão
 var yard_raptors: Array[Raptor] = []  # os da mata: os 3 da emboscada (primeiros) + os dos trechos e do barranco (ForestTrail)
+var shed: Shed  # galpão em seções: grades, computadores que destravam, guardas da sala dos clones e reforços
 var trail: ForestTrail  # trilha em S do pátio: trechos de raptors e portões de grade por seção
 ## S3 acabou: os snipers sobem nas torres quando ela descer a trilha da faixa oeste (`wake_towers`)
 var towers_armed := false
@@ -245,8 +246,8 @@ func _ready() -> void:
 	_lurk_yard_raptors(ambush)
 	var grates: Array[Door] = []
 	for d: Door in get_tree().get_nodes_in_group("doors"):
-		if d.solid_layer == Yard.GRATE_LAYER:
-			grates.append(d)
+		if d.solid_layer == Yard.GRATE_LAYER and Level.room_of(d.global_position.x) == 1:
+			grates.append(d)  # só as do pátio (as do galpão são do Shed)
 	trail = ForestTrail.new()
 	trail.player = player
 	add_child(trail)
@@ -292,6 +293,14 @@ func _ready() -> void:
 	for i in Tunnel.GUARDS.size():
 		tunnel.guards.append(_spawn_guard(Tunnel.guard_spot(i)))
 	tunnel.tick.connect(func(left: int) -> void: show_notice("DETONAÇÃO EM %d" % left))
+	# galpão em seções (Shed): o guarda do painel (12) segura o computador da grade do meio; o canto da porta do pátio
+	# tem os do posto (3, 4, 5, 7)
+	shed = Shed.new()
+	shed.player = player
+	add_child(shed)
+	var corner: Array[Enemy] = [soldiers[3], soldiers[4], soldiers[5], soldiers[7]]
+	shed.setup(built.shed, soldiers[12], corner, _spawn_guard)
+	shed.objective.connect(_on_shed_objective)
 	for d: Door in get_tree().get_nodes_in_group("doors"):
 		if d.room == 0:
 			yard_door = d
@@ -299,7 +308,7 @@ func _ready() -> void:
 			mine_door = d
 	Yard.bake_nav(self)
 	var people := Yard.bake_people_nav(self)
-	for sd: Soldier in soldiers:
+	for sd: Soldier in soldiers + shed_soldiers():
 		sd.nav_map = people
 	# itens do chão (só no perfil de sobrevivência): depois da malha de navegação, que não os conhece
 	Pickup.build(self)
@@ -322,7 +331,9 @@ func _ready() -> void:
 	cutscene = Cutscene.new()
 	cutscene.hud = _hud
 	add_child(cutscene)
-	lab.entered.connect(func() -> void: cutscene.play_clones(player, lab))
+	lab.entered.connect(func() -> void:
+		cutscene.play_clones(player, lab)
+		reach_checkpoint("lab"))
 	corpse.noticed.connect(func() -> void:
 		var first: Array[Raptor] = []
 		first.assign(trail.sections[0])
@@ -557,7 +568,24 @@ func all_enemies() -> Array[Enemy]:
 	if is_instance_valid(sniper):
 		out.append(sniper)
 	out.append_array(tower_snipers)
+	out.append_array(shed_soldiers())
 	return out
+
+
+## Os guardas novos do galpão em seções (Shed): os da sala dos clones e os reforços (as duas levas de cada seção).
+func shed_soldiers() -> Array[Soldier]:
+	var out: Array[Soldier] = []
+	out.append_array(shed.lab_guards)
+	for list: Array in shed.reinforcements:
+		out.append_array(list)
+	return out
+
+
+## Um computador do galpão destravou uma grade: aviso na tela; o da sala dos clones também é checkpoint.
+func _on_shed_objective(id: String) -> void:
+	show_notice("GRADE DESTRAVADA" if id == "panel" else "GRADE DO PORTÃO DO PÁTIO DESTRAVADA")
+	if id == "lab":
+		reach_checkpoint("corner")
 
 
 ## Chegou ao checkpoint `id` (Checkpoint.ORDER): grava jogadora e mundo, se for mais à frente que o último.
@@ -977,6 +1005,9 @@ func _reset_world() -> void:
 	corpse.reset()
 	for sd in soldiers:
 		sd.reset()
+	for sd in shed_soldiers():
+		sd.reset()
+	shed.reset()
 	for sd in tunnel.guards:
 		sd.reset()
 	tunnel.reset()
@@ -1083,7 +1114,7 @@ func _parse_args() -> void:
 		pass  # os guardas andam (os do posto mexem nos caixotes); o sniper sai em _setup_key_shot
 	else:
 		# nas outras capturas os guardas do galpão ficam parados (senão atiram na jogadora)
-		for sd in soldiers:
+		for sd in soldiers + shed.lab_guards:
 			sd.process_mode = Node.PROCESS_MODE_DISABLED
 	if _shot in ["ragdoll", "dummy"]:
 		# o alvo de treino só existe nesta revisão (o galpão não tem mais bonecos)
@@ -1107,15 +1138,18 @@ func _parse_args() -> void:
 		allosaurus.process_mode = Node.PROCESS_MODE_DISABLED
 		for r in raptors:
 			r.process_mode = Node.PROCESS_MODE_DISABLED
-	elif _shot == "trail_map":
-		# planta da trilha do pátio, de cima (ortográfica; o sul fica em cima, o galpão à direita): faixas, portões, barranco
+	elif _shot == "trail_map" or _shot == "shed_map":
+		# planta de cima (ortográfica; o sul fica em cima, o leste à direita). trail_map = a trilha do pátio inteira;
+		# shed_map = o galpão e a sala dos clones, com a câmera abaixo do telhado (caixas, grades, guardas no posto)
+		var shed := _shot == "shed_map"
 		_review_cam = Camera3D.new()
 		_review_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		_review_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		_review_cam.size = 96.0
+		_review_cam.size = 48.0 if shed else 96.0
+		_review_cam.near = 0.05
 		_review_cam.far = 200.0
 		add_child(_review_cam)
-		_review_cam.global_position = Vector3((Yard.X_NEAR + Yard.X_FAR) * 0.5, 80.0, 0.0)
+		_review_cam.global_position = Vector3(0.0, Level.WALL_H - 0.3, -9.5) if shed else Vector3((Yard.X_NEAR + Yard.X_FAR) * 0.5, 80.0, 0.0)
 		_review_cam.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
 		_review_cam.current = true
 		var sun := DirectionalLight3D.new()
@@ -1206,6 +1240,7 @@ func _process(delta: float) -> void:
 	var plate := player.pick_plate() if target == null and key_node == null and drop_node == null else null
 	var door := player.pick_door() if target == null and key_node == null and drop_node == null and plate == null else null
 	var det := player.pick_detonator() if target == null and key_node == null and drop_node == null and plate == null else null
+	var term := player.pick_terminal() if target == null and key_node == null and drop_node == null and plate == null and det == null else null
 	var hatch_node := player.pick_hatch() if target == null and key_node == null and drop_node == null and plate == null and door == null else null
 	var ladder := player.pick_ladder() if target == null and key_node == null and drop_node == null and plate == null and door == null and hatch_node == null else null
 	var verb := ""
@@ -1222,6 +1257,8 @@ func _process(delta: float) -> void:
 		verb = "VER PLACA"
 	elif det:
 		verb = "ARMAR DETONADOR"
+	elif term:
+		verb = term.verb
 	elif door:
 		if door.is_locked() and door.code != "":
 			verb = "USAR CHAVE NO PAINEL" if player.has_key(door.lock) else "PAINEL DO PORTÃO"

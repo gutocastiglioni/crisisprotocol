@@ -660,6 +660,11 @@ func _update_marker() -> void:
 func _reaches(pos: Vector3) -> bool:
 	if Roof.has(pos):
 		return false
+	# sala dos clones com o portão de enrolar fechado: nem som nem grito passa entre ela e o galpão
+	if CloneLab.inside(pos) != CloneLab.inside(global_position):
+		var lab := get_tree().get_first_node_in_group("clone_lab") as CloneLab
+		if lab and lab.gate and not lab.gate.opened:
+			return false
 	var a := Level.room_of(pos.x)
 	var b := Level.room_of(global_position.x)
 	if (a == 2 or b == 2) and _flat(pos - global_position).length() > Tunnel.SOUND_REACH:

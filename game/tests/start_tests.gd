@@ -579,6 +579,9 @@ func test_sniper_patrol_in_level() -> void:
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	t.get_root().add_child(main)
 	var s: Sniper = main.sniper
+	for e: Enemy in main.all_enemies():
+		if e != s:
+			e.process_mode = Node.PROCESS_MODE_DISABLED  # só a ronda dele importa (os outros pesavam cada passo)
 	var min_x := INF
 	var max_x := -INF
 	var corner := false
@@ -602,6 +605,7 @@ func test_sniper_spots_standing_in_maze() -> void:
 		for n in t.get_nodes_in_group("enemies"):
 			if n != main.sniper:
 				(n as Enemy).lurking = true
+				n.process_mode = Node.PROCESS_MODE_DISABLED
 		var s: Sniper = main.sniper
 		var p: Player = main.player
 		p.global_position = Level.maze_cell(3, 1)

@@ -60,9 +60,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   `make_voices.py` (falas dos guerrilheiros em `game/assets/voices/<voz>_<fala>_<n>.wav` por TTS local Piper, `pip install
   piper-tts`; vozes pt_BR cadu/faber/jeff, dataset CC0, em `art/voice_models/` fora do git, comando de baixar no cabeçalho;
   abafa como balaclava, satura as gritadas, volume por RMS; `LINES` tem que bater com `Voice.LINES`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
-- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, pátio da mata `yard.gd` + trilha em S dele `forest_trail.gd` (trechos de raptors, portões de grade por seção),
+- `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, galpão em seções `shed.gd` (grades, computadores `terminal.gd`, guardas da sala dos clones e reforços), pátio da mata `yard.gd` + trilha em S dele `forest_trail.gd` (trechos de raptors, portões de grade por seção),
   portas `door.gd` (galpão→pátio, pátio→túnel, túnel→pedreira arrombável), túnel da mina `tunnel.gd`, pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones, emboscada do pátio, rendição aos snipers das torres, conversa do túnel e chegada à pedreira), mira laser do sniper `sniper_laser.gd` (+ `shaders/sniper_laser`/`laser_dot`), checkpoints `checkpoint.gd`, guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`, `voice_tests.gd`), `assets/` (gerados — não
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `shed_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`, `voice_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
@@ -95,6 +95,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
   tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
   Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 do alto, ~9,6 o rugido).
+  Galpão de cima: `--shot=shed_map` (ortográfica abaixo do telhado, com a sala dos clones; as grades finas quase não aparecem
+  de cima: conferir na altura dela com `--shot=yard --pos=x,z[,graus[,altura]]`).
   Trilha do pátio: `--shot=trail_map` (planta de cima, ortográfica, sul em cima e galpão à direita) e `--shot=yard --pos=x,z[,graus[,altura]]`
   (na altura dela; passar das linhas dos trechos solta os raptors; `--pos=-25,-4,180,3.5` = em cima do planalto); trecho saindo da mata:
   `--shot=walk --pos=-31.5,-38.2,180 --playercam --at=4.5`.
@@ -193,8 +195,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   cena, `shaders/light_shaft.gdshader`, da cor da lâmpada) e um halo no painel, e névoa rala no galpão inteiro (`Haze.air`, FogVolume `AIR_DENSITY`, acesa só pelas lâmpadas); sem corpo, luz, sombra nem partículas (a poeira em
   partículas foi tentada e recusada: virava quadradinhos de luz). Igual no PS1 e no PS2 (fora da troca do `Gfx`).
 - Camadas de física: 1 cenário, 2 personagens (cápsulas; o raptor também, com caixa no tronco para os tiros), 4 ragdoll (só colide com o cenário),
-  5 barra da frente das torres (`GuardTower.RAIL_LAYER`), 6 grade (`Yard.GRATE_LAYER`: portões de grade e bordas do planalto da trilha; seguram
-  ela e os raptors, que têm a camada na máscara, e deixam passar tiro, vista, câmera e a malha de navegação).
+  5 barra da frente das torres (`GuardTower.RAIL_LAYER`), 6 grade (`Yard.GRATE_LAYER`: portões de grade e bordas do planalto da trilha,
+  alambrado do galpão; seguram ela, os raptors e os guardas, que têm a camada na máscara, e deixam passar tiro, vista, câmera e a malha de navegação).
 - IA e furtividade (`enemy.gd` = base de `Raptor` e `Soldier`; `Player.visibility()/make_noise()`): o inimigo patrulha `route` e percebe pela visão (cone de 150°, alcance
   `SIGHT_RANGE * Player.visibility()`; raptor 20 m, guerrilheiro `sight_range` 23 m, alertado `ALERT_SIGHT` 32 m: parada 0,7, andando 0,75, correndo/rolando/atirando 1, agachada 0,3 / andando 0,39 (guerrilheiro: 7 m / 9 m) só com algo baixo entre o olho dele e o quadril dela, `PlayerStealth.exposed_to`; agachada no aberto `OPEN_CROUCH` 0,65 / andando 0,7, capim alto ×0,5 agachada)
   e pelo barulho (`hear_noise`: passos de corrida 10 m, andando 4 m, agachada 2 m, tiro 26 m). A atenção (`aware`) sobe → `suspicious`
@@ -233,6 +235,26 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   os `alarm_responders` mais perto saem (soldado: 2, andando = `alarm_walks`, `search_sweeps` 3; raptors: a matilha toda, correndo); os
   outros param, olham para o lugar (`_heed`) e seguem alertados. Sniper: mira e atira só com ela à vista (`SEES_GRACE`); sem vê-la por
   `LOSE_TIME`, procura na passarela e esquece (`_lose_target`). Testes: `ai_tests.gd`.
+- Galpão em seções furtivas (`Shed`, `shed.gd`; `Shed.build` chamado pelo `Level`, o nó criado pelo main): grade de alambrado do
+  chão ao teto (`Shed.fence`, `FENCE_H`, na `Yard.GRATE_LAYER`: segura ela e os guardas, deixa passar tiro, vista e som; as grades
+  fixas entram na malha de navegação como parede, os portões não) divide o galpão: 1 labirinto → 2 faixa do painel (z > `FENCE_A_Z`)
+  → 3 meio + ala da M16 → 4 sala dos clones → 5 canto da porta do pátio. Cada passagem abre por um objetivo (`Terminal`, `terminal.gd`:
+  E na frente, "USAR COMPUTADOR"; com o guarda dele distraído no posto não serve): o computador do painel (`PANEL_USE`, guarda 12)
+  destrava a grade do meio (`MID_GATE`); o computador do laboratório (`LAB_USE`, guarda 0 de `LAB_GUARDS`) destrava o portão de grade
+  do canto (`CORNER_GATE`, no vão leste das caixas do canto). Os outros vãos do canto ficam fechados por grade (`CORNER_FENCES`: o vão
+  do sul, que dava direto nos guardas da porta do pátio, e a quina perto da coluna (-5; -4), por fora da rota da ronda 8) e as
+  paredes de caixas do canto têm grade por cima (`CORNER_TOPS`; o teste de pé em cima da borda de `PlayerMoves.find_ledge` conta a
+  grade: não escala por cima). Portão travado = `Door.held` com o lampião (`Door.add_status_lamp`). A ronda 0 ficou só com a barra
+  do T na faixa entre o canto e a grade do painel; a ronda 6 começa fora do canto.
+  Sala dos clones: `LAB_GUARDS` = 2 examinando o tanque vazio e 1 no computador (distraídos, jeito do guarda do painel) e 1 de ronda
+  no corredor; caixas de equipamento baixas `CloneLab.COVER`. Com o portão de enrolar fechado, som e grito não passam entre a sala e
+  o galpão (`Enemy._reaches`). A cena do susto mostra os guardas no fundo e termina com ela agachada atrás da primeira caixa.
+  Reforços (seções 4 e 5): alarme vermelho na seção (`Shed.red_alert`: ela dentro, alguém dela em luta) → `WAVE_DELAY` s depois a
+  porta de serviço (`SERVICE`, selada para ela, com uma saleta fechada atrás) abre e entram `WAVE` guardas alertados correndo para
+  onde ela foi vista; seguindo o vermelho `SECOND_AFTER` s depois, a segunda leva (`WAVES` = 2). Escondidos na saleta =
+  `lurking` + `PROCESS_MODE_DISABLED`. Ficam no fim de `main.all_enemies()` (`main.shed_soldiers()`). R (`Shed.reset`): grades
+  travadas, computadores sem uso, reforços na saleta; checkpoint (`save_state`/`load_state`): uso dos computadores; reforço vivo
+  volta à saleta e a leva dele conta como não mandada. Testes: `shed_tests.gd`.
 - Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), uma trilha de terra em S por mata
   fechada (jeito Dino Crisis 2 / RE4: ela segue um caminho e a luta vem da frente, não de todos os lados): três faixas norte-sul separadas
   por paredes de mata (`WALL_A`/`WALL_B`, `_bands`: parede invisível de `WALL_H` 10 m, alta para ninguém escalar nem do planalto, com
@@ -375,7 +397,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   todas as armas do heroine.glb e está em 4996 de 5000). Tela do item `Inspect.show_drop`. R fecha a caixa e tira o silenciador.
   Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o galpão (o alçapão aparece do começo) e
   `LAB_FOG_DENSITY` a mais sobre o anexo (a caixa só aparece a poucos metros).
-- Checkpoints (`Checkpoint`, `checkpoint.gd`; `main.reach_checkpoint`, só andam para a frente, aviso "CHECKPOINT"): "yard" = abriu o
+- Checkpoints (`Checkpoint`, `checkpoint.gd`; `main.reach_checkpoint`, só andam para a frente, aviso "CHECKPOINT"): "lab" = entrou na
+  sala dos clones, "corner" = usou o computador do laboratório (o canto da porta do pátio destravou), "yard" = abriu o
   portão do galpão para o pátio (`main.yard_door`), "trail" = os 3 raptors da emboscada mortos (S1), "trail2" = S2 limpa, "standoff" = S3
   limpa (as torres esperam ela descer de novo: `towers_armed`/`towers_up` também vão no checkpoint), "tunnel" = abriu o portão do teclado
   (`main.mine_door`), "allosaurus" = passou pelo portão arrombado para a pedreira. Grava a jogadora (vida, armas, munição, silenciador,

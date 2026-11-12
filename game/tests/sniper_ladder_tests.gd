@@ -474,10 +474,10 @@ func test_shot_hits_what_camera_sees() -> void:
 	s.set_physics_process(false)  # parado no lugar, com corpo (PROCESS_MODE_DISABLED tiraria a cápsula da física)
 	p.health = 100000
 	Input.action_press("aim")
-	# [onde ela está, onde ele está, parte]: do chão, a linha do cano passava pela quina de uma pilha do labirinto;
-	# de dentro do labirinto, ele fica acima dos 31,5° que a câmera subia
-	var cases := [[Vector3(1.0, 0.05, 3.0), Vector3(-3.5, Catwalk.FLOOR_Y, 11.7), "Chest"],
-		[Vector3(-0.8, 0.05, 8.8), Vector3(-1.5, Catwalk.FLOOR_Y, 11.7), "Chest"]]
+	# [onde ela está, onde ele está, parte]: de dentro do labirinto, ele fica acima dos 31,5° que a câmera subia. (O caso
+	# do chão em z = 3, rente à quina de uma pilha do labirinto, saiu: ali agora passa a grade do painel, Shed, e da
+	# frente dela a pilha tapa mesmo a linha do tiro.)
+	var cases := [[Vector3(-0.8, 0.05, 8.8), Vector3(-1.5, Catwalk.FLOOR_Y, 11.7), "Chest"]]
 	for c in cases:
 		s.global_position = c[1]
 		s.health = Sniper.MAX_HEALTH

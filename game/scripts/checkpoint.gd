@@ -4,6 +4,8 @@ extends RefCounted
 ## silenciador, chaves, tiros, tempo) e o mundo como está (quem morreu, portas, baús, caixa de paraquedas, alçapão, chave e
 ## cartões, itens do chão e os largados, caixotes de explosivos, cenas já tocadas). No Game Over, CONTINUAR volta ao último:
 ## o mundo como foi gravado e ela no lugar de renascer daquela área (`SPAWNS`). R / REINICIAR do menu recomeçam do zero.
+##   lab         entrou na sala dos clones (a cena do susto)
+##   corner      usou o computador do laboratório: a grade do canto da porta do pátio destravou
 ##   yard        abriu o portão do galpão para o pátio dos velociraptors
 ##   trail       matou os 3 raptors da emboscada (S1 da trilha; o primeiro portão de grade destravou)
 ##   trail2      limpou S2 (os 7 dos trechos)
@@ -13,10 +15,12 @@ extends RefCounted
 ## Quem morreu antes do checkpoint volta fora do jogo (`Enemy.clear_out`), sem corpo; os vivos voltam calmos ao posto.
 ## Fogo, fumaça, sangue e buracos de bala não voltam. Só vale na partida aberta (não vai para arquivo).
 
-const ORDER := ["yard", "trail", "trail2", "standoff", "tunnel", "allosaurus"]
-const NAMES := {"yard": "PÁTIO", "trail": "PÁTIO", "trail2": "PÁTIO", "standoff": "PÁTIO", "tunnel": "MINA", "allosaurus": "PEDREIRA"}
+const ORDER := ["lab", "corner", "yard", "trail", "trail2", "standoff", "tunnel", "allosaurus"]
+const NAMES := {"lab": "GALPÃO", "corner": "GALPÃO", "yard": "PÁTIO", "trail": "PÁTIO", "trail2": "PÁTIO", "standoff": "PÁTIO", "tunnel": "MINA", "allosaurus": "PEDREIRA"}
 ## onde ela renasce em cada um: [pé, giro (rotation.y; PI/2 = olhando para oeste, para dentro da fase)]
 const SPAWNS := {
+	"lab": [Vector3(0.0, CloneLab.FLOOR_Y, CloneLab.Z_NEAR - 1.6), 0.0],  # logo depois do portão da sala dos clones
+	"corner": [Vector3(Shed.CORNER_GATE.x + 1.4, 0, Shed.CORNER_GATE.z), PI * 0.5],  # na frente da grade do canto
 	"yard": [Vector3(-15.5, 0, Yard.DOOR_Z), PI * 0.5],  # do lado do pátio do portão do galpão
 	"trail": [Vector3(-22.5, 0, -36.5), PI * 0.5],  # no fim de S1, de frente para o primeiro portão de grade
 	"trail2": [Vector3(-36.0, 0, -4.0), PI],  # no fim de S2, de frente para o portão do meio
@@ -42,6 +46,7 @@ static func capture(main: Node, id: String) -> Dictionary:
 		"standoff_armed": main.standoff_armed,
 		"standoff_t": main._standoff_t,
 		"towers": [main.towers_armed, main.towers_up],
+		"shed": main.shed.save_state(),
 		"corpse_armed": main.corpse.armed,
 		"lab_played": main.lab.played,
 		"hatch": main.hatch.opened,
@@ -118,6 +123,7 @@ static func restore(main: Node, data: Dictionary) -> void:
 		elif e is Raptor and e in main.yard_raptors and not es.lurking:
 			e.reset()  # a emboscada já tinha tocado: de volta à rota do pátio, fora da moita
 	main.trail.restore()
+	main.shed.load_state(data.shed)
 	main.refresh_tower_loot()
 	for pk: Pickup in main.get_tree().get_nodes_in_group("pickups"):
 		if not pk.is_drop and pk._home in data.taken:

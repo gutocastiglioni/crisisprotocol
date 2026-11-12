@@ -82,7 +82,7 @@ static func block(parent: Node, size: Vector3, pos: Vector3, tex: String, scale 
 
 
 ## Monta o galpão, o telhado (com o alçapão por onde ela entra) e a sala dos clones atrás da plataforma de carga.
-## Devolve {"hatch": Hatch, "lab": CloneLab, "tunnel": Tunnel}.
+## Devolve {"hatch": Hatch, "lab": CloneLab, "tunnel": Tunnel, "shed": Dictionary (Shed.build)}.
 static func build(parent: Node) -> Dictionary:
 	var h := SIZE * 0.5
 	block(parent, Vector3(SIZE, 0.4, SIZE), Vector3(0, -0.2, 0), "concrete", 0.35)
@@ -110,9 +110,10 @@ static func build(parent: Node) -> Dictionary:
 	for c in crates:
 		block(parent, c[0], c[1], "crate", 1.0 / c[0].x, c[2])
 	_dividers(parent)
-	# caixotes de explosivos no canto da porta do pátio (os guardas do posto mexem neles)
 	_maze(parent)
 	_console(parent)
+	# seções do galpão: grades de alambrado, portões que abrem por objetivo e as saletas dos reforços (Shed)
+	var shed := Shed.build(parent)
 	# plataforma de carga encostada na parede do fundo (1,3 m: dá para escalar; o portão da sala dos clones fica atrás dela)
 	# e a faixa de perigo na frente dela
 	block(parent, Vector3(6.0, CloneLab.FLOOR_Y, 2.0), Vector3(0, CloneLab.FLOOR_Y * 0.5, -h + 1.2), "concrete", 0.35)
@@ -121,7 +122,7 @@ static func build(parent: Node) -> Dictionary:
 	_lights(parent)
 	var lab := CloneLab.new()
 	parent.add_child(lab)
-	return {"hatch": Roof.build(parent), "lab": lab, "tunnel": tunnel}
+	return {"hatch": Roof.build(parent), "lab": lab, "tunnel": tunnel, "shed": shed}
 
 
 ## Parede do fundo (norte) com o vão do portão da sala dos clones na altura da plataforma de carga.
@@ -129,8 +130,15 @@ static func _north_wall(parent: Node) -> void:
 	var h := SIZE * 0.5
 	var gw := CloneLab.GATE_W * 0.5
 	var side := h - gw
-	for s in [-1, 1]:
-		block(parent, Vector3(side, WALL_H, 0.4), Vector3(s * (gw + side * 0.5), WALL_H * 0.5, -h), "wall", 0.5)
+	block(parent, Vector3(side, WALL_H, 0.4), Vector3(gw + side * 0.5, WALL_H * 0.5, -h), "wall", 0.5)
+	# lado oeste com o vão da porta de serviço do canto da porta do pátio (Shed.SERVICE 1: os reforços)
+	var sx: float = Shed.SERVICE[1].door.x
+	var sw := Shed.SERVICE_W * 0.5
+	var x0 := -h
+	var x1 := -gw
+	block(parent, Vector3((sx - sw) - x0, WALL_H, 0.4), Vector3((x0 + sx - sw) * 0.5, WALL_H * 0.5, -h), "wall", 0.5)
+	block(parent, Vector3(x1 - (sx + sw), WALL_H, 0.4), Vector3((sx + sw + x1) * 0.5, WALL_H * 0.5, -h), "wall", 0.5)
+	block(parent, Vector3(sw * 2.0, WALL_H - Shed.SERVICE_H, 0.4), Vector3(sx, (WALL_H + Shed.SERVICE_H) * 0.5, -h), "wall", 0.5)
 	block(parent, Vector3(gw * 2.0, CloneLab.FLOOR_Y, 0.4), Vector3(0, CloneLab.FLOOR_Y * 0.5, -h), "wall", 0.5)
 	var top := WALL_H - CloneLab.GATE_TOP
 	block(parent, Vector3(gw * 2.0, top, 0.4), Vector3(0, CloneLab.GATE_TOP + top * 0.5, -h), "wall", 0.5)
@@ -186,6 +194,9 @@ const DIVIDERS := [
 	[Vector2(8.35, 4.1), 1, 0.02], [Vector2(9.55, 4.1), 1, -0.01], [Vector2(10.75, 4.1), 1, 0.03],
 	# fecham por cima o canto do painel (CONSOLE): o guarda dele e o corpo caído ficam fora da vista da ronda 0
 	[Vector2(-12.15, 7.6), 1, -0.02], [Vector2(-10.95, 7.6), 1, 0.01],
+	# na faixa entre o canto da porta do pátio e a grade do painel (Shed): tapa a ponta oeste da barra do T da ronda 0 (o
+	# ponto cego dela) da ronda 8 subindo em x = -4,7; a passagem fica entre a pilha e a grade
+	[Vector2(-6.0, 1.6), 2, 0.02],
 ]
 const DIVIDER_CRATE := 1.22  # um pouco mais que o passo de 1,2 m: vizinhas encostadas, sem fresta para a visão
 ## Caixa baixa (sozinha ou do divisor): agachada, o alto da cabeça dela fica a ~1,3 m, então cabe toda atrás; ainda dá

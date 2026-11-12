@@ -931,9 +931,9 @@ static func bake_nav(parent: Node, radius := 0.75, height := 2.0, map := RID(), 
 		nm.filter_baking_aabb = area
 	nm.agent_max_climb = 0.25
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nm.geometry_collision_mask = 1
+	nm.geometry_collision_mask = 1 | GRATE_LAYER  # grades fixas (alambrado do galpão, bordas do planalto) são parede na malha
 	var data := NavigationMeshSourceGeometryData3D.new()
-	# portas fechadas não entram na malha como parede: quando abrem, o caminho já passa por elas
+	# portas fechadas (portões de grade também) não entram na malha como parede: quando abrem, o caminho já passa por elas
 	var doors: Array[Node] = parent.get_tree().get_nodes_in_group("doors")
 	for d: Door in doors:
 		d.collision_layer = 0
