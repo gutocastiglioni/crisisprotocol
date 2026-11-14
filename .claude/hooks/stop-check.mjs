@@ -2,8 +2,12 @@
 // Hook "Stop" (qualquer stack): antes do Claude encerrar o turno, procura segredos nos arquivos alterados e roda
 // os comandos da lista "hook" de .claude/quality.json (tipos, lint, unitários) + o limite de 600 linhas. Se algo falhar, devolve o erro (exit 2) e o Claude continua
 // corrigindo — no máximo MAX_BLOCKS vezes seguidas, para nunca entrar em loop.
+// Só conta o que mudou DESDE A ÚLTIMA VEZ QUE PASSOU nesta sessão (base gravada no SessionStart e a cada turno aprovado):
+// arquivos que já estavam alterados no git quando a sessão abriu não disparam nada. A lista vai aos comandos em
+// CHANGED_FILES (o runner do Godot escolhe só as partes da suíte que esses arquivos tocam).
+// `node stop-check.mjs --baseline` (hook SessionStart) só grava a base e sai.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,11 +21,12 @@ const EXEMPT =/(^|\/)(extensions|node_modules|dist|build|\.next|\.dart_tool|\.ve
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const input = (() => { try { return JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { return {}; } })();
 const counterFile = join(tmpdir(), `claude-stop-check-${input.session_id || 'default'}.txt`);
+const baseFile = join(tmpdir(), `claude-stop-base-${input.session_id || 'default'}.json`);
 
 /** Executa um comando no projeto e devolve sucesso + o fim da saída. */
-function run(cmd) {
+function run(cmd, env = process.env) {
   // a suíte do Godot leva ~3,5 min e pode esperar na fila de outra sessão (tools/run_godot_tests.mjs); o hook todo tem 600 s (settings.json)
-  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 590_000 });
+  const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', timeout: 590_000, env });
   return { ok: r.status === 0, status: r.status, stdout: r.stdout || '', out: `${r.stdout || ''}${r.stderr || ''}`.trimEnd().slice(-2500) };
 }
 
@@ -60,10 +65,23 @@ const allChanged = status.stdout.split('\n')
   .map((l) => l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '').trim())
   .filter(Boolean);
 const changed = allChanged.filter((f) => CODE.test(f));
-const tested = allChanged.filter((f) => CODE.test(f) || ENGINE.test(f));
-if (!status.ok || allChanged.length === 0) process.exit(0);
+/** Assinatura (tamanho + data) de cada arquivo alterado no git; apagado = "-". */
+const sigs = Object.fromEntries(allChanged.map((f) => {
+  try { const s = statSync(join(cwd, f)); return [f, `${s.size}|${Math.round(s.mtimeMs)}`]; } catch { return [f, '-']; }
+}));
+if (process.argv.includes('--baseline')) {
+  // só na sessão nova: ao retomar/compactar a mesma sessão a base fica (senão o que ainda não passou seria esquecido)
+  if (status.ok && !existsSync(baseFile)) writeFileSync(baseFile, JSON.stringify(sigs));
+  process.exit(0);
+}
+const base = (() => { try { return JSON.parse(readFileSync(baseFile, 'utf8')); } catch { return null; } })();
+// mudou desde a base: assinatura nova, ou estava alterado e voltou ao do git (sem base: tudo que está alterado)
+const fresh = base === null ? allChanged
+  : [...allChanged.filter((f) => base[f] !== sigs[f]), ...Object.keys(base).filter((f) => !(f in sigs))];
+if (!status.ok || fresh.length === 0) process.exit(0);
+const tested = fresh.filter((f) => CODE.test(f) || ENGINE.test(f));
 
-const failures = allChanged.flatMap(secretProblems);
+const failures = fresh.filter((f) => f in sigs).flatMap(secretProblems);
 const BUSY = 75; // o comando não rodou porque outra sessão ocupava a fila: avisa, não bloqueia (senão as sessões ficam repetindo)
 const warnings = [];
 
@@ -82,14 +100,15 @@ if (quality) {
   if (scripts['test:unit']) checks.push(['unit', 'npm run -s test:unit']);
 }
 if (tested.length) {
+  const env = { ...process.env, CHANGED_FILES: tested.join('\n') };
   for (const [name, cmd] of checks) {
-    const r = run(cmd);
+    const r = run(cmd, env);
     if (r.status === BUSY) { warnings.push(`${name}: ${r.out}`); continue; }
     if (!r.ok) failures.push(`${name} (${cmd}):\n${r.out}`);
   }
 }
 
-for (const file of changed) {
+for (const file of changed.filter((f) => fresh.includes(f))) {
   const full = join(cwd, file);
   if (EXEMPT.test(file.replace(/\\/g, '/')) || !existsSync(full)) continue;
   const lines = readFileSync(full, 'utf8').split('\n').length;
@@ -98,6 +117,7 @@ for (const file of changed) {
 
 if (failures.length === 0) {
   rmSync(counterFile, { force: true });
+  if (!warnings.length) writeFileSync(baseFile, JSON.stringify(sigs)); // aprovado: a próxima vez só olha o que mudar daqui
   if (warnings.length) console.log(JSON.stringify({ systemMessage: `stop-check: NÃO VERIFICADO — ${warnings.join(' | ')}` }));
   process.exit(0);
 }

@@ -18,6 +18,8 @@ var code := ""  # código do teclado (add_keypad); vazio = abre só com a chave/
 var sealed := false  # sem fechadura nem maçaneta: não abre com E, só arrombado (`blow`, portão da pedreira no túnel)
 ## Travado até a seção acabar (portões de grade da trilha do pátio: `ForestTrail` destrava com `set_held(false)`); sem E.
 var held := false
+## Nunca abre (portas da frente do escritório, a falsa da sala dos clones): E avisa com este texto (`Player.door_barred`).
+var locked_text := ""
 ## Camada em que a porta fechada fica: 1 (cenário) ou `Yard.GRATE_LAYER` (grade: segura corpo, não segura tiro nem vista).
 var solid_layer := 1
 var blown := false  # arrombada (`blow`): as folhas estão deitadas no chão
@@ -108,10 +110,10 @@ func add_card_reader(local_pos: Vector3, rot_y: float = 0.0) -> void:
 
 ## Lampião de trava em cima do vão (`local_pos` no espaço da porta): vermelho travado (`held`), verde destravado. Usa o
 ## mesmo LED/luz do leitor de cartão (`_reader_color`).
-func add_status_lamp(local_pos: Vector3) -> void:
+func add_status_lamp(local_pos: Vector3, size := Vector3(0.16, 0.16, 0.16)) -> void:
 	var box := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(0.16, 0.16, 0.16)
+	bm.size = size
 	box.mesh = bm
 	_reader_mat = StandardMaterial3D.new()
 	_reader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -206,7 +208,7 @@ func keypad_power(on: bool) -> void:
 
 
 func is_locked() -> bool:
-	return is_locked_door and not opened and lock != ""
+	return (is_locked_door and not opened and lock != "") or locked_text != ""
 
 
 func unlock(_p: Player = null) -> void:

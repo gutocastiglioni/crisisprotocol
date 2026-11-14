@@ -3,7 +3,7 @@ extends "res://tests/ai_tests.gd"
 ## comum com os raptors e perda de rastro. Usa os auxiliares de ai_tests.gd; chamado por run_tests.gd.
 
 
-func run(runner: SceneTree) -> void:
+func run(runner: SceneTree, _picks: Array = []) -> void:
 	t = runner
 	await test_guerrilla_asset()
 	await test_soldier_patrol_and_spot()
@@ -31,6 +31,10 @@ func run(runner: SceneTree) -> void:
 	await test_patroller_guards_body()
 	await test_no_shot_through_cover()
 	await test_peek_or_push()
+	await test_gunfire_active_search()
+	await test_witness_death()
+	await test_combat_roll()
+	await test_flank_spread()
 
 
 func _spawn_soldier(player_pos: Vector3, soldier_pos := Vector3.ZERO, yaw := PI) -> Array:
@@ -543,31 +547,53 @@ func test_soldier_drops() -> void:
 	await t._frames(5)
 	check("sniper" in p.weapons and p.weapon() == "sniper", "jogadora pegou o rifle Sniper dropado")
 	check(p.ammo_of("sniper") == 5, "jogadora recebeu municao do Sniper", str(p.ammo_of("sniper")))
+	# guarda de pistola (o do painel) larga a pistola, não caixa de munição; ela já tem uma: pegar dá um pente
+	var sp := Soldier.new()
+	sp.position = Vector3(0, 0, 6)
+	sp.weapon = "pistol"
+	sp.target = p
+	w.add_child(sp)
+	sp.take_hit(100, Vector3.BACK, sp.global_position + Vector3.UP)
+	await t._frames(10)
+	var pistol_drop: Pickup = null
+	for d in w.find_children("*", "Pickup", true, false):
+		if d.kind == "pistol":
+			pistol_drop = d
+	check(sp.dead and sp.model.holstered, "guarda de pistola morre e solta a pistola da mão")
+	check(pistol_drop != null and pistol_drop.is_weapon and pistol_drop.amount == 10, "larga a pistola (arma, 10 balas)")
+	check(pistol_drop != null and Pickup.pistol_mesh() != null and pistol_drop.find_children("*", "MeshInstance3D", true, false).any(
+		func(m: MeshInstance3D) -> bool: return m.mesh == Pickup.pistol_mesh()), "no chão é a malha da pistola")
+	var before := p.ammo_of("pistol")
+	p.global_position = pistol_drop.global_position
+	await t._frames(5)
+	check(p.ammo_of("pistol") == before + 10 and p.weapons.count("pistol") == 1, "pegar a pistola dá um pente",
+		"%d -> %d" % [before, p.ammo_of("pistol")])
 	GameMode.set_mode(GameMode.ARCADE)  # os testes seguintes são do arcade
 
 
 func test_soldier_catwalk_los_and_boundaries() -> void:
 	var w: Node3D = await t._fresh_world()
+	Level.block(w, Vector3(30, 0.4, 30), Vector3(-6, -0.2, 58), "concrete")  # chão perto do mezanino (o do mundo de teste fica na origem)
 	var catwalk := Catwalk.new()
 	w.add_child(catwalk)
-	
+
 	var p := Player.new()
-	p.position = Vector3(0, Catwalk.FLOOR_Y, 12.0)
+	p.position = Vector3(-9.8, Catwalk.FLOOR_Y, 64.06)
 	p.health = 100000
 	w.add_child(p)
-	
+
 	var s := Soldier.new()
-	s.position = Vector3(0, 0, 4.0)
+	s.position = Vector3(-9.8, 0, 56.06)
 	s.target = p
 	w.add_child(s)
 	await t._frames(3)
-	
+
 	# 1. Alvo elevado detectado e mira inclinada para cima
 	check(s._is_target_elevated(), "soldado identifica que a heroina esta no mezanino/elevada")
 	s.start_engage()
 	await t._frames(15)
 	check(s.model.aim_pitch != null and s.model.aim_pitch.pitch > 0.05, "soldado inclina o tronco e a arma para cima mirando na passarela", str(s.model.aim_pitch.pitch if s.model.aim_pitch else 0.0))
-	
+
 	# 2. Em combate com alvo na passarela, soldado nao avanca para baixo do mezanino (z <= Catwalk.FRONT_Z - 1.0)
 	var max_z := -999.0
 	for i in 60:
@@ -576,28 +602,28 @@ func test_soldier_catwalk_los_and_boundaries() -> void:
 	check(max_z <= Catwalk.FRONT_Z - 0.9, "soldado mantem distancia e nao entra debaixo do mezanino (max_z=%.2f <= %.2f)" % [max_z, Catwalk.FRONT_Z - 0.9])
 	check(s.global_position.y >= 0.0, "soldado permanece no chão sem cair no vácuo (y=%.2f)" % s.global_position.y)
 	check(s.shots_fired > 0, "soldado atira contra a heroina no mezanino", str(s.shots_fired))
-	
+
 	# 3. Soldado colocado muito perto do mezanino recua para abrir campo de visao
-	s.global_position = Vector3(0, 0, 7.5)
+	s.global_position = Vector3(-9.8, 0, 59.56)
 	s._lost_t = 0.0
 	await t._frames(35)
-	check(s.global_position.z < 7.5, "soldado muito proximo do mezanino recua para abrir o campo de visao (z=%.2f < 7.5)" % s.global_position.z)
-	
+	check(s.global_position.z < 59.56, "soldado muito proximo do mezanino recua para abrir o campo de visao (z=%.2f < 59.56)" % s.global_position.z)
+
 	# 4. Ao perder de vista alvo no mezanino, soldado recua/manobra em vez de correr para debaixo dele
 	s._lost_t = 1.0  # simula perda temporaria de visada
 	await t._frames(30)
 	check(s.global_position.z <= Catwalk.FRONT_Z - 0.9, "sem visao de alvo elevado, soldado nao corre para debaixo do mezanino", str(s.global_position.z))
-	
+
 	# 5. start_hunt e start_investigate limitam o destino fora de debaixo do mezanino
-	s.start_hunt(Vector3(0, Catwalk.FLOOR_Y, 12.5))
+	s.start_hunt(Vector3(-9.8, Catwalk.FLOOR_Y, 64.56))
 	check(s._goal.z <= Catwalk.FRONT_Z - 4.5, "start_hunt com alvo no mezanino mira no patio em frente (goal.z=%.2f)" % s._goal.z)
 	check(s._goal.y == 0.0, "start_hunt mantém o soldado no chão (goal.y=0)")
-	
-	s.start_investigate(Vector3(0, Catwalk.FLOOR_Y, 12.5))
+
+	s.start_investigate(Vector3(-9.8, Catwalk.FLOOR_Y, 64.56))
 	check(s._goal.z <= Catwalk.FRONT_Z - 4.5, "start_investigate com barulho no mezanino mira no patio em frente (goal.z=%.2f)" % s._goal.z)
-	
+
 	# 6. Trava física _clamp_to_bounds
-	s.global_position = Vector3(0, -2.0, 12.8)
+	s.global_position = Vector3(-9.8, -2.0, 64.86)
 	s._clamp_to_bounds()
 	check(s.global_position.y >= 0.0, "_clamp_to_bounds impede y negativo", str(s.global_position.y))
 	check(s.global_position.z <= Catwalk.FRONT_Z - 1.0 + 0.01, "_clamp_to_bounds trava z antes do mezanino", str(s.global_position.z))
@@ -610,14 +636,14 @@ func test_soldier_idle_head_look() -> void:
 	var initial_yaw := s.rotation.y
 	var saw_head_turn := false
 	var body_stayed_planted := true
-	
+
 	for i in 120:
 		await t._frames(1)
 		if absf(s.head_yaw) > 0.1:
 			saw_head_turn = true
 		if absf(s.rotation.y - initial_yaw) > 0.001:
 			body_stayed_planted = false
-	
+
 	check(body_stayed_planted, "guarda parado: corpo não desliza para rotacionar (fica fixo no posto)")
 	check(saw_head_turn, "guarda parado: vigia movendo a cabeça suavemente")
 	check(s.model.head_look != null and absf(s.model.get_head_yaw()) > 0.05, "modelo 3D recebe rotação da cabeça via HeadLook")
@@ -668,29 +694,30 @@ func test_post_guard_holds_until_spotted() -> void:
 
 
 func test_stealth_alert_states_and_corpse_detection() -> void:
-	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3(0, 0, 0), PI)  # atrás dele, ainda no chão do mundo de teste (40 m)
+	# sentinela de costas para a ronda (olha para -Z): não a vê morrer, só ouve o corpo cair (morte vista: test_witness_death)
+	var pr := await _spawn_soldier(Vector3(-15, 0, -18), Vector3(0, 0, 0), 0.0)  # longe (23 m) e fora do caminho até o corpo
 	var p: Player = pr[0]
 	var sentry: Soldier = pr[1]
 	var w: Node3D = pr[2]
 	sentry.route = []
-	
+
 	var patrol := Soldier.new()
 	patrol.position = Vector3(0, 0, 4)
 	patrol.rotation.y = 0.0
 	patrol.target = p
 	w.add_child(patrol)
 	await t._frames(3)
-	
+
 	check(sentry.alert_level() == 0 and not sentry._marker.visible, "sentinela começa calma (nível 0)")
-	
+
 	# Guarda de ronda morre baleado a 4 metros de distância da sentinela
 	patrol.die(Vector3.FORWARD, null, false, false)
 	await t._frames(3)
-	
+
 	# Sentinela ouve a queda do corpo / percebe o companheiro abatido: entra em desconfiado (Amarelo, nível 1, "?")
 	check(sentry.state == "suspicious" and sentry.alert_level() == 1, "sentinela desconfia ao ouvir baque/ver o corpo (nível 1 Amarelo)", "%s %d" % [sentry.state, sentry.alert_level()])
 	check(sentry._marker.text == "?" and sentry._marker.modulate == UiStyle.ACCENT, "marcador amarelo ? sobre a cabeça")
-	
+
 	# Após olhar brevemente, vai andando ver o ponto: ainda não sabe de nada, é a busca amarela (nível 1, "?")
 	for i in 120:
 		await t._frames(1)
@@ -698,14 +725,14 @@ func test_stealth_alert_states_and_corpse_detection() -> void:
 			break
 	check(sentry.state == "investigate" and sentry.alert_level() == 1 and not sentry.active_search, "sentinela vai ver o local na busca amarela (nível 1)", "%s %d" % [sentry.state, sentry.alert_level()])
 	check(sentry._marker.text == "?" and sentry._marker.modulate == UiStyle.ACCENT, "marcador amarelo ? indo ver")
-	
+
 	# Ao chegar ao corpo e confirmar a morte, dá o alarme e entra em caça (hunt, ainda busca ativa nível 2)
 	for i in 300:
 		await t._frames(1)
 		if sentry.state in ["hunt", "search"]:
 			break
 	check(sentry.state in ["hunt", "search"] and sentry.alert_level() == 2, "confirma a morte do companheiro e passa a caçar o invasor (nível 2 Laranja)")
-	
+
 	# Agora a heroína entra no campo de visão da sentinela
 	p.global_position = sentry.global_position + (-sentry.global_basis.z * 5.0)
 	for i in 60:
@@ -726,13 +753,13 @@ func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
 	s.start_search()
 	await t._frames(2)
 	check(s.is_searching() and s.alert_level() == 2, "soldado está em busca ativa vasculhando (Laranja)")
-	
+
 	# Heroína escondida atrás dispara um tiro: revela a posição
 	p.make_noise(26.0, 2.2)
 	await t._frames(2)
 	check(s.in_combat() and s.alert_level() == 3, "vasculhando + tiro: vai direto para Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
 	check(s._marker.text == "!" and s._marker.modulate == UiStyle.DANGER, "marcador vermelho !")
-	
+
 	# 2. Inimigo vasculhando: barulho de passos/corrida revela a posição e encontra
 	pr = await _spawn_soldier(Vector3(0, 0, -6), Vector3(0, 0, 0), PI)
 	p = pr[0]
@@ -743,7 +770,7 @@ func test_searching_enemy_spots_on_noise_or_nearby_kill() -> void:
 	p.make_noise(10.0, 0.5)
 	await t._frames(2)
 	check(s.in_combat() and s.alert_level() == 3, "vasculhando + barulho de passos: vai em Encontrou (Vermelho)", "%s %d" % [s.state, s.alert_level()])
-	
+
 	# 3. Inimigo vasculhando: morte de companheiro próximo revela a posição e encontra
 	pr = await _spawn_soldier(Vector3(0, 0, -20), Vector3(0, 0, 0), PI)
 	p = pr[0]
@@ -767,23 +794,23 @@ func test_enemies_separation_and_no_overlap() -> void:
 	var p := Player.new()
 	p.position = Vector3(0, 0, 10)
 	w.add_child(p)
-	
+
 	# 1. Dois soldados posicionados colados (sobrepostos a 0.08 m):
 	# O sistema de separação de multidão afasta ambos suavemente para distâncias seguras (> 0.85 m)
 	var s1 := Soldier.new()
 	s1.position = Vector3(0, 0, 0)
 	s1.target = p
 	w.add_child(s1)
-	
+
 	var s2 := Soldier.new()
 	s2.position = Vector3(0.08, 0, 0.05)
 	s2.target = p
 	w.add_child(s2)
-	
+
 	await t._frames(30)
 	var d_soldiers := s1.global_position.distance_to(s2.global_position)
 	check(d_soldiers >= 0.85, "soldados sobrepostos se repelem e não ocupam o mesmo espaço (d=%.2f >= 0.85)" % d_soldiers)
-	
+
 	# 2. Ambos entram em combate (engage):
 	# Ao se posicionarem e strafarem mirando no alvo, mantêm separação e não entram um dentro do outro
 	s1.start_engage()
@@ -801,33 +828,33 @@ func test_soldier_hunts_player_behind_rear_crates() -> void:
 	Level.build(w)
 	var catwalk := Catwalk.new()
 	w.add_child(catwalk)
-	
+
 	var p := Player.new()
-	# Heroína escondida no chão no corredor atrás das caixas decorativas
-	p.position = Vector3(-0.5, 0.0, 10.2)
+	# Heroína escondida no chão, no corredor do labirinto debaixo do mezanino
+	p.position = Vector3(-7.4, 0.0, 63.7)
 	p.health = 100000
 	w.add_child(p)
-	
+
 	var s := Soldier.new()
-	s.position = Vector3(0.0, 0.0, 2.0)
+	s.position = Vector3(-7.4, 0.0, 57.0)
 	s.target = p
 	w.add_child(s)
 	await t._frames(3)
-	
+
 	# 1. Alvo no chão atrás das caixas não deve ser considerado elevado
 	check(not s._is_target_elevated(), "heroína no chão atrás das caixas não é considerada elevada")
-	
+
 	# 2. start_hunt e start_investigate não devem limitar goal.z a 5.8 quando no chão
 	s.start_hunt(p.global_position)
-	check(s._goal.z >= 10.0, "start_hunt busca a heroína atrás das caixas sem travar em z=5.8 (goal.z=%.2f)" % s._goal.z)
-	
+	check(s._goal.z >= 63.0, "start_hunt busca a heroína debaixo do mezanino sem travar na frente dele (goal.z=%.2f)" % s._goal.z)
+
 	s.start_investigate(p.global_position)
-	check(s._goal.z >= 10.0, "start_investigate investiga atrás das caixas sem travar em z=5.8 (goal.z=%.2f)" % s._goal.z)
-	
+	check(s._goal.z >= 63.0, "start_investigate investiga debaixo do mezanino sem travar na frente dele (goal.z=%.2f)" % s._goal.z)
+
 	# 3. Soldado no chão pode avançar além de z=9.8 para caçar no corredor
-	s.global_position = Vector3(-0.5, 0.0, 10.2)
+	s.global_position = Vector3(-7.4, 0.0, 63.7)
 	s._clamp_to_bounds()
-	check(s.global_position.z >= 10.0, "_clamp_to_bounds permite soldado no corredor atrás das caixas (z=%.2f)" % s.global_position.z)
+	check(s.global_position.z >= 63.0, "_clamp_to_bounds permite soldado no corredor debaixo do mezanino (z=%.2f)" % s.global_position.z)
 
 
 ## Busca amarela (só desconfiou: barulho): vai andando até perto do lugar, para a OBSERVE_DIST com vista dele e observa de
@@ -838,7 +865,7 @@ func test_yellow_search_walks_and_observes() -> void:
 	var s: Soldier = pr[1]
 	p.cutscene = true  # ninguém a vê: só o barulho conta
 	var spot := Vector3(-8, 0, 4)
-	s.hear_noise(spot, 26.0, 2.2)
+	s.hear_noise(spot, 12.0, 5.0)  # barulho que não é tiro (pancada, passos): tiro é busca ativa (test_gunfire_active_search)
 	var states := {}
 	var levels := {}
 	var max_v := 0.0
@@ -1051,3 +1078,127 @@ func test_peek_or_push() -> void:
 	await t._frames(60 * 2)
 	check(s._peek == null and Enemy._flat(s.global_position - start).length() > 0.8, "sem beirada perto: vai atrás dela",
 		"%.2f %s" % [Enemy._flat(s.global_position - start).length(), s.state])
+
+
+## Tiro ouvido (barulho de `Enemy.GUNFIRE_RADIUS` ou mais) não é a busca amarela andando: vai correndo, alertado (nível 2).
+func test_gunfire_active_search() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -19), Vector3.ZERO, PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.cutscene = true  # ninguém a vê: só o tiro conta
+	s.hear_noise(Vector3(-8, 0, 10), 26.0, 2.2)
+	var max_v := 0.0
+	var levels := {}
+	for i in 60 * 4:
+		await t._frames(1)
+		if s.state in ["investigate", "search", "sweep"]:
+			levels[s.alert_level()] = true
+		if s.state == "investigate":
+			max_v = maxf(max_v, Vector2(s.velocity.x, s.velocity.z).length())
+	check(s.active_search and levels.has(2) and not levels.has(1), "tiro ouvido: busca ativa (nível 2)", str(levels.keys()))
+	check(max_v > s.patrol_speed + 0.5, "vai correndo até o tiro, não andando", "%.2f" % max_v)
+	p.cutscene = false
+
+
+## Companheiro morto à vista: quem viu entra em alerta vermelho (ela identificada) e corre para o lado dela, mesmo sem
+## barulho (abate furtivo) e sem vê-la.
+func test_witness_death() -> void:
+	var pr := await _spawn_soldier(Vector3(0, 0, -15), Vector3.ZERO, PI)
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	var w: Node3D = pr[2]
+	p.cutscene = true  # ele não a vê: só a morte do outro conta
+	var v := Soldier.new()
+	v.position = Vector3(1, 0, 8)
+	v.rotation.y = PI
+	v.target = p
+	w.add_child(v)
+	await t._frames(5)
+	v.assassinate(Vector3.FORWARD)
+	await t._frames(3)
+	check(s.alert_t > 0.0, "viu o companheiro cair: alertado", "alert=%.1f" % s.alert_t)
+	check(s.state == "hunt" and s.active_search, "corre para o lado de onde ela atacou", s.state)
+	check(Enemy._flat(s._search_center - p.global_position).length() <= Enemy.WITNESS_GUESS * 1.5, "procura perto dela, não no corpo",
+		"%.1f m" % Enemy._flat(s._search_center - p.global_position).length())
+	p.cutscene = false
+
+
+## Pego de surpresa ele entra na luta rolando de lado (cambalhota da heroína, ~2,6 m) em vez de parar na frente dela, e
+## esquiva rolando quando ela mira nele; depois da cambalhota volta a atirar.
+func test_combat_roll() -> void:
+	var rolled := 0
+	for n in 6:
+		var pr := await _spawn_soldier(Vector3(0, 0, 9), Vector3.ZERO, PI)
+		var p: Player = pr[0]
+		var s: Soldier = pr[1]
+		s.rng.seed = n + 11
+		p.health = 100000
+		for i in 60 * 3:
+			await t._frames(1)
+			if s.state == "roll":
+				rolled += 1
+				break
+	check(rolled >= 2, "entra na luta rolando (em parte das vezes)", "%d de 6" % rolled)
+	var pr2 := await _spawn_soldier(Vector3(0, 0, 9), Vector3.ZERO, PI)
+	var s2: Soldier = pr2[1]
+	(pr2[0] as Player).health = 100000
+	for i in 60 * 4:
+		await t._frames(1)
+		if s2.state == "engage":
+			break
+	s2._roll_cd = 0.0
+	var from := s2.global_position
+	check(s2._try_roll(s2._to_target(), 0.0), "rola de lado na luta", s2.state)
+	var states := {}
+	for i in 60 * 2:
+		await t._frames(1)
+		states[s2.state] = true
+		if s2.state == "engage":
+			break
+	var moved := Enemy._flat(s2.global_position - from)
+	check(moved.length() > 2.0, "a cambalhota leva ~2,6 m", "%.2f m" % moved.length())
+	check(absf(moved.normalized().dot(Enemy._flat(s2._to_target()).normalized())) < 0.5, "para o lado, não para cima dela")
+	check(s2.state == "engage" and s2._roll_cd > 0.0, "volta a atirar e espera para rolar de novo", s2.state)
+
+
+## Três em luta vindo do mesmo lado: cada um toma um ângulo em volta dela (não ficam em fila na frente dela) e se mexem
+## atirando (trote ou passo lateral, nunca parados o tempo todo).
+func test_flank_spread() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p := Player.new()
+	p.position = Vector3(0, 0, 10)
+	p.health = 100000
+	w.add_child(p)
+	var guys: Array[Soldier] = []
+	for k in 3:
+		var s := Soldier.new()
+		s.position = Vector3(-0.8 + k * 0.8, 0, -2.0 - k * 1.5)
+		s.rotation.y = PI
+		s.target = p
+		s.rng.seed = 5 + k
+		w.add_child(s)
+		guys.append(s)
+	await t._frames(2)
+	var start := _bearing_spread(guys, p)
+	var moving := {}
+	for i in 60 * 8:
+		await t._frames(1)
+		for s in guys:
+			if s.state == "engage" and Vector2(s.velocity.x, s.velocity.z).length() > 0.3:
+				moving[s] = true
+	var spread := _bearing_spread(guys, p)
+	check(spread > deg_to_rad(60.0), "se espalham em volta dela (ângulo entre o primeiro e o último)",
+		"%.0f° (começou em %.0f°)" % [rad_to_deg(spread), rad_to_deg(start)])
+	check(moving.size() == 3, "todos se mexem atirando", "%d de 3" % moving.size())
+
+
+func _bearing_spread(guys: Array[Soldier], p: Player) -> float:
+	var angs: Array[float] = []
+	for s in guys:
+		var to := Enemy._flat(s.global_position - p.global_position)
+		angs.append(atan2(to.x, to.z))
+	var best := 0.0
+	for a in angs:
+		for b in angs:
+			best = maxf(best, absf(angle_difference(a, b)))
+	return best

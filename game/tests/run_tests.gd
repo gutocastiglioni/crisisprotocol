@@ -31,6 +31,7 @@ const SUITES := [
 	["lab_gate", "sala dos clones: plaquetas, tanque vazio do alossauro, chave do painel e portão da pedreira com código",
 		preload("res://tests/lab_gate_tests.gd")],
 	["pause", "menu de pausa (START / ESC)", preload("res://tests/pause_tests.gd")],
+	["tutorial", "tela de título, tela de controles e pista de treino", preload("res://tests/tutorial_tests.gd")],
 	["hud", "HUD: sensor de perigo, radar e modelo da arma", preload("res://tests/hud_tests.gd")],
 	["ui_style", "design system dos textos: glifos dos botões e caixa de texto", preload("res://tests/ui_style_tests.gd")],
 	["supply_drop", "caixa de paraquedas, pistola com silenciador e neblina do telhado", preload("res://tests/supply_drop_tests.gd")],
@@ -53,13 +54,18 @@ const SUITES := [
 var _failures: Array[String] = []
 var _passed := 0
 var _world: Node3D
+## config de teste; cada processo em paralelo (`-- --shard=N`, tools/run_godot_tests.mjs) usa a sua
+var settings_file := "user://test_settings%s.cfg" % _arg("--shard=")
 
 
 func _initialize() -> void:
 	InputSetup.register()
 	# config própria dos testes (o main a lê ao abrir): cenas vistas/tela cheia não vêm nem vão para a de verdade
-	Settings.path = "user://test_settings.cfg"
+	Settings.path = settings_file
 	DirAccess.remove_absolute(Settings.path)
+	# mapa de navegação refeito na hora, não numa thread: com a máquina cheia (partes em paralelo) a thread atrasava a
+	# malha alguns quadros e as rondas saíam fora do tempo que os testes esperam
+	node_added.connect(_sync_nav_maps)
 	# os testes do jogo de ação de antes valem no perfil "arcade" (o que o jogo mantém inteiro); o "survival" tem os seus
 	GameMode.set_mode(GameMode.ARCADE)
 	_run.call_deferred()
@@ -99,18 +105,33 @@ func _frames(n: int) -> void:
 
 func _run() -> void:
 	var only := _only()
+	# "parte=teste+teste" = só esses testes da parte (partes com `const TESTS`, divididas entre processos pelo runner)
+	var picks := {}
+	for i in only.size():
+		var bits := only[i].split("=")
+		only[i] = bits[0]
+		picks[bits[0]] = bits[1].split("+", false) if bits.size() > 1 else PackedStringArray()
 	var names: Array = SUITES.map(func(t): return t[0]) + ["core"]
 	for n in only:
 		if n not in names:
 			print("parte desconhecida: %s (válidas: %s)" % [n, ", ".join(names)])
 			quit(1)
 			return
+	# "@@tempo <parte> <ms>" = duração real de cada parte; o runner usa para dividir as partes entre os processos
 	if only.is_empty() or "core" in only:
+		var t0 := Time.get_ticks_msec()
 		await _run_core()
+		print("@@tempo core %d" % (Time.get_ticks_msec() - t0))
 	for t in SUITES:
 		if only.is_empty() or t[0] in only:
 			print("== ", t[1])
-			await t[2].new().run(self)
+			var t0 := Time.get_ticks_msec()
+			var suite: Object = t[2].new()
+			if picks.get(t[0], PackedStringArray()).is_empty():
+				await suite.run(self)
+			else:
+				await suite.run_picked(self, Array(picks[t[0]]))
+			print("@@tempo %s %d" % [t[0], Time.get_ticks_msec() - t0])
 	print("\n%d ok, %d falharam" % [_passed, _failures.size()])
 	for f in _failures:
 		print("  - ", f)
@@ -119,10 +140,21 @@ func _run() -> void:
 
 ## Partes pedidas depois de "--" (`-- --only=raptor,ai`); vazio = tudo.
 func _only() -> PackedStringArray:
+	return _arg("--only=").split(",", false)
+
+
+func _sync_nav_maps(node: Node) -> void:
+	if node is NavigationRegion3D or node is NavigationAgent3D or node is Viewport:
+		for m in NavigationServer3D.get_maps():
+			NavigationServer3D.map_set_use_async_iterations(m, false)
+
+
+## Valor de um argumento depois de "--" (`--nome=valor`); vazio se não veio.
+static func _arg(prefix: String) -> String:
 	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--only="):
-			return a.trim_prefix("--only=").split(",", false)
-	return PackedStringArray()
+		if a.begins_with(prefix):
+			return a.trim_prefix(prefix)
+	return ""
 
 
 func _run_core() -> void:

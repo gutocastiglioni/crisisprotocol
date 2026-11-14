@@ -264,5 +264,5 @@ func test_haze() -> void:
 	if air:
 		var box := AABB(air.global_position - air.size * 0.5, air.size)
 		check(Level.LAMPS.all(func(l: Array) -> bool: return box.has_point(l[0])), "névoa cobre as lâmpadas do galpão")
-		check(box.position.x > -Level.SIZE * 0.5 and box.end.x < Level.SIZE * 0.5, "névoa não passa da parede para o pátio", str(box))
+		check(box.position.x > Level.WEST and box.end.x < Level.EAST, "névoa não passa da parede para o pátio", str(box))
 	Gfx.set_mode(before, w)

@@ -15,13 +15,14 @@ const BODY := preload("res://assets/characters/guerrilla.glb")
 const ATLAS := preload("res://assets/characters/guerrilla_atlas.png")
 const MAX_HEALTH := 60
 const WEAPON := "m16"
+const DROP_ASIDE := 0.9  # a arma largada cai a isto do lado do corpo (embaixo dele não se via)
 const DAMAGE := 7
 const FIRE_RANGE := 22.0  # alcance do tiro
 const ENGAGE_DIST := 10.0  # mais longe que isto, avança
 const KEEP_DIST := 5.0  # mais perto que isto, recua
 ## Entre vê-la e o primeiro tiro: pego de surpresa (rotina, busca amarela, correndo para a área) ergue a arma e só então
 ## atira (REACT_TIME); na busca ativa, já de arma em punho num ponto (`weapon_ready`), reage na hora (REACT_READY).
-const REACT_TIME := 0.6
+const REACT_TIME := 0.3
 const REACT_READY := 0.1
 const TIME_SCALE := 0.85  # busca ativa e alerta vermelho 15% mais curtos que os dos bichos (alert_time/lose_time/search_time)
 const OBSERVE_DIST := 2.0  # busca amarela: para a esta distância do lugar suspeito e observa
@@ -30,11 +31,30 @@ const BURST_SHOTS := [4, 7]
 const SHOT_GAP := 0.1
 const REST_TIME := [0.3, 0.7]
 const BURST_DECAY := 0.8  # chance de acerto de cada tiro da rajada = a do anterior vezes isto (o cano sobe)
-const LOCK_TIME := 0.6  # mirando nela à vista por este tempo antes do primeiro acerto: o sensor de perigo sobe antes (aviso)
+const LOCK_TIME := 0.3  # mirando nela à vista por este tempo antes do primeiro acerto: o sensor de perigo sobe antes (aviso)
 const SUPPRESS_TIME := 1.2  # depois de perdê-la de vista, continua atirando onde ela estava por este tempo
 ## Guarda de pistola (`weapon` "pistol", o do painel): tiros soltos mais espaçados e mais fortes, alcance menor.
 const PISTOL := {"damage": 9, "burst": [1, 3], "gap": 0.4, "range": 16.0}
-const COMBAT := ["alert", "engage"]
+const COMBAT := ["alert", "engage", "roll"]
+## Cambalhota de luta (a mesma da heroína, `heroine_moves.json` "roll", ~2,6 m em 1 s): ao entrar em luta (`ROLL_ENTER_CHANCE`,
+## de lado e um pouco para a frente, em vez de parar na frente dela) e esquivando quando ela mira nele (`ROLL_AIM_CONE`, chance
+## `ROLL_DODGE_RATE` por segundo), no máximo uma a cada `ROLL_COOLDOWN` s; só com o corpo livre até o fim e chão da malha lá.
+const ROLL_ENTER_CHANCE := 0.6
+const ROLL_DODGE_RATE := 0.9
+const ROLL_COOLDOWN := 3.5
+const ROLL_AIM_CONE := deg_to_rad(9.0)
+const ROLL_DIST := 2.6
+## Em luta com outros: cada um toma um ângulo em volta dela (`FLANK_STEP` do vizinho, a partir da direção média do grupo) e
+## vai para lá atirando, em vez de chegarem todos pelo mesmo corredor, um atrás do outro (`_flank_goal`, refeito a cada
+## `FLANK_REPLAN` s; vaga com caminho longo demais ou sem vista dela não serve).
+const FLANK_STEP := deg_to_rad(50.0)
+const FLANK_REPLAN := 1.2
+const FLANK_ARRIVE := 1.0
+## Atirando em movimento: mais longe que `RUN_GUN_FAR` do destino vai no trote atirando; a pontaria cai com a velocidade
+## dele (`MOVING_AIM`: andando / correndo).
+const RUN_GUN_FAR := 3.5
+const MOVING_AIM := [0.85, 0.55]
+const TAUNT_CHANCE := 0.3  ## chance de provocar (`Voice` "taunt") no começo de uma rajada com ela à vista
 ## Sem linha de tiro (caixa, quina ou parede entre o cano e ela) por PEEK_AFTER s: dá um passo de lado até a beirada mais
 ## perto de onde o cano a vê (PEEK_STEPS m, os dois lados) e se inclina para fora (PEEK_LEAN); nenhuma beirada serve,
 ## avança para cima dela pelo caminho (agressivo). Nunca atira com o cano dentro/atrás da cobertura (`_body_block`).
@@ -47,53 +67,77 @@ const VEST_PARTS := ["Spine", "Chest", ""]  # o colete cobre o tronco ("" = tiro
 const VEST_MULT := 0.5  # colete comum: tiro no tronco tira metade (braços, pernas e cabeça sem proteção)
 const FLAK_MULT := 0.12  # Flak Jacket: o tronco quase não sente, só a cabeça (ou braço/perna) resolve
 const FLAK_TEXT := "FLAK JACKET"
-## Guardas do galpão/pátio. Cada ronda tem um ponto cego (`BLIND_SPOTS`): corpo ali fica atrás das paredes de caixas
-## (`Level.DIVIDERS`) ou além de `Enemy.CORPSE_SIGHT` dos sentinelas, do sniper e das outras rondas, então matá-la ali em
-## silêncio não alerta ninguém (ai_tests `test_blind_spot_kills`). Fora dele outra ronda acha o corpo quando passa:
-## os dois verticais do meio (6 e 11) se veem na descida, e `RISK_SPOTS` são pontas que só a ronda 8 vê, de passagem.
-## - 0: ronda em T saindo da porta do pátio: desce pelo vão da parede de caixas do sul e anda na frente dela
-## - 1: ronda na ala leste/fundo, na frente do canto da M16 e descendo pela parede leste (a ponta de baixo é o ponto cego)
-## - 2: sentinela à direita do baú da M16 no canto superior direito
-## - 3, 4: sentinelas guardando a porta do pátio
+## Guardas do galpão, sala por sala (Shed). Cada ronda tem um ponto cego (`BLIND_SPOTS`): corpo ali fica atrás de parede,
+## estante ou pilha de caixas ou além de `Enemy.CORPSE_SIGHT` dos sentinelas, do atirador do mezanino e das outras
+## rondas, então matá-la ali em silêncio não alerta ninguém (ai_tests `test_blind_spot_kills`). "console" = distraído
+## (`Enemy.distracted`, animação Console: de costas, não vê nada até o barulho o tirar dali; abatível sem alarme).
+## Labirinto (furtivo; de pistola):
+## - 12: no painel da parede da frente (`Level.CONSOLE`), no nicho ao lado do portão de grade
+## - 2: sentinela do baú da M16 no canto opcional do labirinto, olhando para o corredor que chega nele
+## - 16 (P1): na bancada da face da pilha da linha 1, de costas para o corredor da linha 2
+## - 17 (P2): na bancada da parede do fundo, debaixo do mezanino (ela passa nas costas dele)
+## - 18 (P3): ronda no corredor da parede oeste; 19 (P4): ronda no corredor da linha 4
+## Escritório (furtivo):
+## - 6: ronda no trecho da frente do corredor (do bloqueio até a porta trancada); 0: ronda no descanso, de parede a parede
+## - 11: no computador da mesa do escritório (`Shed.DESK_CONSOLE`); 20 (C): mexendo no armário; 21 (F): no celular, de
+##   costas para o C
+## - 22 (S): parado no canto do arsenal; 23, 24 (A): parados no arquivo, de frente para a porta de saída
+## Estantes e doca (combate):
+## - 15: mexendo na estante da direita; 1: ronda no corredor entre as duas primeiras estantes; 14: ronda no corredor da
+##   direita; 8: ronda na frente (junto da beira da doca), de ponta a ponta, entrando no corredor escondido da parede oeste
+##   (ponto cego atrás da primeira estante; ir até o pé da escada deixava o corpo à vista do 14 e vice-versa)
+## - 9, 10: sentinelas de Flak Jacket ("flak") na doca, na frente do portão da sala dos clones
+## - 13: na cabine da ponta oeste da doca, mexendo no computador dela (`Shed.booth_panel`)
+## Pátio descoberto (o fim, combate direto):
+## - 3, 4: postos olhando o portão da mata; 7: de posto ("hold" = `Enemy.hold_post`: só sai do lugar depois que alguém a
+##   vê); 5: ronda (a ponta oeste fica atrás da caixa baixa, tapada dos postos 3 e 4); 25 (T): enchendo o caminhão; 26
+##   (T2): no container
 ## Os fixos de um portão dividem o posto ("post" = `Enemy.post`): corpo, grito ou barulho tiram no máximo metade dele
-## (3, 4, 5, 7 = "patio": até 2; 9, 10 = "norte": 1); com ela vista (vermelho) saem todos.
-## - 5, 7: de posto ("hold" = `Enemy.hold_post`: só saem do lugar depois que alguém a vê) guardando a porta do pátio dos
-##   raptors, atrás das paredes de caixas: o 5 colado na parede do sul olhando para leste (vigia o tronco da ronda 0); o 7 no
-##   canto do fundo, o mais perto do portão norte. Os explosivos e o guarda no detonador ("work") ficam no túnel da mina
-##   (`Tunnel`).
-## - 6: ronda que sai do vão do leste da parede de caixas e desce pelo corredor entre duas paredes de caixas até sair bem na
-##   frente da rota do 8 (ali o 8 a vê: tem que ser eliminada antes, no corredor)
-## - 8: ronda que sai da quina perto da coluna, desce e atravessa o galpão na frente do labirinto até o canto da M16 e volta
-## - 9, 10: porta norte (portão da sala dos clones), sentinelas nos cantos da plataforma de carga, de Flak Jacket ("flak")
-## - 11: ronda em T da porta norte, desce até a fileira de caixas do meio (colete comum)
-## - 12: de pistola, mexendo no painel da parede (`Level.CONSOLE`) no canto da saída do labirinto ("console" =
-##   `Enemy.distracted`): de costas e distraído não vê nada; o barulho o tira de lá e aí é um guarda como os outros
-##   (desconfia, vai ver, procura); quando desiste volta ao painel
+## (3, 4, 7 = "patio": até 1; 9, 10 = "norte": 1); com ela vista (vermelho) saem todos.
 const GUARDS := [
-	# barra do T na faixa entre o canto da porta do pátio e a grade do painel (o tronco pelo vão do canto fechou: Shed)
-	{"route": [Vector3(-8.5, 0, 1.9), Vector3(-12.4, 0, 1.9), Vector3(-7.0, 0, 1.9), Vector3(-8.5, 0, 1.9)]},
-	{"route": [Vector3(10.5, 0, -9.0), Vector3(5.5, 0, -9.0), Vector3(10.5, 0, -9.0), Vector3(11.4, 0, 1.4)]},
-	{"pos": Vector3(11.5, 0, -11.4), "rot_y": PI, "route": []},
-	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": -PI * 0.5, "route": [], "post": "patio"},
-	{"pos": Vector3(-11.4, 0, -10.4), "rot_y": -PI * 0.5, "route": [], "post": "patio"},
-	# colado atrás da parede de caixas do sul, a oeste do vão, olhando para a ala leste: vê o canto (o tronco do 0) e o vão de
-	# lado, mas as caixas tapam a vista dele para fora, para a saída do labirinto
-	{"pos": Vector3(-10.6, 0, -1.6), "rot_y": -PI * 0.5, "route": [], "hold": true, "post": "patio"},
-	{"route": [Vector3(-2.6, 0, -8.4), Vector3(-1.5, 0, -8.5), Vector3(-1.5, 0, -1.4), Vector3(-1.8, 0, 1.7), Vector3(-1.5, 0, -1.4), Vector3(-1.5, 0, -8.5)]},
-	{"pos": Vector3(-8.2, 0, -12.0), "rot_y": -2.0, "route": [], "hold": true, "post": "patio"},
-	{"route": [Vector3(-5.6, 0, -1.6), Vector3(-4.7, 0, -1.9), Vector3(-4.7, 0, 2.4), Vector3(8.3, 0, 2.4), Vector3(8.3, 0, -1.2), Vector3(8.3, 0, 2.4), Vector3(-4.7, 0, 2.4), Vector3(-4.7, 0, -1.9)]},
-	{"pos": Vector3(-2.4, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
-	{"pos": Vector3(3.6, 0, -10.0), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
-	{"route": [Vector3(2.4, 0, -9.4), Vector3(2.4, 0, -0.2), Vector3(0.2, 0, -0.2), Vector3(4.2, 0, -0.2), Vector3(2.4, 0, -0.2)]},
-	{"pos": Vector3(-12.06, 0, 9.25), "rot_y": PI * 0.5, "route": [], "weapon": "pistol", "console": true},
+	{"route": [Vector3(-12.0, 0, 51.0), Vector3(-7.0, 0, 51.0)]},
+	{"route": [Vector3(-7.85, 0, 40.5), Vector3(-7.85, 0, 33.5)]},
+	{"pos": Vector3(0.6, 0, 57.2), "rot_y": PI, "route": [], "weapon": "pistol"},
+	{"pos": Vector3(-11.4, 0, -6.6), "rot_y": PI * 0.5, "route": [], "post": "patio"},
+	{"pos": Vector3(-11.4, 0, -9.6), "rot_y": PI * 0.5, "route": [], "post": "patio"},
+	{"route": [Vector3(-10.4, 0, -0.5), Vector3(-0.6, 0, -1.0), Vector3(-0.6, 0, -4.0), Vector3(-0.6, 0, -1.0)]},
+	{"route": [Vector3(-4.2, 0, 50.4), Vector3(-4.2, 0, 43.8)]},
+	{"pos": Vector3(-1.5, 0, -8.0), "rot_y": PI * 0.5, "route": [], "hold": true, "post": "patio"},
+	{"route": [Vector3(-11.9, 0, 35.6), Vector3(-11.9, 0, 32.2), Vector3(-0.1, 0, 32.2), Vector3(-11.9, 0, 32.2)]},
+	{"pos": Vector3(-8.4, CloneLab.FLOOR_Y, 28.4), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
+	{"pos": Vector3(-1.6, CloneLab.FLOOR_Y, 28.4), "rot_y": PI, "route": [], "flak": true, "post": "norte"},
+	{"pos": Vector3(Shed.DESK_CONSOLE.x - Level.CONSOLE_GUARD, 0, Shed.DESK_CONSOLE.z), "rot_y": -PI * 0.5, "route": [], "console": true},
+	{"pos": Vector3(Level.CONSOLE.x, 0, Level.CONSOLE.z + Level.CONSOLE_GUARD), "rot_y": 0.0, "route": [], "weapon": "pistol", "console": true},
+	{"pos": Vector3(Shed.BOOTH_CONSOLE.x, Shed.BOOTH_Y, Shed.BOOTH_CONSOLE.z - Level.CONSOLE_GUARD), "rot_y": PI, "route": [], "console": true},
+	{"route": [Vector3(1.2, 0, 41.6), Vector3(1.2, 0, 36.8)]},
+	{"pos": Vector3(-2.3, 0, 37.0), "rot_y": -PI * 0.5, "route": [], "console": true},
+	# P1, P2, P3, P4 (labirinto, de pistola)
+	{"pos": Vector3(-2.6, 0, P1_BENCH.z - Level.CONSOLE_GUARD), "rot_y": PI, "route": [], "weapon": "pistol", "console": true},
+	{"pos": Vector3(-10.0, 0, 67.3), "rot_y": PI, "route": [], "weapon": "pistol", "console": true},
+	{"route": [Vector3(-12.2, 0, 62.2), Vector3(-12.2, 0, 57.2)], "weapon": "pistol"},
+	{"route": [Vector3(-7.4, 0, 60.29), Vector3(0.6, 0, 60.29)], "weapon": "pistol"},
+	# C, F, S, A, A (escritório)
+	{"pos": Vector3(1.5, 0, 50.8), "rot_y": 0.0, "route": [], "console": true},
+	{"pos": Vector3(-1.4, 0, 55.0), "rot_y": PI, "route": [], "console": true},
+	{"pos": Vector3(2.2, 0, 44.2), "rot_y": 0.0, "route": []},
+	{"pos": Vector3(-11.6, 0, 45.1), "rot_y": 0.0, "route": []},
+	{"pos": Vector3(-8.7, 0, 44.2), "rot_y": 0.0, "route": []},
+	# T, T2 (pátio descoberto)
+	{"pos": Vector3(-11.9, 0, 3.4), "rot_y": -PI * 0.5, "route": [], "console": true},
+	{"pos": Vector3(-3.7, 0, 5.0), "rot_y": 0.0, "route": [], "console": true},
 ]
+## Bancadas dos guardas distraídos do labirinto (ponto na face da pilha / parede, Level.console_at): a de P1 na face da
+## pilha da linha 1 (quem digita fica ao sul), a de P2 na parede do fundo debaixo do mezanino.
+const P1_BENCH := Vector3(-2.6, 0, 64.56)
+const P2_BENCH := Vector3(-10.0, 0, Level.NORTH - Level.WALL_T * 0.5)
+## Índices em GUARDS por sala (main: seções dos reforços do Shed).
+const CORNER_GUARDS := [3, 4, 5, 7, 25, 26]
+const RACKS_GUARDS := [1, 8, 9, 10, 13, 14, 15]
 ## Índice em GUARDS de cada ronda -> pontos da rota onde o corpo fica fora da vista de todos (testes).
 const BLIND_SPOTS := {
-	0: [Vector3(-12.4, 0, 1.9)], 1: [Vector3(11.4, 0, 1.4)], 6: [Vector3(-1.5, 0, -2.0)], 8: [Vector3(8.3, 0, -1.2)],
-	11: [Vector3(0.9, 0, -0.2)],
+	0: [Vector3(-12.0, 0, 51.0)], 1: [Vector3(-7.85, 0, 40.5)], 5: [Vector3(-10.4, 0, -0.5)], 6: [Vector3(-4.2, 0, 43.8)],
+	8: [Vector3(-11.9, 0, 35.6)], 14: [Vector3(1.2, 0, 41.6)], 18: [Vector3(-12.2, 0, 62.2)], 19: [Vector3(-7.4, 0, 60.29)],
 }
-## Pontas de ronda escondidas dos sentinelas e do sniper, mas que a ronda 8 vê de passagem (matar ali = esperar a hora).
-const RISK_SPOTS := {0: [Vector3(-7.0, 0, 1.9)], 11: [Vector3(4.2, 0, -0.2)]}
 
 var model: HeroineModel
 var health := MAX_HEALTH
@@ -123,6 +167,11 @@ var _react := REACT_TIME  # o desta reação (REACT_TIME ou REACT_READY, `start_
 var _stowed: Node3D  # fuzil encostado no caixote enquanto ele mexe no detonador (guarda distraído de M16)
 var burning := false  # morto pela explosão dos caixotes: o corpo pega fogo e carboniza (ignite)
 var _char_tw: Tween
+var _roll_cd := 0.0
+var _roll_dir := Vector3.ZERO
+var _roll_prev := 0.0
+var _flank: Variant = null
+var _flank_t := 0.0
 
 
 func _ready() -> void:
@@ -156,7 +205,8 @@ func _ready() -> void:
 		burst_shots = PISTOL.burst
 		shot_gap = PISTOL.gap
 		if drop_kind == "":
-			drop_kind = "pistol"  # munição da pistola (a arma ela já tem): um pente
+			drop_kind = "pistol"  # larga a pistola dele (ela já tem uma: pegar dá um pente)
+			drop_is_weapon = true
 			drop_amount = 10
 	if drop_kind == "":
 		drop_kind = "m16"
@@ -174,6 +224,7 @@ func _ready() -> void:
 	alarm_walks = true
 	search_sweeps = 3
 	shouts = true
+	tactical = true
 	voice = Voice.assign()
 	alert_time = ALERT_TIME * TIME_SCALE
 	lose_time = LOSE_TIME * TIME_SCALE
@@ -187,6 +238,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_tick(delta)
+	_roll_cd = maxf(_roll_cd - delta, 0.0)
 	if _stowed:
 		_stowed.visible = is_distracted()
 	if alert_t <= 0.0 and not in_combat():
@@ -202,7 +254,11 @@ func _physics_process(delta: float) -> void:
 				_face(_to_target(), delta, turn_rate)
 				_update_pitch(delta)
 				if _t >= _react:
-					start_engage()
+					# pego de surpresa: entra na luta rolando de lado (e um pouco para a frente) em vez de parar na frente dela
+					if not (_react >= REACT_TIME and rng.randf() < ROLL_ENTER_CHANCE and _try_roll(_to_target(), 0.35)):
+						start_engage()
+			"roll":
+				_roll(delta)
 			"engage":
 				_engage(delta)
 			"dead":
@@ -224,8 +280,8 @@ func _physics_process(delta: float) -> void:
 		var want := head_pitch if weapon_ready() else 0.0
 		if absf(model.aim_pitch.pitch - want) > 0.01:
 			model.aim_pitch.pitch = lerpf(model.aim_pitch.pitch, want, 1.0 - exp(-6.0 * delta))
-	
-	if in_combat() and _is_target_elevated() and global_position.y < 1.2 and global_position.x > -12.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
+
+	if in_combat() and _is_target_elevated() and global_position.y < 1.2 and global_position.x < Catwalk.X1 + 0.6 and global_position.z >= Catwalk.FRONT_Z - 1.2:
 		if velocity.z > 0.0:
 			velocity.z = 0.0
 	EnemyCrowd.apply_separation(self)
@@ -241,10 +297,15 @@ func _clamp_to_bounds() -> void:
 		global_position.y = maxf(global_position.y, 0.0)
 		if velocity.y < 0.0 and global_position.y <= 0.01:
 			velocity.y = 0.0
-		if global_position.x > -12.6:
-			global_position.x = clampf(global_position.x, -12.4, 12.4)
-			var max_z := Catwalk.FRONT_Z - 1.0 if in_combat() and _is_target_elevated() else 12.4
-			global_position.z = clampf(global_position.z, -12.4, max_z)
+		if global_position.x > Level.WEST + 0.4:
+			# no galpão de verdade (com o Shed) não sai pelas paredes de fora; num mundo de teste só a trava do mezanino vale
+			var in_shed := is_inside_tree() and get_tree().get_first_node_in_group("shed") != null
+			if in_shed:
+				global_position.x = clampf(global_position.x, Level.WEST + 0.6, Level.EAST - 0.6)
+			# debaixo do mezanino (só ele)
+			var under := global_position.x < Catwalk.X1 + 0.5
+			var max_z := Catwalk.FRONT_Z - 1.0 if under and in_combat() and _is_target_elevated() else Level.NORTH - 0.4
+			global_position.z = clampf(global_position.z, Level.SOUTH + 0.4 if in_shed else -INF, max_z)
 
 
 ## M16 de pé encostado no caixote, à direita dele (o `m16.glb` solto, de perfil: cano em +X, coronha no chão).
@@ -332,9 +393,9 @@ func start_engage() -> void:
 
 func _is_target_elevated() -> bool:
 	if is_instance_valid(target):
-		if target.global_position.y > 1.8 and target.global_position.z >= Catwalk.FRONT_Z - 0.5:
+		if target.global_position.y > 1.8 and Catwalk.covers(target.global_position + Vector3(0, 0, 0.5)):
 			return true
-	return _last_known.y > 1.8 and _last_known.z >= Catwalk.FRONT_Z - 0.5
+	return _last_known.y > 1.8 and Catwalk.covers(_last_known + Vector3(0, 0, 0.5))
 
 
 func _update_pitch(delta: float) -> void:
@@ -376,6 +437,8 @@ func _engage(delta: float) -> void:
 	var to := _to_target()
 	var dist := to.length()
 	var sees := _lost_t < 0.4
+	if sees and _aimed_at_me(dist) and rng.randf() < ROLL_DODGE_RATE * delta and _try_roll(to, 0.0):
+		return
 	if sees and model.is_aimed() and not target.is_dodging():
 		_lock_t += delta
 	_face(to if sees else _last_known - global_position, delta, turn_rate)
@@ -429,25 +492,42 @@ func _engage(delta: float) -> void:
 		_blocked_t = _blocked_t + delta if blocked else 0.0
 		if not blocked:
 			_peek = null  # tem linha: atira dali (inclinado, se veio da beirada)
+		_flank_t -= delta
+		if _flank_t <= 0.0:
+			_flank_t = FLANK_REPLAN
+			var was: Variant = _flank
+			_flank = _flank_goal(dist) if sees else null
+			if _flank != null and (was == null or _flat(_flank - was).length() > 1.0):
+				_repath_t = 0.0  # destino novo: o caminho da malha é refeito agora
+		var off: Vector3 = _flat(_flank - global_position) if _flank != null else Vector3.ZERO
 		if _blocked_t > PEEK_AFTER:
 			dir = _peek_dir(to, sees, delta)
 			gait = "strafe"
 		elif blocked:
 			dir = Vector3.ZERO
+		elif _flank != null and off.length() > FLANK_ARRIVE:
+			# vai para o ângulo dele em volta dela atirando: longe, no trote; perto, andando
+			dir = _steer(_flank, off, delta)
+			gait = "run" if off.length() > RUN_GUN_FAR else "walk"
 		elif dist > engage_dist:
 			dir = _avoid(to.normalized())
+			gait = "run" if dist > engage_dist + RUN_GUN_FAR else "walk"
 		elif dist < keep_dist:
 			dir = _avoid(-to.normalized())
 		else:
 			_strafe_t -= delta
 			if _strafe_t <= 0.0:
 				_strafe = EnemyCrowd.get_flank_strafe(self, target.global_position, 1.0 if rng.randf() < 0.5 else -1.0)
-				_strafe_t = rng.randf_range(1.2, 2.6)
+				_strafe_t = rng.randf_range(0.9, 2.0)
 			dir = to.normalized().cross(Vector3.UP) * _strafe
 			gait = "strafe"
 			if not _free(global_position + Vector3.UP * 0.6, dir) or EnemyCrowd.is_enemy_in_path(self, dir, 1.4):
 				_strafe = -_strafe
-				dir = Vector3.ZERO
+				dir = to.normalized().cross(Vector3.UP) * _strafe
+				if not _free(global_position + Vector3.UP * 0.6, dir) or EnemyCrowd.is_enemy_in_path(self, dir, 1.4):
+					# preso dos dois lados: um passo para a frente ou para trás em vez de ficar parado na frente dela
+					dir = _avoid((to if dist > (keep_dist + engage_dist) * 0.5 else -to).normalized())
+					gait = "walk"
 	_move_aiming(dir, gait, delta)
 	_lean = lerpf(_lean, _peek_side * PEEK_LEAN, 1.0 - exp(-6.0 * delta))
 	model.set_lean(_lean)
@@ -463,6 +543,8 @@ func _engage(delta: float) -> void:
 			return
 		_burst = rng.randi_range(burst_shots[0], burst_shots[1])
 		_burst_i = 0
+		if sees and randf() < TAUNT_CHANCE:  # `randf` do jogo: o `rng` dele fica com a mesma sequência de antes
+			Voice.say(self, "taunt")
 	if _shot_t <= 0.0:
 		var aim := _aim_point(sees)
 		if not _clear_shot(aim):
@@ -473,6 +555,95 @@ func _engage(delta: float) -> void:
 		_shot_t = shot_gap
 		if _burst == 0:
 			_rest = rng.randf_range(REST_TIME[0], REST_TIME[1])
+
+
+## Ela mira nele: virada para ele (o corpo dela segue a retícula mirando) dentro de `ROLL_AIM_CONE`.
+func _aimed_at_me(dist: float) -> bool:
+	if not target.aiming or dist > fire_range:
+		return false
+	var fwd := _flat(-target.global_basis.z)
+	var to_me := _flat(global_position - target.global_position)
+	return to_me.length() > 0.1 and absf(fwd.angle_to(to_me)) < ROLL_AIM_CONE + atan2(0.4, dist)
+
+
+## Cambalhota de lado (`lead` = quanto vai para a frente, para ela): o lado do strafe primeiro, depois o outro. Só com o
+## corpo livre até o fim, sem colega no caminho e chão da malha lá. Devolve true se rolou.
+func _try_roll(to: Vector3, lead: float) -> bool:
+	if _roll_cd > 0.0 or to.length() < 0.1 or not is_on_floor():
+		return false
+	var fwd := _flat(to).normalized()
+	var side := fwd.cross(Vector3.UP)
+	for sgn: float in [_strafe, -_strafe]:
+		var dir := (side * sgn + fwd * lead).normalized()
+		var end := global_position + dir * ROLL_DIST
+		if not _clear_to(end) or EnemyCrowd.is_enemy_in_path(self, dir, ROLL_DIST):
+			continue
+		if _has_nav() and _floor_at(end) == null:
+			continue
+		_roll_dir = dir
+		_roll_prev = 0.0
+		_roll_cd = ROLL_COOLDOWN
+		_strafe = sgn
+		_enter("roll", "Idle", 0.0)
+		model.set_aim(false)
+		model.play("roll")
+		return true
+	return false
+
+
+## Rolando: segue o caminho da cambalhota da heroína (`Moves.path_at`), virado para onde rola; no fim, de volta à luta.
+func _roll(delta: float) -> void:
+	var d: Dictionary = Moves.data().roll
+	var f := _t * Moves.fps()
+	var x := Moves.path_at(d.path, f).x
+	var v := _roll_dir * (x - _roll_prev) / maxf(delta, 0.001)
+	_roll_prev = x
+	velocity.x = v.x
+	velocity.z = v.z
+	rotation.y = lerp_angle(rotation.y, atan2(-_roll_dir.x, -_roll_dir.z), 1.0 - exp(-14.0 * delta))
+	if f >= float(d.frames):
+		start_engage()
+
+
+## Ângulo dele em volta dela quando há outros em luta com ela no mesmo andar: a partir da direção média do grupo (vista
+## dela), o 1º fica nela, o 2º a +FLANK_STEP, o 3º a -FLANK_STEP... (ordem fixa pelo id). Ponto na malha a uma distância
+## de luta, com caminho curto e vista dela de lá; senão null (luta como antes).
+func _flank_goal(dist: float) -> Variant:
+	var her := target.global_position
+	var mates: Array = []
+	for n in get_tree().get_nodes_in_group("enemies"):
+		var o := n as Soldier
+		if o == null or o.dead or not (o == self or o.in_combat()):
+			continue
+		if absf(o.global_position.y - global_position.y) < 1.2 and _flat(o.global_position - her).length() < fire_range:
+			mates.append(o)
+	if mates.size() < 2:
+		return null
+	mates.sort_custom(func(a: Soldier, b: Soldier) -> bool: return a.get_instance_id() < b.get_instance_id())
+	var mean := Vector3.ZERO
+	for o: Soldier in mates:
+		mean += _flat(o.global_position - her).normalized()
+	if mean.length() < 0.1:
+		return null
+	var i := mates.find(self)
+	var a := atan2(mean.x, mean.z) + float((i + 1) / 2) * FLANK_STEP * (1.0 if i % 2 == 1 else -1.0)
+	var r := clampf(dist, keep_dist + 1.0, engage_dist)
+	var p := her + Vector3(sin(a), 0.0, cos(a)) * r
+	p.y = global_position.y
+	if _has_nav():
+		p = NavigationServer3D.map_get_closest_point(_nav(), p)
+		var path := NavigationServer3D.map_get_path(_nav(), global_position, p, true)
+		var length := 0.0
+		for k in range(path.size() - 1):
+			length += _flat(path[k + 1] - path[k]).length()
+		if path.is_empty() or length > 2.0 * _flat(p - global_position).length() + 3.0:
+			return null
+	if _flat(p - her).length() < keep_dist * 0.8:
+		return null
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * eye_height, target.sight_point(), 1)
+	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+		return null
+	return p
 
 
 ## Sem linha de tiro: rumo à beirada de onde o cano a vê (ou, sumida, vê o lugar onde ela estava; `_find_peek`); sem
@@ -532,11 +703,22 @@ func _move_aiming(dir: Vector3, gait: String, _delta: float) -> void:
 		velocity.z = 0.0
 		model.set_state("idle")
 		return
-	var speed := Moves.speed(gait)
+	var local := global_basis.inverse() * dir
+	var side := absf(local.x) > absf(local.z)
+	if gait == "run":
+		# atirando no trote: para a frente corre; de lado, o passo lateral largo; para trás, andando
+		if side:
+			gait = "strafe_fast"
+		elif local.z > 0.0:
+			gait = "walk"
+	var speed := Player.RUN_SPEED * JOG_SCALE if gait == "run" else Moves.speed(gait)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
-	var local := global_basis.inverse() * dir
-	if absf(local.x) > absf(local.z):
+	if gait == "run":
+		model.set_state("run", speed / Player.RUN_SPEED)
+	elif gait == "strafe_fast":
+		model.set_state("strafe_fast_r" if local.x > 0.0 else "strafe_fast_l", 1.0)
+	elif side:
 		model.set_state("strafe_r" if local.x > 0.0 else "strafe_l", speed / Moves.speed("strafe"))
 	else:
 		model.set_state("walk", (1.0 if local.z < 0.0 else -1.0) * speed / Moves.speed("walk"))
@@ -552,6 +734,11 @@ func _hit_chance(dist: float, nth: int) -> float:
 		chance *= 0.7
 	if target.is_dodging():
 		chance = 0.0
+	var own := Vector2(velocity.x, velocity.z).length()
+	if own > 2.0:
+		chance *= MOVING_AIM[1]
+	elif own > 0.5:
+		chance *= MOVING_AIM[0]
 	return chance
 
 
@@ -629,6 +816,8 @@ func _fire(at_her := true, aim := Vector3.INF) -> void:
 	Fx.tracer(parent, muzzle, end, weapon)
 	if hit_her:
 		target.take_hit(GameMode.enemy_damage(damage), dir, chest)  # o sangue sai no take_hit dela
+		if target.dead:
+			Voice.say(self, "down")  # "Alvo abatido!"
 	fired.emit()
 
 
@@ -668,6 +857,24 @@ func wound() -> float:
 	return 1.0 - float(maxi(health, 0)) / MAX_HEALTH
 
 
+## Onde largar a arma: `DROP_ASIDE` m de um lado do corpo, de través à queda (`dir`), pelo primeiro lado sem cenário até lá
+## (senão para trás da queda; tudo fechado = embaixo dele).
+func _drop_aside(dir: Vector3) -> Vector3:
+	var fall := Vector3(dir.x, 0, dir.z).normalized()
+	if fall == Vector3.ZERO:
+		fall = -global_basis.z
+	var side := Vector3(fall.z, 0, -fall.x)
+	if not is_inside_tree():
+		return side * DROP_ASIDE
+	var space := get_world_3d().direct_space_state
+	var from := global_position + Vector3.UP * 0.3
+	for s: Vector3 in [side, -side, -fall]:
+		var q := PhysicsRayQueryParameters3D.create(from, from + s * (DROP_ASIDE + 0.3), 1)
+		if space.intersect_ray(q).is_empty():
+			return s * DROP_ASIDE
+	return Vector3.ZERO
+
+
 ## Cai em ragdoll na direção do tiro (na cabeça, o tranco vai nela e joga a cabeça para trás); a poça cresce embaixo.
 func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false) -> void:
 	dead = true
@@ -678,7 +885,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 	velocity = Vector3.ZERO
 	if drop_is_weapon and model:
 		model.holster(true)
-	drop_loot()
+	drop_loot(_drop_aside(dir))
 	model.start_ragdoll(dir.normalized() * (20.0 if head else 14.0) + Vector3.UP * 2.5, at)
 	Blood.pool(model.ragdoll.bodies["Chest"], 1.1)
 	if head:
@@ -687,6 +894,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 		get_tree().call_group("enemies", "hear_death", global_position, 6.0, 1.2)
 	if is_inside_tree():
 		get_tree().call_group("enemies", "on_nearby_kill", global_position, 8.0)
+		get_tree().call_group("enemies", "witness_death", self)  # quem o viu cair entra em alerta (até no abate furtivo)
 	_update_marker()
 	killed.emit()
 
@@ -745,6 +953,11 @@ func weapon_ready() -> bool:
 ## Busca amarela: anda até o lugar suspeito. Busca ativa: corre.
 func _investigate_speed() -> float:
 	return hunt_speed if active_search else patrol_speed
+
+
+## Busca ativa: vasculha em volta no trote, de arma pronta (amarela, no passo de ronda).
+func _sweep_speed() -> float:
+	return investigate_speed if active_search else patrol_speed
 
 
 ## Busca amarela: observa o lugar e volta à rotina, sem vasculhar em volta (isso é da busca ativa).

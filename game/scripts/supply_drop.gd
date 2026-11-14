@@ -1,6 +1,6 @@
 class_name SupplyDrop
 extends StaticBody3D
-## Caixa de lançamento aéreo caída de paraquedas no telhado da sala dos clones, bem no fundo (`POS`): caixa de
+## Caixa de lançamento aéreo caída de paraquedas no telhado do galpão, no canto do fundo (`POS`): caixa de
 ## compensado oliva com cintas de carga, caída torta, a lona do paraquedas murcha esparramada atrás e as cordas até as
 ## alças da caixa. Fica escondida na neblina do telhado (Roof._fog) até ela chegar perto. Interagir (E) na frente: igual
 ## ao baú (PlayerMoves.start_pickup), ela ajoelha (kneel_transform), a tampa abre (`open`), a mão direita pega a pistola
@@ -12,7 +12,7 @@ extends StaticBody3D
 
 signal picked(drop: SupplyDrop)
 
-const POS := Vector3(-3.4, CloneLab.CEIL_Y + 0.3, -23.6)  # em cima da laje do anexo, perto da borda do fundo
+const POS := Vector3(-10.5, Roof.Y, 64.0)  # no telhado, no canto do fundo à esquerda (na neblina mais grossa, Roof.DROP_FOG)
 const YAW := 0.4
 const SIZE := Vector3(0.9, 0.42, 0.62)  # corpo (sem a tampa)
 const LID_T := 0.06

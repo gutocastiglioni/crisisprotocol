@@ -25,6 +25,8 @@ const SHADE := Color(0, 0, 0, 0.7)
 const DEATH_SHADE := Color(0.22, 0.0, 0.0, 0.45)
 const BAND := Color(0, 0, 0, 0.72)
 const KEY_FILL := Color(0, 0, 0, 0.55)
+const DEVICE := Color(0.14, 0.15, 0.17, 0.96)  # corpo do controle/teclado desenhado (tela CONTROLES)
+const DEVICE_LINE := Color(0.42, 0.44, 0.47)  # contorno e teclas sem uso no desenho
 const KEY_H := 11.0  # altura do glifo (a linha do texto S)
 const HINT_GAP := 4.0  # entre o glifo e o verbo
 const HINT_SPACE := 12.0  # entre um botão e o próximo
@@ -77,6 +79,30 @@ static func glyph(action: String, on_pad := pad) -> Dictionary:
 	return g if not g.is_empty() else {"text": action.to_upper()}
 
 
+## Todos os glifos de uma ação num aparelho (C e CTRL; L1 e L2), na ordem do mapa; vazio se não tem botão nele.
+static func glyphs(action: String, on_pad: bool) -> Array:
+	var out := []
+	if not InputMap.has_action(action):
+		return out
+	for e in InputMap.action_get_events(action):
+		var g := {}
+		if on_pad and e is InputEventJoypadButton:
+			if PAD_SHAPES.has(e.button_index):
+				g = {"shape": PAD_SHAPES[e.button_index]}
+			elif PAD_NAMES.has(e.button_index):
+				g = {"text": PAD_NAMES[e.button_index]}
+		elif on_pad and e is InputEventJoypadMotion and PAD_AXES.has(e.axis):
+			g = {"text": PAD_AXES[e.axis]}
+		elif not on_pad and e is InputEventKey:
+			var k: int = e.physical_keycode if e.physical_keycode != KEY_NONE else e.keycode
+			g = {"text": KEY_NAMES.get(k, OS.get_keycode_string(k).to_upper())}
+		elif not on_pad and e is InputEventMouseButton and MOUSE_NAMES.has(e.button_index):
+			g = {"text": MOUSE_NAMES[e.button_index]}
+		if not g.is_empty() and not g in out:
+			out.append(g)
+	return out
+
+
 static func _key_glyph(action: String) -> Dictionary:
 	if not InputMap.has_action(action):
 		return {}
@@ -123,11 +149,14 @@ class Watcher extends Node:
 
 ## Fileira de botões "<glifo> VERBO   <glifo> VERBO". `set_items` recebe [{"action": "interact", "text": "ABRIR"}, ...];
 ## "pad_action" troca a ação no controle (o R do teclado vira o triângulo); em vez de "action" um item pode trazer
-## "keys" (molduras fixas do teclado, ex. ["0-9"]) e "pad" (desenho no controle, ex. "dpad"). O tamanho (`size`) acompanha o conteúdo; quem usa só posiciona (centralizar = (largura
+## "keys" (molduras fixas do teclado, ex. ["0-9"]) e "pad" (desenho no controle, ex. "dpad", "stick_l", "stick_r"), ou
+## "glyphs" (lista pronta de glifos, ex. `UiStyle.glyphs("aim", true)` = L1 e L2). `device` fixa o aparelho (0 teclado,
+## 1 controle; -1 = o último usado). O tamanho (`size`) acompanha o conteúdo; quem usa só posiciona (centralizar = (largura
 ## - size.x) / 2). Troca os glifos sozinha quando muda o aparelho.
 class Hint extends Control:
 	var items: Array = []
 	var verb_color := UiStyle.INK
+	var device := -1
 	var _pad := false
 
 	func _init() -> void:
@@ -135,7 +164,7 @@ class Hint extends Control:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 
 	func set_items(list: Array) -> void:
-		if list == items and _pad == UiStyle.pad:
+		if list == items and _pad == _want_pad():
 			return
 		items = list.duplicate(true)
 		_refresh()
@@ -148,15 +177,20 @@ class Hint extends Control:
 		return "  ".join(parts)
 
 	func _process(_delta: float) -> void:
-		if _pad != UiStyle.pad:
+		if _pad != _want_pad():
 			_refresh()
 
+	func _want_pad() -> bool:
+		return UiStyle.pad if device < 0 else device == 1
+
 	func _refresh() -> void:
-		_pad = UiStyle.pad
+		_pad = _want_pad()
 		size = Vector2(_layout(false), UiStyle.KEY_H + 2.0)
 		queue_redraw()
 
 	func _glyphs(it: Dictionary) -> Array:
+		if it.has("glyphs"):
+			return it.glyphs
 		if _pad and it.has("pad_action"):
 			return [UiStyle.glyph(it.pad_action, true)]
 		if it.has("action"):
@@ -227,6 +261,13 @@ class Hint extends Control:
 					draw_line(c + Vector2(-k, k), c + Vector2(k, -k), color, width)
 				"square":
 					draw_rect(Rect2(c - Vector2(k, k) * 0.85, Vector2(k, k) * 1.7), color, false, width)
+				"stick_l", "stick_r":
+					draw_arc(c, k, 0.0, TAU, 16, color, width)
+					if pass_i == 1:
+						var font := get_theme_default_font()
+						var s := "L" if shape == "stick_l" else "R"
+						var tw := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, UiStyle.XS).x
+						draw_string(font, c + Vector2(-tw * 0.5, 2.5), s, HORIZONTAL_ALIGNMENT_LEFT, -1, UiStyle.XS, color)
 				"dpad":
 					var a := k * 0.38
 					var pts := PackedVector2Array([c + Vector2(-a, -k), c + Vector2(a, -k), c + Vector2(a, -a), c + Vector2(k, -a),

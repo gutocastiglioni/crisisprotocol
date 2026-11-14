@@ -24,9 +24,9 @@ const TEX := {
 	"fern_card": preload("res://assets/textures/fern_card.png"),
 	"wall": preload("res://assets/textures/wall.png"),
 }
-const DOOR_Z := -8.5  # centro do portão na parede oeste do galpão (mais ao fundo da fase)
-const DOOR_W := 3.2
-const DOOR_H := 2.8
+const DOOR_Z := -8.5  # centro do portão na parede oeste do galpão (no pátio descoberto, o fim do galpão)
+const DOOR_W := 6.0  # portão enorme (o caminhão passa)
+const DOOR_H := 3.6
 const X_NEAR := -13.0  # a mata começa onde acaba o piso do galpão
 const X_FAR := -55.0
 const Z_HALF := 45.0
@@ -52,15 +52,15 @@ const PLATEAU := Rect2(WALL_A - BAND * 0.5, -2.0, X_NEAR - 0.2 - (WALL_A - BAND 
 const SHELF := Rect2(-30.5, -6.0, 6.5, 4.0)
 const ROCK1 := Rect2(-31.4, -6.0, 0.9, 3.5)  # raso: de cima dele a beira do SHELF fica ao alcance das mãos
 const ROCK1_H := 1.2
-## Alambrado na borda do planalto colada na parede oeste do galpão (logo fora da laje do telhado, Roof.EDGE): sem ele ela
-## pula da mureta do telhado para o planalto (~3 m, sem dano) e pula o galpão inteiro.
+## Alambrado na borda do planalto colada na parede oeste do galpão (logo fora da laje do telhado, Roof.X0): fecha a beira do
+## planalto contra o galpão (ninguém sobe nem se pendura na parede dele).
 const ROOF_FENCE_X := X_NEAR - 0.35
-## Alambrado que fecha o fim de S1 (do chão até WALL_H, 0,2 m na frente das faces de pedra): face sul do planalto, face
-## leste e face sul da beira (SHELF) até a WALL_A. [de, até] no chão.
+## Alambrado que fecha o fim de S1 por cima do barranco (do alto do planalto até WALL_H, 0,2 m para dentro da borda de
+## pedra): borda sul do planalto, borda leste e borda sul da beira (SHELF) até a WALL_A. [de, até] em cima da pedra.
 const S1_END_FENCE := [
-	[Vector2(X_NEAR - 0.2, PLATEAU.position.y - 0.2), Vector2(SHELF.end.x + 0.2, PLATEAU.position.y - 0.2)],
-	[Vector2(SHELF.end.x + 0.2, PLATEAU.position.y - 0.2), Vector2(SHELF.end.x + 0.2, SHELF.position.y - 0.2)],
-	[Vector2(SHELF.end.x + 0.2, SHELF.position.y - 0.2), Vector2(WALL_A + BAND * 0.5, SHELF.position.y - 0.2)],
+	[Vector2(ROOF_FENCE_X, PLATEAU.position.y + 0.2), Vector2(SHELF.end.x - 0.2, PLATEAU.position.y + 0.2)],
+	[Vector2(SHELF.end.x - 0.2, PLATEAU.position.y + 0.2), Vector2(SHELF.end.x - 0.2, SHELF.position.y + 0.2)],
+	[Vector2(SHELF.end.x - 0.2, SHELF.position.y + 0.2), Vector2(WALL_A + BAND * 0.5, SHELF.position.y + 0.2)],
 ]
 const CLIFF_RAPTORS := [Vector3(-21.0, PLATEAU_Y, 6.0), Vector3(-16.0, PLATEAU_Y, 11.5)]
 ## Eixo da trilha de terra batida, da porta do galpão até o portão de ferro do fundo (o último ponto é a boca do túnel).
@@ -102,6 +102,10 @@ const SHADOW_LAMPS := 3  # só as primeiras fazem sombra no PS2 (cada sombra de 
 const CORPSE := Vector3(-17.8, 0, -27.5)
 const CORPSE_YAW := -PI * 0.5
 const CLEARING := 6.0
+## Container trancado da M79 (main, Chest com cadeado) na saída da clareira do morto para o primeiro portão de grade (S1→S2),
+## em chão livre (fora da trilha e das rotas dos raptors; o `_scatter` não põe nada em cima), a boca virada para a trilha.
+const LOCKER := Vector3(-18.2, 0, -35.6)
+const LOCKER_YAW := -PI * 0.5
 ## Onde cada raptor da emboscada fica escondido (moita sem colisão num canto da clareira, na frente e dos lados dela).
 const LURK := [Vector3(-24.6, 0, -34.2), Vector3(-14.8, 0, -34.6), Vector3(-24.8, 0, -20.5)]
 ## Mata de dentro das faixas numa grade (`COVER_CELL` m, cada célula com um item mexido): moita, árvore, touceira de capim
@@ -119,6 +123,10 @@ const TOWER_TREES := 4.5
 const TOWER_CLEAR := 3.0
 ## Rendição: ela passou o último portão de grade e desceu a trilha da faixa oeste até aqui (z): os snipers sobem nas torres.
 const STANDOFF_Z := 27.0
+## Mata de enfeite (sem corpo) a oeste do galpão, além da parede norte do pátio: do telhado (Roof, aviso do cheiro) ela
+## aparece. Faixa em z (de, até) e até onde vai a oeste.
+const SHED_WOODS := [Z_HALF + 1.5, Level.NORTH + 2.0]
+const SHED_WOODS_X := -40.0
 
 static var _mats := {}
 
@@ -157,20 +165,22 @@ static func in_west(p: Vector3) -> bool:
 # ------------------------------------------------------------------ parede com a porta
 ## Parede oeste do galpão (no lugar do bloco inteiro de Level.build) com a abertura da porta.
 static func west_wall(parent: Node) -> void:
-	var h := Level.SIZE * 0.5
+	var x := Level.WEST
+	var s0 := Level.SOUTH - Level.WALL_T * 0.5
+	var s1 := Level.NORTH + Level.WALL_T * 0.5
 	var z0 := DOOR_Z - DOOR_W * 0.5
 	var z1 := DOOR_Z + DOOR_W * 0.5
-	var t := 0.4
-	_box(parent, Vector3(t, Level.WALL_H, z0 + h), Vector3(-h, Level.WALL_H * 0.5, (z0 - h) * 0.5), "wall", 0.5)
-	_box(parent, Vector3(t, Level.WALL_H, h - z1), Vector3(-h, Level.WALL_H * 0.5, (z1 + h) * 0.5), "wall", 0.5)
+	var t := Level.WALL_T
+	_box(parent, Vector3(t, Level.WALL_H, z0 - s0), Vector3(x, Level.WALL_H * 0.5, (z0 + s0) * 0.5), "wall", 0.5)
+	_box(parent, Vector3(t, Level.WALL_H, s1 - z1), Vector3(x, Level.WALL_H * 0.5, (z1 + s1) * 0.5), "wall", 0.5)
 	var lintel := Level.WALL_H - DOOR_H
-	_box(parent, Vector3(t, lintel, DOOR_W), Vector3(-h, DOOR_H + lintel * 0.5, DOOR_Z), "wall", 0.5)
+	_box(parent, Vector3(t, lintel, DOOR_W), Vector3(x, DOOR_H + lintel * 0.5, DOOR_Z), "wall", 0.5)
 	# batentes (só visual) e a faixa de perigo na soleira
 	for z in [z0 + 0.12, z1 - 0.12]:
-		_prop(parent, _bm(Vector3(0.5, DOOR_H, 0.24)), Vector3(-h, DOOR_H * 0.5, z), "wall", 1.5)
-	_prop(parent, _bm(Vector3(1.0, 0.02, DOOR_W)), Vector3(-h, 0.01, DOOR_Z), "wall", 1.0)
-	# portão de segurança trancado com leitor por aproximação (abre com o keycard do sniper)
-	var door := Door.create(parent, Vector3(-h, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTÃO")
+		_prop(parent, _bm(Vector3(0.5, DOOR_H, 0.24)), Vector3(x, DOOR_H * 0.5, z), "wall", 1.5)
+	_prop(parent, _bm(Vector3(1.0, 0.02, DOOR_W)), Vector3(x, 0.01, DOOR_Z), "wall", 1.0)
+	# portão de segurança trancado com leitor por aproximação (abre com o keycard do atirador do mezanino)
+	var door := Door.create(parent, Vector3(x, 0, DOOR_Z), Vector3(t, DOOR_H, DOOR_W), 0, "ABRIR PORTÃO")
 	door.lock = "keycard_gate"
 	door.is_locked_door = true
 	door.add_card_reader(Vector3(0.24, 1.35, DOOR_W * 0.5 + 0.35), 0.0)
@@ -181,6 +191,11 @@ static func west_wall(parent: Node) -> void:
 	for k in 5:
 		slab.add_child(_prop_at(_bm(Vector3(0.18, DOOR_H - 0.2, 0.08)), Vector3(0, DOOR_H * 0.5, (DOOR_W - 0.4) * (k / 4.0 - 0.5)), "wall", 2.0))
 	slab.add_child(_prop_at(_bm(Vector3(0.18, 0.22, DOOR_W - 0.1)), Vector3(0, 0.7, 0), "wall", 1.0))
+	# pintado como as portas de aço do galpão (Shed.DOOR_PAINT), com a placa SAÍDA em cima (Shed.door_signs)
+	for part: MeshInstance3D in slab.get_children():
+		var paint := (part.material_override as ShaderMaterial).duplicate() as ShaderMaterial
+		paint.set_shader_parameter("tint", Shed.DOOR_PAINT)
+		part.material_override = paint
 	door.add_panel(slab, Vector3(0, 0, DOOR_W + 0.2), 0.0)
 
 
@@ -203,6 +218,7 @@ static func build(parent: Node) -> void:
 		_grate(parent, g[0], g[1])
 	_mist(parent)
 	_lamps(parent)
+	_shed_woods(parent, rng)
 	for p: Vector3 in LURK:
 		_lurk_bush(parent, p, rng)
 	for w: Dictionary in WAVES:
@@ -264,11 +280,13 @@ static func _boundary(parent: Node) -> void:
 	var far_x := X_FAR - 0.6
 	for s in [-1, 1]:
 		_wall_box(parent, Vector3(len_x(), WALL_H, 1.0), Vector3((X_NEAR + far_x) * 0.5, WALL_H * 0.5, s * (Z_HALF + 0.5)))
-		# a parede do galpão continua até o canto da mata (alta por cima: do planalto não se sobe nela)
-		var wl := Z_HALF - Level.SIZE * 0.5 + 0.5
-		var wz: float = s * (Level.SIZE * 0.5 + wl * 0.5 - 0.25)
-		_box(parent, Vector3(0.4, Level.WALL_H, wl), Vector3(X_NEAR, Level.WALL_H * 0.5, wz), "wall", 0.5)
-		_wall_box(parent, Vector3(0.4, WALL_H - Level.WALL_H, wl), Vector3(X_NEAR, (WALL_H + Level.WALL_H) * 0.5, wz))
+		# a parede do galpão continua até o canto da mata ao sul dele (ao norte o galpão já cobre a mata inteira); por cima
+		# da parede do galpão, invisível até WALL_H: do planalto não se sobe nela
+		var a := -Z_HALF - 0.5 if s < 0 else Level.SOUTH
+		var b := Level.SOUTH if s < 0 else Z_HALF + 0.5
+		if s < 0:
+			_box(parent, Vector3(0.4, Level.WALL_H, b - a), Vector3(X_NEAR, Level.WALL_H * 0.5, (a + b) * 0.5), "wall", 0.5)
+		_wall_box(parent, Vector3(0.4, WALL_H - Level.WALL_H, b - a), Vector3(X_NEAR, (WALL_H + Level.WALL_H) * 0.5, (a + b) * 0.5))
 	# parede do fundo em dois pedaços: o vão do portão fica livre para o túnel
 	var gz: float = ROAD[ROAD.size() - 1].y
 	var z0 := -Z_HALF - 1.0
@@ -296,6 +314,25 @@ static func _boundary(parent: Node) -> void:
 		if absf(z - gz) > 3.2:
 			_off_towers(_bush(parent, Vector3(far_x + 2.2, 0, z + 1.2), rng.randf_range(0.8, 1.2), rng), TOWER_CLEAR)
 		z += rng.randf_range(2.4, 3.0)
+
+
+## Mata de enfeite a oeste do galpão, ao norte do pátio (SHED_WOODS): árvores e moitas sem corpo, só para o telhado.
+static func _shed_woods(parent: Node, rng: RandomNumberGenerator) -> void:
+	var z: float = SHED_WOODS[0]
+	while z < SHED_WOODS[1]:
+		var x := X_NEAR - 2.0 - rng.randf_range(0.0, 1.5)
+		while x > SHED_WOODS_X:
+			_tree(parent, Vector3(x, 0, z + rng.randf_range(-0.8, 0.8)), rng.randf_range(8.0, 11.0), rng.randf_range(2.2, 3.2), rng, false)
+			x -= rng.randf_range(3.0, 4.2)
+		z += rng.randf_range(3.2, 4.0)
+	# chão de mato embaixo (sem colisão nenhuma: ninguém chega lá)
+	var mi := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(X_NEAR - SHED_WOODS_X + 4.0, SHED_WOODS[1] - SHED_WOODS[0] + 4.0)
+	mi.mesh = plane
+	mi.material_override = material("grass", 0.5)
+	mi.position = Vector3((X_NEAR + SHED_WOODS_X) * 0.5 - 2.0, -0.01, (SHED_WOODS[0] + SHED_WOODS[1]) * 0.5)
+	parent.add_child(mi)
 
 
 static func len_x() -> float:
@@ -398,11 +435,12 @@ static func _plateau(parent: Node, rng: RandomNumberGenerator) -> void:
 	_grate_box(parent, Vector3(SHELF.size.x, top, 0.3), Vector3(SHELF.get_center().x, y, SHELF.position.y))
 	# borda colada no galpão: o alto da mureta do telhado fica só ROOF_DROP acima do planalto (o pulo não machuca);
 	# alambrado de verdade (visível) do planalto até WALL_H, da beira sul do planalto até a parede que continua o galpão
-	Shed.fence(parent, Vector2(ROOF_FENCE_X, PLATEAU.position.y - 0.15), Vector2(ROOF_FENCE_X, Level.SIZE * 0.5 + 0.2), PLATEAU_Y, WALL_H)
-	# fim de S1 (a faixa de baixo, ao norte): alambrado do chão até WALL_H na frente da face do planalto e da beira, da
-	# parede do galpão até a WALL_A. Sem ele, do telhado ela pulava na diagonal e se agarrava na borda do planalto.
+	Shed.fence(parent, Vector2(ROOF_FENCE_X, PLATEAU.position.y - 0.15), Vector2(ROOF_FENCE_X, PLATEAU.end.y), PLATEAU_Y, WALL_H)
+	# fim de S1 (a faixa de baixo, ao norte): alambrado em cima da borda do planalto e da beira, do alto da pedra até
+	# WALL_H, da parede do galpão até a WALL_A (a face de pedra fica à vista de S1). Grade logo atrás da beira = ela não
+	# se agarra nela (`PlayerMoves.find_ledge`), nem pulando do telhado na diagonal.
 	for seg: Array in S1_END_FENCE:
-		Shed.fence(parent, seg[0], seg[1], 0.0, WALL_H)
+		Shed.fence(parent, seg[0], seg[1], PLATEAU_Y, WALL_H)
 	# a borda de cima da beira (para o norte, sobre o fim de S2) e a do degrau ficam abertas: é por ali que ela desce
 	# mureta de pedra baixa na borda que dá para S3 (só enfeite: a grade invisível é que segura)
 	var z := PLATEAU.position.y + 1.0
@@ -468,6 +506,7 @@ static func _scatter(parent: Node, rng: RandomNumberGenerator) -> void:
 	for e in Pickup.LAYOUT:
 		if e.pos.x < X_NEAR and e.pos.x > X_FAR and not on_plateau(e.pos):
 			items.append(Vector2(e.pos.x, e.pos.z))
+	items.append(Vector2(LOCKER.x, LOCKER.z))
 	keep.append_array(items)
 	var placed: Array[Vector2] = []
 	var patches: Array[Vector3] = []  # touceiras já postas (x, z, raio): uma não entra na outra
@@ -951,7 +990,8 @@ static func bake_nav(parent: Node, radius := 0.75, height := 2.0, map := RID(), 
 	nm.geometry_collision_mask = 1 | GRATE_LAYER  # grades fixas (alambrado do galpão, bordas do planalto) são parede na malha
 	var data := NavigationMeshSourceGeometryData3D.new()
 	# portas fechadas (portões de grade também) não entram na malha como parede: quando abrem, o caminho já passa por elas
-	var doors: Array[Node] = parent.get_tree().get_nodes_in_group("doors")
+	# (as que nunca abrem, `Door.locked_text`, ficam como parede)
+	var doors: Array[Node] = parent.get_tree().get_nodes_in_group("doors").filter(func(d: Door) -> bool: return d.locked_text == "")
 	for d: Door in doors:
 		d.collision_layer = 0
 	NavigationServer3D.parse_source_geometry_data(nm, data, parent)
@@ -975,8 +1015,7 @@ static func bake_people_nav(parent: Node) -> RID:
 	NavigationServer3D.map_set_cell_size(map, PEOPLE_CELL)
 	NavigationServer3D.map_set_cell_height(map, PEOPLE_CELL)
 	NavigationServer3D.map_set_active(map, true)
-	var h := Level.SIZE * 0.5
-	var shed := AABB(Vector3(-h, -1.0, -h), Vector3(Level.SIZE, Level.WALL_H + 1.0, Level.SIZE))
+	var shed := AABB(Vector3(Level.WEST, -1.0, Level.SOUTH), Vector3(Level.WIDTH, Level.WALL_H + 1.0, Level.DEPTH))
 	var region := bake_nav(parent, 0.25, 1.75, map, PEOPLE_CELL, shed)
 	region.tree_exited.connect(func() -> void: NavigationServer3D.free_rid(map))
 	return map

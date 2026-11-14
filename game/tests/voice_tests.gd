@@ -4,13 +4,15 @@ extends "res://tests/ai_tests.gd"
 ## de ai_tests.gd; chamado por run_tests.gd.
 
 
-func run(runner: SceneTree) -> void:
+func run(runner: SceneTree, _picks: Array = []) -> void:
 	t = runner
 	test_files()
 	await test_spot_once()
 	await test_suspicious_then_priority()
 	await test_shouts()
 	await test_gives_up()
+	await test_taunt()
+	await test_kill_call()
 	await test_silent_cases()
 
 
@@ -100,9 +102,9 @@ func test_suspicious_then_priority() -> void:
 func test_shouts() -> void:
 	var pr := await _setup()
 	var s: Soldier = pr[1]
-	var dead := _soldier(pr[2], pr[0], Vector3(1.5, 0, 1.5))
+	var dead := _soldier(pr[2], pr[0], Vector3(1.5, 0, -3.0))  # atrás dele: não o vê cair (a morte vista grita na hora, Enemy.witness_death)
 	await t._frames(2)
-	dead.die(Vector3.FORWARD, dead.global_position + Vector3.UP)
+	dead.die(Vector3.FORWARD, dead.global_position + Vector3.UP, false, true)  # sem o baque: ele não se vira para ela
 	await t._frames(2)
 	Voice.reset()
 	s._alarm_from(dead.global_position, dead)
@@ -132,6 +134,37 @@ func test_gives_up() -> void:
 		await t._frames(3)
 		var cat := "giveup" if active else "nothing"
 		check(_said(cat) == 1, "fim da busca %s: \"%s\"" % ["ativa" if active else "amarela", cat], str(Voice.played))
+
+
+## No tiroteio, com ela à vista, às vezes ele provoca no começo de uma rajada ("Morre!"), sem virar falatório (GAP).
+func test_taunt() -> void:
+	var pr := await _setup(Vector3(0, 0, 8))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.health = 100000
+	seed(11)
+	s.start_engage()
+	Voice.reset()
+	var secs := 16.0
+	await t._frames(int(secs * 60))
+	var n := _said("taunt")
+	check(s.shots_fired > 0 and n >= 1, "no tiroteio ele provoca às vezes", "tiros=%d provocações=%d" % [s.shots_fired, n])
+	check(n <= int(secs / Voice.GAP.taunt) + 1, "provocação respeita o intervalo", str(n))
+
+
+## O tiro que a mata: quem atirou avisa "Alvo abatido!", por cima de qualquer fala.
+func test_kill_call() -> void:
+	var pr := await _setup(Vector3(0, 0, 8))
+	var p: Player = pr[0]
+	var s: Soldier = pr[1]
+	p.health = 1
+	s.start_engage()
+	Voice.reset()
+	for i in 600:
+		await t._frames(1)
+		if p.dead:
+			break
+	check(p.dead and _said("down") == 1, "matou ela: \"Alvo abatido!\"", "morta=%s %s" % [p.dead, Voice.played])
 
 
 func test_silent_cases() -> void:

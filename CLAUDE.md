@@ -73,7 +73,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   abafa como balaclava, satura as gritadas, volume por RMS; `LINES` tem que bater com `Voice.LINES`), `contact_sheet.py` / `game_sheet.py` (folhas de prévia), `run_godot_tests.mjs` (testes).
 - `game/` — `scripts/` (jogadora + `player_moves.gd` + `player_stealth.gd` + esgueirar `player_lean.gd`/`lean_tilt.gd`, encostar `player_cover.gd`, inimigos `enemy.gd` (base) / `raptor.gd` / `soldier.gd`, câmera, modelo, ragdoll, alvos, raptor + modelo do raptor, granada da M79 `grenade.gd`, caixotes de explosivos `explosive_crate.gd` + fogo `fire.gd`, pés presos dos dinossauros `foot_plant.gd` + inércia ao virar `turn_sway.gd`, chave `key_item.gd`, telas de inspeção `inspect.gd`, cenário, galpão em seções `shed.gd` (grades, computadores `terminal.gd`, guardas da sala dos clones e reforços), pátio da mata `yard.gd` + trilha em S dele `forest_trail.gd` (trechos de raptors, portões de grade por seção),
   portas `door.gd` (galpão→pátio, pátio→túnel, túnel→pedreira arrombável), túnel da mina `tunnel.gd`, pedreira `arena.gd` (última sala) + alossauro `allosaurus.gd`/`allosaurus_model.gd`, telhado `roof.gd` + alçapão `hatch.gd` + caixa de paraquedas `supply_drop.gd`, sala dos clones `clone_lab.gd` + plaquetas dos tubos `subject_plate.gd`, cenas `cutscene.gd` (choque dos clones, emboscada do pátio, rendição aos snipers das torres, conversa do túnel e chegada à pedreira), mira laser do sniper `sniper_laser.gd` (+ `shaders/sniper_laser`/`laser_dot`), checkpoints `checkpoint.gd`, guerrilheiro morto `corpse.gd`, torres de guarda do portão do pátio `guard_tower.gd`, baú `chest.gd`, `moves.gd` (lê heroine_moves.json), efeitos `fx.gd` + sangue `blood.gd`, `gfx.gd`), `shaders/` (`psx_*` = PS1, `ps2_*` = PS2 do
-  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `shed_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`, `voice_tests.gd`), `assets/` (gerados — não
+  começo), `game_mode.gd` (perfil de jogo), `pickup.gd` (munição e kits no chão), `pause_menu.gd` (menu de pausa) + `showroom.gd` (palco dos dinossauros), `title_screen.gd` (tela de título) + `controls_screen.gd` (desenho dos controles) + `tutorial.gd` (pista de treino), HUD `hud_bar.gd` (barra) + `danger_meter.gd` (sensor de perigo) + `radar.gd` + `weapon_icon.gd` (modelo da arma), `tests/run_tests.gd` (+ `raptor_tests.gd`, `gfx_tests.gd`, `moves_tests.gd`, `weapons_tests.gd`, `ai_tests.gd`, `soldier_tests.gd`, `blood_tests.gd`, `allosaurus_tests.gd`, `survival_tests.gd`, `key_tests.gd`, `start_tests.gd`, `hurt_tests.gd`, `ambush_tests.gd`, `trail_tests.gd`, `shed_tests.gd`, `supply_drop_tests.gd`, `lab_gate_tests.gd`, `tower_tests.gd`, `pause_tests.gd`, `tutorial_tests.gd`, `hud_tests.gd`, `console_tests.gd`, `lean_tests.gd`, `cover_tests.gd`, `explosive_tests.gd`, `tunnel_tests.gd`, `checkpoint_tests.gd`, `voice_tests.gd`), `assets/` (gerados — não
   editar à mão; inclui `m16.glb`/`shotgun.glb`/`m79.glb` = armas dos baús, `pistol_sd.glb` = pistola com silenciador sozinha, `pistol_crate.glb` = a mesma deitada na caixa e `heroine_moves.json` = caminhos/medidas dos movimentos).
 
 ## Comandos
@@ -81,6 +81,12 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (Blender em `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`)
 - Prévia no Blender: `blender --background art/heroine.blend --python art/preview.py -- <pasta> turntable|anims|Acao:f1,f2` (ou `art/raptor.blend`)
 - Testes: `node tools/run_godot_tests.mjs` (passo fixo `--fixed-fps 60`: segundos em vez de minutos; o hook corta em 420 s).
+  As partes rodam em paralelo em `GODOT_TEST_JOBS` processos do Godot (padrão 5; suíte inteira ~100 s), cada um com um
+  trecho SEGUIDO da ordem da suíte (há testes que dependem do que a parte anterior deixou: embaralhar quebrava), cortado
+  pelo tempo de cada parte na última execução (`@@tempo` do `run_tests.gd`, `timings.json` no temp). Parte com `const TESTS`
+  (a `ai`, longa) é cortada teste a teste (`ai=test_a+test_b`, também na linha de comando; `run_picked`). Cada processo tem
+  a sua config de teste (`-- --shard=`); nos testes o mapa de navegação não usa thread (`_sync_nav_maps`: com a máquina
+  cheia ele atrasava e as rondas saíam do tempo). `GODOT_TEST_FRESH=1` ignora o resultado guardado.
   Só algumas partes: `node tools/run_godot_tests.mjs raptor ai` (nome = arquivo `*_tests.gd` sem o sufixo; `core` = os
   testes de dentro do `run_tests.gd`; tabela `SUITES` no `run_tests.gd`).
   Uma execução por vez na máquina: o runner faz fila (trava no temp do SO) e reaproveita o resultado de quem testou o mesmo
@@ -88,8 +94,13 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   em 180 s (o hook avisa "NÃO VERIFICADO" em vez de bloquear).
 - CI (`.github/workflows/ci.yml`, a cada push na main e PR): só segredos no histórico (gitleaks) e esta suíte no Godot 4.7.2
   do Linux. Nada de etapa de web/backend (RLS, DAST, responsividade, semgrep/osv): não se aplicam ao jogo.
+- Exportar + instalador: `exportar.bat` (presets de `game/export_presets.cfg` → `INSTALADOR/`, fora do git; Inno Setup
+  `tools/installer.iss` → `INSTALADOR/CrisisProtocol_Setup.exe`). Os presets têm a marca `public` (`PauseMenu.is_public`): a versão
+  exportada não tem o SHOWROOM no menu (spoiler do chefe); preset novo precisa da marca (o `pause_tests` confere). Build release
+  ignora `--capture`; para conferir o exportado, `--export-debug` numa pasta temporária.
 - Rodar o jogo: `godot --path game` (F2 alterna o visual PS1/PS2; `-- --gfx=ps2` já começa no PS2; F3 alterna o perfil SOBREVIVENCIA/ARCADE e reinicia; `-- --mode=arcade` já começa no arcade)
 - Captura do jogo: `godot --path game -- --capture=out.png --shot=idle|aim|run|crouch|roll|ragdoll|dummy [--yaw=graus] [--at=segundos]`
+  Título/controles/treino: `--shot=title|controls|controls_keys|tutorial|tutorial_map` (`tutorial --part=<passo>`).
   Rosto: `--shot=face [--yaw=graus]`. Visual: `--gfx=ps1|ps2`.
   Encostada na caixa: `--shot=cover|cover_crouch|cover_edge|cover_peek|cover_over` (atrás da fileira de caixas do T, V/L3 em 0,6 s; cover_edge anda de lado até a beirada; cover_peek anda até ela e mira em 2,8 s = esgueira; cover_over agacha, encosta e mira em 1,6 s = por cima se a caixa for baixa, com `--pos`).
   Mirando e andando de lado (câmera de 3/4 pela frente): `--shot=aim_strafe`.
@@ -106,29 +117,32 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Container/chave/M79: `--shot=locked|unlock|corpse|key_get|m79_aim|fire_m79|pickup_m79` (locked/unlock/key_get salvam quando a
   tela de inspeção termina de aparecer; fire_m79 com `--at=0.9` pega a explosão; corpse = o morto com a chave, `--yaw` gira em volta).
   Emboscada: `--shot=ambush` (ela anda até o morto e a cena toca; `--at` escolhe o quadro: ~3 a mão, ~7 do alto, ~9,6 o rugido).
-  Galpão de cima: `--shot=shed_map` (ortográfica abaixo do telhado, com a sala dos clones; as grades finas quase não aparecem
-  de cima: conferir na altura dela com `--shot=yard --pos=x,z[,graus[,altura]]`).
+  Galpão de cima: `--shot=shed_map` (ortográfica abaixo do telhado, o galpão inteiro de 80 m; as grades finas quase não aparecem
+  de cima: conferir na altura dela com `--shot=yard --pos=x,z[,graus[,altura]]`); `--dist=m` = altura vista (zoom) e
+  `--part=x,z[,corte]` = centro e, com o 3º número, planta cortada nessa altura (some telhado/lajes, paredes vistas de cima, vãos
+  abertos: `--part=-5,28,2.7 --dist=84` = o galpão inteiro; por sala com `--dist=16..21`: labirinto `-5,62,2.9`, escritório
+  `-5,49.5,2.2`, estantes/doca `-5,35,5`, sala dos clones `-5,17.5,6.9`, pátio descoberto `-5,-2,6`).
   Trilha do pátio: `--shot=trail_map` (planta de cima, ortográfica, sul em cima e galpão à direita) e `--shot=yard --pos=x,z[,graus[,altura]]`
   (na altura dela; passar das linhas dos trechos solta os raptors; `--pos=-25,-4,180,3.5` = em cima do planalto); trecho saindo da mata:
   `--shot=walk --pos=-31.5,-38.2,180 --playercam --at=4.5`.
-  Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|mezz_climb|ladder_locked|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder/mezz_climb: `--at` escolhe o quadro; mezz_climb = sobe pela caixa do nicho até o mezanino, câmera atrás, `--yaw` gira; ladder_locked salva no aviso da escada trancada).
+  Começo da fase: `--shot=roof|hatch|ladder_mount|ladder_out|ladder_roof|sniper_ladder|maze|ladder_locked|gate|lab|clones` (hatch/ladder_mount/ladder_out/clones/sniper_ladder: `--at` escolhe o quadro; ladder_locked salva no aviso da escada trancada).
   Sala dos clones e portão da pedreira: `--shot=tank|plate|plate_allo|keypad|keypad_on|keypad_ok|gate_open` (plate/plate_allo/
   keypad/keypad_on/keypad_ok salvam quando a tela aparece; keypad = sem o cartão; gate_open: `--at` escolhe o quadro).
-  De perto, câmera parada: `--shot=clone` (o clone do primeiro tubo, `--yaw` gira, `--dist` afasta) e `--shot=chest_open --part=0|1|2|3`
-  (baú da M16 / escopeta / container da M79 / caixa de paraquedas aberto visto de cima, a espuma com o vão da arma; `--empty` tira a
+  De perto, câmera parada: `--shot=clone` (o clone do primeiro tubo, `--yaw` gira, `--dist` afasta) e `--shot=chest_open --part=0|1|2|3|4`
+  (baú da M16 / escopeta do planalto / container da M79 / caixa de paraquedas / escopeta do caminhão aberto visto de cima, a espuma com o vão da arma; `--empty` tira a
   arma e mostra só o vão; `--yaw`, `--dist`).
   `--pos=x,z[,graus[,altura]]` também vale nas capturas de movimento (`climb`, `mantle`...: sobe onde for posta).
   Torres do portão do pátio: `--shot=towers|tower_fall|gate_card` (towers = vistas da estrada com os snipers; tower_fall = o último
   cambaleia, debruça na cerca e cai, câmera de lado, `--at` escolhe o quadro, `--yaw` gira; gate_card = pega o cartão que ele derrubou).
   Rendição: `--shot=standoff|surrender_roll|surrender_aim|surrender_walk|surrender_run` (standoff = a cena, `--at`; as outras = cena
   pulada, rendida, em 3 s rola (tiros erram, mira de 5 s), mira (acertam), anda devagar de lado (lasers seguem) ou corre (acertam));
-  `--shot=standoff_live` = a rendição sem cena da segunda vez (falas no HUD, `--at`). Game Over com checkpoint: `--shot=game_over_cp`. Laser do sniper do mezanino: `--shot=sniper_laser`
-  (ela no chão do galpão, câmera de lado, `--yaw`, ou `--playercam`; `--at` escolhe o quadro da mira).
+  `--shot=standoff_live` = a rendição sem cena da segunda vez (falas no HUD, `--at`). Game Over com checkpoint: `--shot=game_over_cp`. Guarda de M16 do mezanino atirando: `--shot=mezz_fire`
+  (ela num corredor do labirinto, câmera atrás dela, `--yaw`, ou `--playercam`; `--at` escolhe o quadro; rajada por volta de 1,4 s).
   Caixa de paraquedas: `--shot=drop [--dist=m]|drop_get|drop_pick|fire_sd` (drop_get salva quando a tela do item aparece; drop_pick = câmera de lado
   enquanto ela pega, `--at` escolhe o quadro, `--yaw` gira; fire_sd = tiro com silenciador).
   Golpes: `--shot=hit_crouch|stagger|getup|getup_fwd` (câmera de revisão de lado; getup = desaba de costas e levanta girando,
   getup_fwd = arremessada pelas costas, levanta de bruços; `--at` escolhe o quadro).
-  Guarda do painel: `--shot=console` (atrás dele, só ele anda; `--pos` muda o lugar dela).
+  Guarda do painel: `--shot=console` (atrás dele, só ele anda; `--pos` muda o lugar dela); `--shot=console_dead` = ele cai e larga a pistola, câmera de cima em volta dele (`--yaw`, `--dist`).
   HUD: `--shot=danger|danger_roll` (no galpão na mira dos guardas da porta do pátio; danger_roll rola em 2,6 s; `--at` escolhe o quadro).
   Túnel da mina: `--shot=tunnel|tunnel_mid|tunnel_far|tunnel_talk|tunnel_boom|lair` (tunnel = da boca; tunnel_mid = os 2 sentinelas do
   meio; tunnel_far = os 4 do fundo nos explosivos; tunnel_talk = cena da conversa, `--at`; tunnel_boom = arma o detonador e corre,
@@ -140,9 +154,11 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (a primeira execução depois de editar scripts reimporta o projeto e pode sair com a cena errada: rode de novo).
 
 ## Verificação e revisão (vale por cima da regra global e da skill `fullstack-feature`)
-- A suíte inteira roda sozinha no hook (`.claude/hooks/stop-check.mjs`) no fim de todo turno que mudou código, `.gd`,
-  `.gdshader` ou `.tscn` incluídos. Não rodar a suíte inteira na mão antes de encerrar (o hook repete); enquanto
-  desenvolve, rodar só as partes mexidas (ver Comandos).
+- O hook (`.claude/hooks/stop-check.mjs`) roda os testes no fim do turno só se algo mudou desde a última vez que passou
+  nesta sessão (base gravada no SessionStart; arquivos já alterados no git ao abrir a sessão não contam) e só as partes que
+  os arquivos mudados tocam (`partsFor` do runner: o teste da parte, ou teste que cita a classe/o arquivo/a cena; arquivo
+  que nenhum teste cita = suíte inteira; fora de `game/` = nada). A suíte inteira roda no CI. Não rodar a suíte na mão antes
+  de encerrar (o hook repete); enquanto desenvolve, rodar só as partes mexidas (ver Comandos).
 - Neste projeto NÃO chamar os agentes `e2e-qa`, `security-reviewer` nem `ui-verifier`: não há backend, rede, contas nem
   dados pessoais, e a suíte do Godot já prova o comportamento. "Pronto" = suíte do hook passando + capturas `--shot` da
   mudança olhadas por mim. O `security-reviewer` volta a valer se o jogo ganhar rede, salvamento online, contas ou loja.
@@ -192,8 +208,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   + reserva; HUD "pente/reserva", cinza recarregando): o tiro gasta o pente; vazio com reserva recarrega sozinha, G / R1 recarrega antes
   (`Player.reload`: ReloadPistol/ReloadRifle por cima, nó OneShot "reload" do `HeroineModel`, sons mag_out/mag_in/slide_rack nos quadros do
   heroine_moves.json "reload"; o pente só enche no fim; trocar de arma, rolar, ser agarrada etc. cortam). Baú = pente cheio; no chão
-  pistola 1 pente (10) e M16 meio pente (15), também o M16 que o guarda larga (`give_weapon(w, grant)`); pentes extras no galpão em
-  `Pickup.LAYOUT`. Checkpoint grava o pente. Captura: `--shot=reload_pistol|reload_m16` (`--at`, `--yaw`). E itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
+  pistola 1 pente (10) e M16 meio pente (15), também a arma que o guarda larga ao lado do corpo (`Soldier._drop_aside`: o M16, ou a pistola do guarda de pistola = malha "Pistol" dela, `Pickup.pistol_mesh`; já tendo a arma, vira pente) (`give_weapon(w, grant)`); no galpão nenhuma caixa de munição no chão (só o kit de vida em
+  `Pickup.LAYOUT`; munição lá só a que os guardas largam). Checkpoint grava o pente. Captura: `--shot=reload_pistol|reload_m16` (`--at`, `--yaw`). E itens no chão (`Pickup.LAYOUT`: caixas de munição pela cor da arma e kits de vida, pegos ao passar por cima;
   o teste confere que estão em chão livre). Cada arma manda no movimento enquanto o botão de mirar está apertado, sem a jogadora
   precisar parar (`aim_speed`/`lock`/`lock_slow` em `GameMode.SURVIVAL_WEAPONS`, `Player._armed_locomotion`): pistola corre e atira
   (coice mínimo; de lado, acima de `Player.FAST_STRAFE_AT` x o passo lateral curto, toca o passo largo StrafeFastL/R, ciclo "strafe_fast" de 1,35 m/s em `heroine_moves.gaits`, em vez do curto acelerado), M16 vira andar devagar e atira (coice médio, o tiro a desacelera mais), escopeta trava o movimento sozinha (só gira
@@ -224,14 +240,23 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   mais aberto (`ALERT_FOV_BONUS`, nunca nas costas) e alcance `ALERT_SIGHT * visibility()` (agachada/capim ainda esconde). Em combate só
   sabe onde ela está com linha livre (`_combat_sees`, `COMBAT_SENSE`): parede/caixa corta o rastro; sem vê-la por `LOSE_TIME` (3 s) →
   `hunt` → `search` → esquece (`alert_t`/`aware` = 0) e volta à rota.
-  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS` (índice = número no comentário dele): porta do pátio 2 sentinelas (3, 4), 2 de posto (`"hold"`, 5, 7) e a ronda em T 0 (tronco pelo vão da parede de caixas do sul, barra na frente dela); baú da M16 o sentinela 2 e a ronda 1 (frente do canto da M16, desce pela parede leste); porta norte (portão da sala dos clones) 2 sentinelas de Flak Jacket (9, 10) e a ronda em T 11 (até a fileira de caixas do meio); no meio a ronda 6 (do vão leste das caixas, desce por um corredor entre duas paredes de caixas e sai bem na frente da rota do 8: tem que ser eliminada no corredor) e a ronda 8 (da quina perto da coluna, atravessa na frente do labirinto até o canto da M16). No canto da saída do labirinto o 12, de pistola (`Soldier.weapon`/`PISTOL`), mexe no painel da parede (`Level.CONSOLE`: bancada com o teclado na altura dos punhos da animação Console, `heroine_anims.console_keys`; tela verde e luz própria): `Enemy.distracted`, e `is_distracted()` (de volta ao lugar exato, virado para o painel, sem alerta) = não vê nada (nem ela, nem corpo) e a pistola fica guardada; o barulho o tira de lá como qualquer guarda e, quando desiste, volta ao painel. Caixas baixas em `Level.DIVIDERS` na frente do labirinto (z = 4,1), descendo da caixa do canto da M16 e fechando o canto do painel. Testes: `console_tests.gd`. Cada ronda tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas de `Level.DIVIDERS`): morta ali em silêncio, ninguém nota, nem as outras rondas passando; `Soldier.RISK_SPOTS` são pontas que só a ronda 8 vê de passagem; os verticais 6 e 11 se veem na descida. Morte só é notada com linha livre: o barulho do corpo caindo (`Enemy.hear_death`, 6 m) e `on_nearby_kill` não atravessam caixa/parede, e corpo caído só é visto até `Enemy.CORPSE_SIGHT` (7 m); o tiro segue sendo ouvido como sempre (`Player.make_noise`). Gente (`Enemy.shouts`: soldado e sniper) avisa gritando (`_alarm_from`): ferido sem tê-la notado grita `SHOUT_DELAY` (1 s) depois (morto antes disso = só o `hear_death`) e quem acha um corpo a 2,2 m grita com o lugar do corpo (não o dela); o grito só chega a `SHOUT_RANGE` (12 m) com linha livre ou `SHOUT_MUFFLED` (4 m) atrás de caixa/parede (`broadcast_alarm(at, true)`). Raptor/alossauro seguem chamando a sala toda; vê-la (`spot`) também segue avisando a sala toda. Teste: `ai_tests.test_shout_earshot`. Caixas baixas (`Level.LOW_CRATE_H` 1,5 m) escondem ela agachada inteira (cabeça a ~1,3 m) e ainda dão para escalar. Testes: `ai_tests.test_blind_spot_kills` (uma ronda morta por vez, as outras andando). Os de posto ficam dentro do canto cercado pelas paredes de caixas `Level.DIVIDERS` (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`) os de posto têm `Enemy.hold_post`: barulho/vulto/grito de corpo achado só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`Enemy.identified`: ela vista de verdade, ele ou o alarme de quem a viu; acaba com o `alert_t`); corpo à vista os tira do lugar para ver; depois da busca voltam ao posto. Fixos de um portão dividem o posto (`"post"` em `GUARDS` = `Enemy.post`: "patio" 3, 4, 5, 7; "norte" 9, 10): sem `identified`, no máximo metade dos vivos do posto sai (`_post_full`, ao menos 1); quem não pode ir olha para lá e fica (`_stay_on_post`). Corpo visto: cada um vai até ele uma vez (`_known_dead`; quem ficou no posto também o dá por visto), ao chegar a 2,2 m (ou o mais perto que der) grita se ninguém o anunciou ou se ele não sabia; R esquece. Teste: `ai_tests.test_post_keeps_half`; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
+  Soldado = guerrilheiro encapuzado (`soldier.gd`, `HeroineModel` com `guerrilla.glb`/`guerrilla_atlas.png` e M16): guardas do galpão em `Soldier.GUARDS` (índice = número no comentário dele, por sala; ver Galpão em salas; novos no fim): labirinto, todos de pistola (`Soldier.weapon`/`PISTOL`): o 12 no painel, o sentinela 2 do baú da M16, P1 (16) e P2 (17) distraídos nas bancadas, P3 (18) e P4 (19) de ronda; escritório a ronda 0 (descanso), a ronda 6 (trecho da frente do corredor), o 11 na mesa do computador, C (20) no armário, F (21) no celular, S (22) parado no arsenal e os dois A (23, 24) no arquivo, de frente para a porta de saída; estantes e doca o 15 mexendo na estante, as rondas 1, 14 e 8, os Flak 9 e 10 no portão da sala dos clones e o 13 no computador da cabine; pátio descoberto os postos 3 e 4 olhando o portão da mata, o 7 de posto (`"hold"`), a ronda 5 e T (25) e T2 (26) distraídos enchendo o caminhão. "console" = `Enemy.distracted` (animação Console), e `is_distracted()` (de volta ao lugar exato, virado para o painel, sem alerta) = não vê nada (nem ela, nem corpo) e a pistola fica guardada; o barulho o tira de lá como qualquer guarda e, quando desiste, volta. Painéis: `Level.console_at` (bancada com o teclado na altura dos punhos da animação Console, `heroine_anims.console_keys`, a `Level.CONSOLE_GUARD` da parede; tela verde). Caixas soltas em `Level.DIVIDERS` (caixas baixas das estantes e do pátio descoberto). Testes: `console_tests.gd`. Cada ronda tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás de parede, estante ou pilha alta): morta ali em silêncio, ninguém nota, nem as outras rondas passando. Morte só é notada com linha livre: o barulho do corpo caindo (`Enemy.hear_death`, 6 m) e `on_nearby_kill` não atravessam caixa/parede, e corpo caído só é visto até `Enemy.CORPSE_SIGHT` (7 m); o tiro segue sendo ouvido como sempre (`Player.make_noise`). Gente (`Enemy.shouts`: soldado e sniper) avisa gritando (`_alarm_from`): ferido sem tê-la notado grita `SHOUT_DELAY` (1 s) depois (morto antes disso = só o `hear_death`) e quem acha um corpo a 2,2 m grita com o lugar do corpo (não o dela); o grito só chega a `SHOUT_RANGE` (12 m) com linha livre ou `SHOUT_MUFFLED` (4 m) atrás de caixa/parede (`broadcast_alarm(at, true)`). Raptor/alossauro seguem chamando a sala toda; vê-la (`spot`) também segue avisando a sala toda. Teste: `ai_tests.test_shout_earshot`. Caixas baixas (`Level.LOW_CRATE_H` 1,2 m, abaixo do cano dela mirando em pé ~1,37 m) escondem ela agachada (a vista conta o quadril; só o alto da cabeça passa) e ainda dão para escalar. Testes: `ai_tests.test_blind_spot_kills` (uma ronda morta por vez, as outras andando). O de posto (7) fica no pátio descoberto (o galpão não tem mais bonecos de treino, `TargetDummy` só nos testes e no `--shot=dummy|ragdoll`); os de posto têm `Enemy.hold_post`: barulho/vulto/grito de corpo achado só os faz parar e olhar ("?"), sem sair do lugar, até alguém vê-la (`Enemy.identified`: ela vista de verdade, ele ou o alarme de quem a viu; acaba com o `alert_t`); corpo à vista os tira do lugar para ver; depois da busca voltam ao posto. Fixos de um portão dividem o posto (`"post"` em `GUARDS` = `Enemy.post`: "patio" 3, 4, 7; "norte" 9, 10): sem `identified`, no máximo metade dos vivos do posto sai (`_post_full`, ao menos 1); quem não pode ir olha para lá e fica (`_stay_on_post`). Corpo visto: cada um vai até ele uma vez (`_known_dead`; quem ficou no posto também o dá por visto), ao chegar a 2,2 m (ou o mais perto que der) grita se ninguém o anunciou ou se ele não sabia; R esquece. Teste: `ai_tests.test_post_keeps_half`; `alert` (reage 0,45 s) → `engage` (mira, rajadas de 4–7
   tiros instantâneos com descanso de 0,3–0,7 s, chance de acerto cai com distância/agachada/correndo e a cada tiro da rajada (`BURST_DECAY`),
   rolar esquiva; ela some de vista = `SUPPRESS_TIME` de fogo de supressão onde ela estava, que não acerta, só com linha livre do cano até lá (`Soldier._clear_shot`: nunca atira na caixa/parede em que ela se esconde); avança, recua ou anda de lado); morre em ragdoll. Revisão: `--shot=soldier|soldier_dead`.
+  Guerrilheiro em luta (`Enemy.tactical`): tiro ouvido (barulho de `GUNFIRE_RADIUS` ou mais) = alerta e busca ativa correndo, nunca a
+  amarela andando; companheiro morto à vista (`Enemy.witness_death`, chamado no `Soldier.die`, até no abate furtivo; cone e alcance de
+  vista, nada no meio; distraído não vê) = alerta vermelho, `identified`, grita e corre para até `WITNESS_GUESS` m dela. Vasculha no trote
+  na busca ativa (`_sweep_speed`). Pego de surpresa entra na luta rolando de lado (`Soldier.ROLL_ENTER_CHANCE`, a cambalhota da heroína,
+  estado "roll" em `COMBAT`) e esquiva rolando quando ela mira nele (`ROLL_AIM_CONE`, `ROLL_DODGE_RATE`, `ROLL_COOLDOWN`). Com outros em
+  luta, cada um toma um ângulo em volta dela (`_flank_goal`, `FLANK_STEP` a partir da direção média do grupo; vaga com caminho longo ou
+  sem vista dela não serve) e vai para lá atirando: longe no trote (`RUN_GUN_FAR`; de lado, StrafeFast), perto andando; a pontaria cai com
+  a velocidade dele (`MOVING_AIM`); de lado preso dos dois lados, avança ou recua em vez de parar. Testes: `soldier_tests`
+  (`test_gunfire_active_search`, `test_witness_death`, `test_combat_roll`, `test_flank_spread`).
   Guerrilheiro, ritmo do alerta: busca ativa e vermelho 15% mais curtos que os dos bichos (`alert_time`/`lose_time`/`search_time` = ×`Soldier.TIME_SCALE`).
   Busca amarela (`Enemy.active_search` falso: só barulho/vulto/corpo visto, nível 1 "?"): anda até o lugar, para a `OBSERVE_DIST` com vista dele
   e observa de arma baixa, sem vasculhar; volta à rotina. Busca ativa (começou alertado: alarme, corpo achado, ela sumiu da luta; nível 2):
   corre para a área e nos pontos (`search`/`sweep`) procura de fuzil no ombro girando o corpo (`Soldier.weapon_ready`); vista ali = tiro em
-  `REACT_READY` (0,1 s); pego de surpresa (rotina, amarela, correndo) = `REACT_TIME` (0,6 s). O `LOCK_TIME` do primeiro acerto segue igual.
+  `REACT_READY` (0,1 s); pego de surpresa (rotina, amarela, correndo) = `REACT_TIME` (0,3 s). O `LOCK_TIME` do primeiro acerto segue igual.
   Corpo à vista em luta fica conhecido (`Enemy._note_corpses`): depois de perdê-la ele não se surpreende com ele; os outros podem; o grito de quem
   acha um corpo leva o corpo (`_alarm_from(at, about)`): não chega a quem já o conhece e quem ouve passa a conhecê-lo.
   Ronda que foi alertada (`_was_alerted`), quando a busca acaba, guarda o corpo conhecido mais perto (estado "guard": a ~1,8 m, de costas
@@ -254,35 +279,56 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   os `alarm_responders` mais perto saem (soldado: 2, andando = `alarm_walks`, `search_sweeps` 3; raptors: a matilha toda, correndo); os
   outros param, olham para o lugar (`_heed`) e seguem alertados. Sniper: mira e atira só com ela à vista (`SEES_GRACE`); sem vê-la por
   `LOSE_TIME`, procura na passarela e esquece (`_lose_target`). Testes: `ai_tests.gd`.
-- Galpão em seções furtivas (`Shed`, `shed.gd`; `Shed.build` chamado pelo `Level`, o nó criado pelo main): grade de alambrado do
-  chão até `FENCE_H` (3,6 m: acima do pulo de qualquer pilha escalável perto; nada até o teto) (`Shed.fence`, na `Yard.GRATE_LAYER`: segura ela e os guardas, deixa passar tiro, vista e som; as grades
-  fixas entram na malha de navegação como parede, os portões não) divide o galpão: 1 labirinto → 2 faixa do painel (z > `FENCE_A_Z`)
-  → 3 meio + ala da M16 → 4 sala dos clones → 5 canto da porta do pátio. Cada passagem abre por um objetivo (`Terminal`, `terminal.gd`:
-  E na frente, "USAR COMPUTADOR"; com o guarda dele distraído no posto não serve): o computador do painel (`PANEL_USE`, guarda 12)
-  destrava a grade do meio (`MID_GATE`); o computador do laboratório (`LAB_USE`, guarda 0 de `LAB_GUARDS`) destrava o portão de grade
-  do canto (`CORNER_GATE`, no vão leste das caixas do canto). Os outros vãos do canto ficam fechados por grade (`CORNER_FENCES`: o vão
-  do sul, que dava direto nos guardas da porta do pátio, e a quina perto da coluna (-5; -4), por fora da rota da ronda 8); as
-  caixas das paredes do canto (e a pilha encostada nela por fora) não se escalam (`Shed.sealed_crate` → meta "no_climb"; a grade por
-  cima delas saiu: visualmente demais). Portões (`Shed.grate_gate`): grade pintada de amarelo (`GATE_PAINT`) com batentes, travessa e
-  chapa embaixo com faixa de perigo e o lampião em cima: se destacam do alambrado cinza. Travado = `Door.held` (`Door.add_status_lamp`).
-  Guardas abrem portões (`Shed._guards_at_gates`): o caminho da malha dele passando pelo vão (`_path_through`) a até `GUARD_OPEN` = abre,
-  travado ou não; o que um guarda abriu fecha sozinho (`Door.close`) `AUTO_CLOSE` s depois do vão (`DOORWAY`) ficar livre e segue
-  travado; destravado pelo computador segue destravado. Ela pode passar enquanto está aberto.
-  Canto à parte (`Shed.apart`/`in_corner`, contorno `CORNER_AREA`): com o portão do canto fechado, de dentro dele não se vê quem está
-  fora (fora de luta) e som, grito e alarme não passam (`Enemy._reaches`/`_sees_target`): o tiroteio na ala da M16 não chama o canto da
-  porta do pátio (nem a sala dos clones, que já é à parte com o portão de enrolar fechado). Duas pilhas altas (`CORNER_SCREEN`) dentro do
-  canto, na frente do portão, e a caixa do meio da parede leste (agora pilha de 2) tapam a vista do canto até a ala da M16. A ronda 0 ficou só com a barra
-  do T na faixa entre o canto e a grade do painel; a ronda 6 começa fora do canto.
-  Sala dos clones: `LAB_GUARDS` = 2 examinando o tanque vazio e 1 no computador (distraídos, jeito do guarda do painel) e 1 de ronda
-  no corredor; caixas de equipamento baixas `CloneLab.COVER`. Com o portão de enrolar fechado, som e grito não passam entre a sala e
-  o galpão (`Enemy._reaches`). A cena do susto mostra os guardas no fundo e termina com ela agachada atrás da primeira caixa.
-  Reforços (seções 4 e 5): alarme vermelho na seção (`Shed.red_alert`: ela dentro, alguém dela em luta) → `WAVE_DELAY` s depois a
-  porta de serviço (`SERVICE`, selada para ela, com uma saleta fechada atrás) abre e entram `WAVE` guardas alertados correndo para
-  onde ela foi vista; seguindo o vermelho `SECOND_AFTER` s depois, a segunda leva (`WAVES` = 2). Escondidos na saleta =
-  `lurking` + `PROCESS_MODE_DISABLED`. Ficam no fim de `main.all_enemies()` (`main.shed_soldiers()`). R (`Shed.reset`): grades
-  travadas, computadores sem uso, reforços na saleta; checkpoint (`save_state`/`load_state`): uso dos computadores; reforço vivo
-  volta à saleta e a leva dele conta como não mandada. Testes: `shed_tests.gd`.
-- Pátio da mata (`Yard`): segunda sala a oeste do galpão (porta na parede oeste, z = `Yard.DOOR_Z`), uma trilha de terra em S por mata
+- Galpão em salas (`Shed`, `shed.gd`; `Shed.build` chamado pelo `Level`, o nó criado pelo main). Galpão girado, comprido no
+  sentido do avanço (a frente da fase é -z): `Level.WEST`..`EAST` (x -13..3) e `Level.SOUTH`..`NORTH` (z -12..68), pé-direito
+  `Level.WALL_H` 7,5 m; do pátio descoberto (`Level.ROOF_Z` 8) para o fundo há telhado. Paredes de dentro sólidas até o teto
+  (`Shed.wall`: segura corpo, tiro e vista; vãos de porta). Salas, do fundo para a frente: labirinto (z 56..68, furtivo; ver Começo
+  da fase) | parede `Level.MAZE_FRONT` com o portão de grade `MID_GATE` (coluna 5) e o painel do guarda 12 no nicho ao lado |
+  escritório (z `OFFICE_Z0` 43..`OFFICE_Z1` 56, furtivo; laje baixa `OFFICE_CEIL` 3 m sem acesso por cima; corredor do meio `HALL_X`
+  com o bloqueio `BLOCKADE` (pilha até a laje: obriga a passar pelo descanso e o arquivo), descanso/arquivo a oeste e
+  escritório/arsenal a leste (`ROOMS_Z`, vãos `ROOM_DOORS`); na parede da frente três portas: a do arquivo `EXIT_DOOR` é a única
+  que abre (travada até o computador da mesa `OFFICE_USE`/`DESK_CONSOLE`, guarda 11, objetivo "office"), as outras
+  (`BARRED_DOORS`) nunca abrem: `Door.locked_text` = `BARRED_TEXT` com o E (`Player.door_barred` → `Inspect.show_message`);
+  munição de pistola no arsenal; luz própria) | estantes + doca, uma sala só (combate; estantes porta-paletes `RACKS` de
+  `RACK_H` 4,6 m, sólidas e sem escalar, corredor escondido junto da parede oeste; a escada única `STAIR` (rampa) à direita sobe
+  para a doca, plataforma a `CloneLab.FLOOR_Y` 1,3 de `DOCK_Z` 27..31; Flak 9 e 10 no portão de enrolar da sala dos clones;
+  cabine `BOOTH` na ponta oeste, piso `BOOTH_Y` 4,0, mureta, escadinha `BOOTH_LADDER` (Ladder) e o computador `BOOTH_USE`, guarda
+  13, objetivo/checkpoint "control" = destrava o portão dos clones) | sala dos clones (ver Sala dos clones; o computador
+  `LAB_USE` abre a porta enorme `HUGE_DOOR`, objetivo "lab" = checkpoint "corner") | pátio descoberto (o fim, combate direto;
+  "corner" no código: caminhão `TRUCK` sendo carregado, com a escopeta no baú `TRUCK_CHEST` da caçamba (traseira aberta, sobe-se
+  nela), container `CONTAINER`, pilhas altas `CORNER_SCREEN`, luzes de parede `YARD_LAMPS`, rampa da porta enorme até `RAMP_Z`,
+  marcas de arrasto `DRAG` do tanque até o portão da mata). Baú da M16 em `main.M16_CHEST` (canto opcional do labirinto).
+  Leitura das portas (`Shed.door_signs`): folha de aço industrial `Shed._steel_leaf` (`DOOR_PAINT` sobre o concreto, nunca a
+  textura da parede, que parecia tábua; almofada, visor aramado, maçaneta, chapa de chute, dobradiças; a do pátio também laranja),
+  batente de aço com a faixa de perigo na frente (listras de ~10 cm) e placa em caixa de luz em cima (azul `SIGN_ROOM`) com o
+  destino de cada lado (DEPÓSITO/ESCRITÓRIO/DOCA; `EXIT_SIGN` verde na porta enorme e no portão da mata; `RESTRICTED_SIGN` vermelha
+  no portão dos clones; INCUBAÇÃO na porta falsa; sem espaço até o teto, ao lado do vão); o lampião dos portões num vão de parede
+  atravessa a parede. Nada de coluna/bloco de chapa colado na parede. Móveis do escritório em `Shed.FURNITURE` (mesa com tampo de
+  madeira, arquivo de gavetas verde-oliva, armário de vestiário, cadeira sem corpo; nunca bloco com a textura da parede);
+  esconderijos: a ilha de arquivos do descanso e o arquivo baixo junto da parede oeste do arquivo.
+  Portas que os guardas abrem (`Shed.guard_gates`: portão do labirinto, porta do arquivo, porta enorme; `_guards_at_gates`): o
+  caminho da malha dele passando pelo vão (`_path_through`) a até `GUARD_OPEN` = abre, travada ou não; a que um guarda abriu fecha
+  sozinha (`Door.close`) `AUTO_CLOSE` s depois do vão (`DOORWAY`) ficar livre e segue travada. As que nunca abrem ficam como parede
+  na malha (`Yard.bake_nav`). Som entre áreas (`Shed.zone_of`: strip/office/dock/lab/corner): `Shed.muffled` (em
+  `Enemy._reaches`) só deixa passar por porta aberta (`LINKS`, chaves de `Shed.gates`). Pátio descoberto à parte
+  (`Shed.apart`/`in_corner`): com a porta enorme fechada, nada passa entre ele e o resto (vista fora de luta, som, grito, alarme).
+  Radar: contorno das salas em `Radar.ROOMS`.
+  Sala dos clones: `LAB_GUARDS` = 1 de pistola no computador e 2 examinando o tanque vazio (distraídos, jeito do guarda do
+  painel) e 1 de ronda no corredor do meio; caixas de equipamento baixas `CloneLab.COVER`. Com o portão de enrolar fechado, som
+  e grito não passam entre a sala e a doca (`Enemy._reaches`). A cena do susto anda até a primeira caixa (`Cutscene.COVER_STOP`)
+  e termina com ela agachada atrás dela.
+  Reforços (estantes, sala dos clones e pátio descoberto; `SERVICE` 0 = sala dos clones, 1 = pátio, 2 = estantes, saletas fora
+  da parede leste): alarme vermelho na seção (`Shed.red_alert`: ela dentro, alguém dela em luta; `section_guards` = `LAB_GUARDS`,
+  `Soldier.CORNER_GUARDS`, `Soldier.RACKS_GUARDS`) → `WAVE_DELAY` s depois a porta de serviço (selada para ela, com uma saleta
+  fechada atrás) abre e entram `WAVE` guardas alertados correndo para onde ela foi vista; seguindo o vermelho `SECOND_AFTER` s
+  depois, a segunda leva (`WAVES` = 2). Escondidos na saleta = `lurking` + `PROCESS_MODE_DISABLED`. Ficam no fim de
+  `main.all_enemies()` (`main.shed_soldiers()`). R (`Shed.reset`): portas travadas, computadores sem uso, reforços na saleta;
+  checkpoint (`save_state`/`load_state`): uso dos computadores (panel/office/control/lab); reforço vivo volta à saleta e a leva
+  dele conta como não mandada. Testes: `shed_tests.gd` (paredes, labirinto sem atalho, quina Q, guardas no lugar e distraídos,
+  escritório de uma saída, cabine, sala dos clones isolada do pátio, reforços).
+- Pátio da mata (`Yard`): segunda sala a oeste do galpão (portão enorme de `Yard.DOOR_W` 6 m na parede oeste, no pátio descoberto,
+  z = `Yard.DOOR_Z`; `Yard.west_wall` monta a parede oeste do galpão inteira; a oeste do galpão, ao norte da mata, mata de
+  enfeite sem corpo `SHED_WOODS`, vista do telhado), uma trilha de terra em S por mata
   fechada (jeito Dino Crisis 2 / RE4: ela segue um caminho e a luta vem da frente, não de todos os lados): três faixas norte-sul separadas
   por paredes de mata (`WALL_A`/`WALL_B`, `_bands`: parede invisível de `WALL_H` 10 m, alta para ninguém escalar nem do planalto, com
   árvores/moitas de enfeite por cima), `Z_HALF` 45 m. S1 = faixa leste, da porta para o sul até a clareira do morto (emboscada); S2 = faixa do
@@ -301,8 +347,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   (`restore`): vivo volta à moita e o trecho arma de novo, seção sem vivo = portão destravado.
   Barranco e planalto da escopeta: no fim de S2, meio escondido atrás de samambaias, o degrau `ROCK1` (`ROCK1_H` 1,2 m, raso: de cima dele a
   beira fica ao alcance) e a beira `SHELF` do planalto (`PLATEAU`, `PLATEAU_Y` 3,5 m, faixa leste ao norte de S1, por cima da `WALL_A`): escala,
-  pula, fica pendurada e sobe. O fim de S1 (face sul do planalto e da beira, da parede do galpão até a `WALL_A`) tem alambrado do chão até
-  `WALL_H` (`S1_END_FENCE`) e a borda colada no galpão também (`ROOF_FENCE_X`): do telhado ela não pula para o planalto nem agarra a beira;
+  pula, fica pendurada e sobe. O fim de S1 (face sul do planalto e da beira, da parede do galpão até a `WALL_A`) tem alambrado em cima da
+  borda, do alto da pedra até `WALL_H` (`S1_END_FENCE`, 0,2 m para dentro; a face de pedra fica livre embaixo) e a borda colada no galpão também (`ROOF_FENCE_X`, o planalto inteiro; o telhado andável fica bem ao norte dele, atrás da telha translúcida);
   `PlayerMoves.find_ledge` recusa beira com grade entre a face e o lugar de ficar de pé. Lá em cima o baú da escopeta (`SHOTGUN_CHEST`, boca para o norte, tronco `CHEST_LOG` no fundo), munição e kit,
   e os 2 raptors de `CLIFF_RAPTORS` (fora das seções) que saem das moitas quando ela chega (`Yard.on_plateau`). As bordas do planalto (menos a
   do barranco) têm grade invisível (camada da grade): da beira sobre S3 a vista e o tiro descem, ninguém pula.
@@ -399,40 +445,72 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   Testes que leem a pose final usam `Skeleton3D.skeleton_updated`; estado mudado dentro da lambda vai num dicionário (a lambda
   copia variável local). `possible_models/dino-crisis-*` só como referência de
   ritmo, nada de keyframe deles no jogo.
-- Começo da fase: ela nasce no telhado do galpão (`Roof.START`; laje sem sombra, parapeito de 1 m que dá para
-  escalar e se jogar: a queda mata, ver Queda). Em cima da laje (`Roof.has`) os inimigos não a percebem: passos/tiro não chegam (`Enemy._reaches`) e
-  ela não é vista, nem por quem está alertado. Na beira do lado do pátio (`Roof.near_yard`, a `SMELL_DIST` da mureta oeste), uma vez
-  só (`main.smelled`, o R zera): o jogo para com `Roof.SMELL_TEXT` na faixa de baixo até confirmar (`Inspect.show_message`, jeito
-  RE/Dino Crisis). Captura `--shot=smell`. Interagir no alçapão (`Hatch`, canto do fundo à direita) = ajoelha e abre (`PlayerMoves.start_hatch`, animação
-  HatchOpen; a tampa sobe entre HATCH_GRAB e HATCH_UP, as palmas presas por IK na alça girando com ela (`heroine_cutscene.handle_at`, = `Hatch.HANDLE`) até HATCH_LET_GO, depois empurra); fechado, a escada dele (`Ladder.top_open`) não monta. A escada fica na beira
-  do furo do lado de quem chega, presa à parede do fundo por suportes, e desce até o labirinto de caixas (`Level.MAZE`: grade de
-  células de 1,6 m, pilhas de 2,7 m = acima do alcance de pendurar; frente fechada; saída única à esquerda por baixo do mezanino; a
-  escada do mezanino num beco que só abre para o corredor de cima; vigas do mezanino com colisão). Na fase a escada do mezanino
-  fica recolhida e trancada (`Catwalk.suspended` → `Ladder.locked`/`lift`: degraus só de `LADDER_LIFT` para cima, o lance de baixo
-  encaixado atrás, corrente e cadeado; não monta de baixo nem de cima; E embaixo dela = `Player.ladder_locked` → `Catwalk.LOCKED_TEXT`
-  na faixa de baixo) e a subida é escalando: vão do guarda-corpo até a parede do nicho (`CLIMB_GAP_R`) e a caixa `CLIMB_CRATE`
-  de `CLIMB_CRATE_H` embaixo dela (escala a caixa, pula, fica pendurada na beira e sobe). `Catwalk.new()` sozinho (testes da escada) segue com a escada de subir. Raptors não navegam no labirinto
-  (raio da malha 0,75 m); soldados usam a malha de gente (`Yard.bake_people_nav`: raio 0,25 m, célula de 5 cm, só no galpão) e entram
-  em todo corredor do labirinto e no nicho da escada do mezanino (passam debaixo das mãos-francesas do mezanino, `Catwalk.BRACE_Y` acima da cabeça); o sniper anda reto no mezanino (`Sniper._steer`: a malha mais perto é a do topo das caixas/telhado).
-  Na escada, entrando/saindo pelo topo e nos `Hatch.HIDDEN_RUNGS` degraus abaixo do alto do ciclo (`Ladder.hidden_top`, `PlayerMoves.hidden_on_ladder`) fica escondida de todos, mesmo alertados; abaixo, o sniper a vê se estiver olhando para o canto: o tiro
-  derruba da escada (`PlayerMoves.knock_off_ladder`) e a queda sem controle mata (`Player.KNOCKED_*`).
-  Na ronda o sniper do mezanino alterna entre o galpão e as caixas lá embaixo (`Sniper.LOOK_DOWN`; desconfiado de algo no
+- Tela de título (`TitleScreen`, `title_screen.gd`): o jogo abre nela, por cima do telhado com a árvore pausada (capturas e testes não):
+  JOGAR (a fase) / TUTORIAL (`main.start_tutorial`) / CONTROLES / OPÇÕES / SAIR DO JOGO; o menu de pausa tem CONTROLES, OPÇÕES e MENU INICIAL
+  (`PauseMenu.to_title` → `main.show_title`: sai do treino e zera a fase). Captura: `--shot=title`.
+  Tela CONTROLES (`ControlsScreen`, `controls_screen.gd`, criada pelo `PauseMenu`, `pause_menu.controls`; também pelo F1 no jogo e
+  pelo título): desenho do controle jeito PlayStation com uma linha de cada botão até o que ele faz (`Board`, pontos `P`; SELECT/START
+  com a legenda em cima, □ e analógico direito com a linha por baixo) ou do teclado (teclas do jogo acesas) e do mouse, com a legenda;
+  botões tirados do `InputSetup` (`UiStyle.glyphs`) e textos pelo perfil (`GameMode`); Q/TAB/SELECT ou os lados trocam, E/X/bola/ESC
+  voltam. Captura: `--shot=controls|controls_keys`. Glifos novos do `UiStyle.Hint`: "stick_l"/"stick_r", item "glyphs" e `device`.
+  Pista de treino (`Tutorial`, `tutorial.gd`): montada só ao começar o treino, em `Tutorial.ORIGIN` (70 m a leste do galpão: ninguém vê
+  nem ouve), apagada ao sair. Corredor com vão baixo (`LOW_GAP`, só agachada passa), caixa A para escalar, pulo para a caixa B por
+  cima do fosso (degrau no fundo), baú da M16, botão na parede (`Terminal` "APERTAR BOTÃO") que abre o portão de grade, sala de tiro
+  com a caixa alta para encostar/esgueirar, alvo escondido atrás dela, trocar de arma e o alvo do fim. Passos `STEPS` com o aviso e os
+  botões no alto (`Tutorial.Overlay`); acabou = "TUTORIAL COMPLETO" e volta ao título; R recomeça a pista. Munição cheia no treino.
+  Capturas: `--shot=tutorial --part=move|crouch|climb|leap|chest|button|cover|peek|switch|final` e `--shot=tutorial_map`. Testes:
+  `tutorial_tests.gd`. Agachada a cápsula dela baixa para `Player.CROUCH_H` (`_fit_capsule`); debaixo de algo ela não levanta.
+- Começo da fase: ela nasce no telhado do galpão (`Roof.START` (-6, 59), olhando para o alçapão; laje sem sombra, parapeito de 1 m
+  que dá para escalar e se jogar: a queda mata, ver Queda). Da metade para a frente (z < `Roof.FENCE_Z` 53) a cobertura é telha
+  translúcida: um alambrado alto (`Roof.FENCE_H`, camada da grade) atravessa o telhado e ela fica na parte de trás. Em cima da laje
+  (`Roof.has`) os inimigos não a percebem: passos/tiro não chegam (`Enemy._reaches`) e ela não é vista, nem por quem está
+  alertado. Na beira do lado do pátio (`Roof.near_yard`, a `SMELL_DIST` da mureta oeste), uma vez só (`main.smelled`, o R zera):
+  o jogo para com `Roof.SMELL_TEXT` na faixa de baixo até confirmar (`Inspect.show_message`, jeito RE/Dino Crisis); a mata de
+  enfeite a oeste do galpão (`Yard.SHED_WOODS`) aparece dali. Captura `--shot=smell`. Interagir no alçapão (`Hatch`, canto do
+  fundo à direita, `Roof.HATCH_POS`) = ajoelha e abre (`PlayerMoves.start_hatch`, animação HatchOpen; a tampa sobe entre
+  HATCH_GRAB e HATCH_UP, as palmas presas por IK na alça girando com ela (`heroine_cutscene.handle_at`, = `Hatch.HANDLE`) até
+  HATCH_LET_GO, depois empurra); fechado, a escada dele (`Ladder.top_open`) não monta. A escada (~7,8 m) fica na beira do furo do
+  lado de quem chega, presa à parede do fundo por suportes, e desce no nicho do canto do labirinto (`Level.MAZE_HATCH`).
+  Labirinto (`Level.MAZE`, z `MAZE_FRONT` 56..68, x -13..3; grade de 10 colunas x 7 linhas de `MAZE_CELL` (1,6 x 1,714 m), linha
+  0 = o fundo, `maze_cell`/`maze_index`; pilhas de 2,7 m, `no_climb`, acima do alcance de pendurar): sem atalho, o caminho do pé
+  da escada até o portão `Shed.MID_GATE` vai pelo corredor da linha 2 para oeste, dá a volta em quadrado debaixo do mezanino,
+  sobe o corredor da parede oeste até a frente e faz o zigue-zague até o portão; canto opcional à direita com o baú da M16
+  (sentinela 2 de pistola). Atrás da quina `Level.MAZE_Q`, esgueirando para o corredor da coluna 3, ela vê a beira da frente do
+  mezanino (shed_tests confere com raio). Guardas de pistola: 12 no painel (`Level.CONSOLE`, nicho ao lado do portão), P1 (16) e
+  P2 (17) distraídos nas bancadas (`Soldier.P1_BENCH`/`P2_BENCH`), P3 (18) e P4 (19) de ronda. Mezanino quadrado (`Catwalk`:
+  x `X0`..`X1`, z `FRONT_Z`..`WALL_Z`, piso `FLOOR_Y` 3,0; colunas 0..3, linhas 0..2, `Catwalk.covers`; pilares `POSTS`;
+  debaixo dele as pilhas são mais baixas). Na fase a escada dele fica recolhida e trancada (`Catwalk.suspended` →
+  `Ladder.locked`/`lift`: degraus só de `LADDER_LIFT` para cima; não monta de baixo nem de cima; E embaixo dela =
+  `Player.ladder_locked` → `Catwalk.LOCKED_TEXT`), em cima do corredor da parede oeste (`LADDER_X`, `Level.maze_ladder_cell`); não
+  há subida (sem caixa de escalar). `Catwalk.new()` sozinho (testes da escada) segue com a escada de subir. Raptors não navegam no
+  labirinto (raio da malha 0,75 m); soldados usam a malha de gente (`Yard.bake_people_nav`: raio 0,25 m, célula de 5 cm, só no
+  galpão) e entram em todo corredor do labirinto, debaixo do mezanino também; o atirador anda reto no mezanino (`Sniper._steer`: a
+  malha mais perto é a do topo das caixas/telhado).
+  Na escada do alçapão inteira (`Ladder.hidden`: montando, descendo/subindo, entrando/saindo pelo topo; `PlayerMoves.hidden_on_ladder`)
+  fica escondida de todos, mesmo alertados (decisão do usuário: levar tiro descendo ficava chato). Numa escada que não esconde, tiro
+  derruba (`PlayerMoves.knock_off_ladder`) e a queda sem controle mata (`Player.KNOCKED_*`).
+  O guarda do mezanino é um `Sniper` com `weapon = "m16"` (`Sniper.rifleman`): ronda no perímetro (`Catwalk.ROUTE`; andando, a
+  cabeça vira para o lado do galpão que ele vigia, `PATROL_LOOK`), ponto cego, sem laser; à vista mira `RIFLE_AIM` s (o sensor de
+  perigo sobe) e solta rajadas `RIFLE_BURST` de longe (até `FIRE_RANGE`, `_rifle_chance`, dano do M16 do guerrilheiro), descansa
+  `RIFLE_REST`, mira de novo em `RIFLE_REAIM`; morto, o M16 (meio pente) e o cartão do portão da mata (`main.keycard`) caem da
+  beira no pé da escada (`Sniper.drop_at` = `Catwalk.DROP_POINT`: o mezanino não tem subida). Os das torres seguem de fuzil de
+  precisão e laser. Teste: `sniper_ladder_tests.test_mezz_rifleman`.
+  Na ronda o guarda do mezanino alterna entre o galpão e as caixas lá embaixo (`Sniper.LOOK_DOWN`; desconfiado de algo no
   labirinto segue de cabeça baixa): de cabeça baixa o ponto cego não vale no labirinto (`Level.in_maze`) e ele vê quem está
   em pé num corredor à vista; agachada entre as pilhas, não.
-- Teto da sala dos clones (`Roof.LAB_Y`, 1,5 m acima da laje: sobe escalando a parede do fundo do galpão; mureta nos três lados
-  de fora; `Roof.has` conta ele como telhado) com a caixa de paraquedas (`SupplyDrop`, no fundo, em `SupplyDrop.POS`): caixa
-  oliva torta, lona murcha e cordas; E na frente = o mesmo `PlayerMoves.start_pickup` do baú (ajoelha em `kneel_transform`,
+- Caixa de paraquedas no telhado (`SupplyDrop`, em `SupplyDrop.POS`, no canto do fundo à esquerda, no mesmo nível da laje):
+  caixa oliva torta, lona murcha e cordas; E na frente = o mesmo `PlayerMoves.start_pickup` do baú (ajoelha em `kneel_transform`,
   tampa abre, animação PickupPistol, a mão pega no quadro `pistol_pickup.grab_frame` do heroine_moves.json, `finish` no fim
   mostra o item) e a pistola com silenciador entra no lugar da pistola
   (`Player.silencer`: mesma arma "pistol", mesma munição e dano; `Player.SILENCER` troca o nome no HUD "PISTOLA SIL.", o barulho
   do tiro de 26 m para 3,5 m e tira o clarão que a mostra; `HeroineModel.silenced`/`gun()` = malha PistolSD, cano SDMuzzle, som
   `pistol_sd_shot`, clarão `Fx.FLASH.pistol_sd`; a malha PistolSD é só o silenciador, 12 triângulos: o teste do orçamento soma
   todas as armas do heroine.glb e está em 4996 de 5000). Tela do item `Inspect.show_drop`. R fecha a caixa e tira o silenciador.
-  Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o galpão (o alçapão aparece do começo) e
-  `LAB_FOG_DENSITY` a mais sobre o anexo (a caixa só aparece a poucos metros).
-- Checkpoints (`Checkpoint`, `checkpoint.gd`; `main.reach_checkpoint`, só andam para a frente, aviso "CHECKPOINT"): "lab" = entrou na
-  sala dos clones, "corner" = usou o computador do laboratório (o canto da porta do pátio destravou), "yard" = abriu o
-  portão do galpão para o pátio (`main.yard_door`), "trail" = os 3 raptors da emboscada mortos (S1), "trail2" = S2 limpa, "standoff" = S3
+  Neblina do telhado (`Roof._fog`, FogVolume como a do pátio): `FOG_DENSITY` sobre o telhado (o alçapão aparece do começo) e
+  `DROP_FOG_DENSITY` a mais no canto da caixa (`Roof.DROP_FOG`: ela só aparece a poucos metros).
+- Checkpoints (`Checkpoint`, `checkpoint.gd`; `main.reach_checkpoint`, só andam para a frente, aviso "CHECKPOINT"): "control" = usou o computador da cabine da doca (portão dos clones destravado), "lab" = entrou na
+  sala dos clones, "corner" = usou o computador do laboratório (a porta enorme para o pátio descoberto abriu), "yard" = abriu o
+  portão do galpão para o pátio da mata (`main.yard_door`), "trail" = os 3 raptors da emboscada mortos (S1), "trail2" = S2 limpa, "standoff" = S3
   limpa (as torres esperam ela descer de novo: `towers_armed`/`towers_up` também vão no checkpoint), "tunnel" = abriu o portão do teclado
   (`main.mine_door`), "allosaurus" = passou pelo portão arrombado para a pedreira. Grava a jogadora (vida, armas, munição, silenciador,
   chaves, tiros, tempo) e o mundo (mortos por índice de `main.all_enemies()`, portas/baús/caixa de paraquedas/alçapão/chave e cartões
@@ -447,8 +525,9 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Queda (`Player.fall_damage`): sem dano até `FALL_SAFE` (3,6 m: pular do mezanino não machuca), morte a partir de `FALL_LETHAL`
   (5 m); derrubada da escada usa `KNOCKED_SAFE/KNOCKED_LETHAL`. `death_cause` "fall" → Game Over "VOCÊ MORREU NA QUEDA".
   Fora do galpão/pátio/pedreira não há chão: caindo abaixo de `Player.VOID_Y` (-10 m) ela morre na queda (não cai para sempre).
-- Sala dos clones (`CloneLab`): anexo atrás da plataforma de carga (piso na altura da doca, `FLOOR_Y` 1,3), portão de enrolar (`Door`
-  com `room` -1, fora da corrente de salas) aberto com E. Seis tubos com raptors (`RaptorModel` parado na animação `Embryo`, encolhidos e centrados no tubo; osso nenhum a menos de
+- Sala dos clones (`CloneLab`): sala do galpão entre a doca e o pátio descoberto (z `Z_FAR` 8..`Z_NEAR` 27, x -13..3, corredor do
+  meio em `CX`; piso na altura da doca, `FLOOR_Y` 1,3, teto do galpão `CEIL_Y`), portão de enrolar (`Door` com `room` -1, fora da
+  corrente de salas; `CloneLab.GATE`, na parede da doca) aberto com E. Seis tubos com raptors (`RaptorModel` parado na animação `Embryo`, encolhidos e centrados no tubo; osso nenhum a menos de
   `GLASS_GAP` do vidro: se a cauda passa, o clone encolhe até caber,
   azulados, sem piar). Ao entrar pela primeira vez: `Cutscene.play_clones` (faixas pretas, sem HUD; `Player.cutscene` = sem controle nem dano;
   anda, close no clone, rosto dela com Shocked e "O QUE...?!", plano geral; E pula, ver Cenas; R reinicia e a cena volta a valer).
@@ -456,11 +535,14 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   os testes usam `user://test_settings.cfg`, capturas não leem nem gravam); aí aparece "<glifo> PULAR" na faixa de baixo e E/X
   pula. Na cena mouse/analógico não giram a câmera dela; no fim `CameraRig.reset_view` a põe atrás dela, reta, olhando para onde ela olha.
   Cada tubo tem uma plaqueta num pedestal (`SubjectPlate`, "SUBJECT XXXX" de `CloneLab.SUBJECTS`, grupo "plates"): E na frente dela
-  (`Player.pick_plate` → sinal `read_plate`) = `Inspect.plate_zoom` (pausa, câmera até a plaqueta, ficha embaixo). No canto do fundo à
-  esquerda (`CloneLab.TANK`; a sala foi até `Z_FAR` -32 para caber) o tanque do alossauro: vidro de `TANK_SIDES` lados inteiro,
-  drenado, porta de vidro aberta, mangueiras soltas, luz vermelha; a plaqueta dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO") é o
-  código do portão da pedreira. O console não tem mais a chave do painel: o cartão (`main.gate_card`, keycard cor de ferrugem, id
-  `Yard.GATE_KEY`, sem dica do código: a ligação com a plaqueta do tanque vazio fica para a jogadora) cai do último sniper das torres do pátio.
+  (`Player.pick_plate` → sinal `read_plate`) = `Inspect.plate_zoom` (pausa, câmera até a plaqueta, ficha embaixo). No fim da sala, à
+  esquerda (`CloneLab.TANK`), o tanque do alossauro de 6 m (`TANK_R` 3): vidro de `TANK_SIDES` lados inteiro, drenado, porta de
+  vidro aberta deitada junto do vidro (`TANK_HINGE`/`TANK_DOOR_OPEN`: fora do corredor), mangueiras soltas, luz vermelha; a plaqueta
+  dele (`ALLO_SUBJECT`, "VAZIO / TRANSFERIDO", na frente da porta, virada para o corredor) é o código do portão da pedreira; marcas
+  de arrasto (`Shed.DRAG`) dele até a porta enorme. Computador do laboratório na parede da frente (`CloneLab.CONSOLE`,
+  `Level.console_at`; guarda de pistola distraído): abre a porta enorme (`Shed.HUGE_DOOR`, folha que corre para oeste, rampa até o
+  pátio). Porta falsa "INCUBAÇÃO" na parede leste (`Shed.FAKE_DOOR`, `Door.locked_text`). O cartão (`main.gate_card`, keycard cor
+  de ferrugem, id `Yard.GATE_KEY`, sem dica do código: a ligação com a plaqueta do tanque vazio fica para a jogadora) cai do último sniper das torres do pátio.
 - Salas e portas (`Door`, `Level.room_of/connected`): 0 galpão, 1 pátio, 2 túnel da mina, 3 pedreira. As duas portas (de correr no galpão, portão de ferro no fundo do pátio) começam fechadas: bloqueiam corpo, tiro e visão e abrem com E perto delas (`Player.pick_door`; reiniciar fecha). `Enemy.hear_noise`/`on_alarm` só valem na mesma sala ou com todas as portas entre elas abertas: tiro e grito de uma sala não chamam os inimigos das outras. `Yard.bake_nav` desliga as portas na hora de assar a malha.
   Porta trancada: `Door.lock` = id da chave/cartão. Com leitor (`add_card_reader`, porta do galpão) abre com o cartão no bolso. Com
   teclado (`add_keypad` + `Door.code`, portão da pedreira: cartão `Yard.GATE_KEY` na fenda do lado do teclado + código
@@ -501,7 +583,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - HUD (unidades de 240 de altura ampliadas, `main._build_hud`): no alto à esquerda a vida em barra (`HudBar`, número ao lado) e logo abaixo o sensor
   de perigo (`DangerMeter`, jeito Syphon Filter); no alto à direita o radar (`Radar`); embaixo à direita o modelo da arma na mão
   (`WeaponIcon`: SubViewport ortográfica, .glb soltos (as armas longas são os do baú, deitados: `LYING` os põe de perfil de novo), pistola comum = malha "Pistol" do corpo dela, `pistol_sd` com o
-  silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival; a ajuda (F1) quebra antes do radar.
+  silenciador; giro em `WeaponIcon.TURN`) com a munição ao lado só no survival. Sem texto de ajuda no HUD (o F1 abre a tela CONTROLES).
   Mira (`Crosshair`, jeito Syphon Filter, camada sem escala no centro): cruz com um retângulo no meio, colchetes "[ ]" dos lados, tracinho no meio de cima/baixo e um pontinho fixo no centro (`DOT`). Tamanho
   dinâmico: `AREA_R` m na distância do que está sob ela pela lente da câmera (perto = maior, até `LOOSE_MAX`) + cone do
   próximo tiro (`Player.aim_spread`: arma, tiros seguidos, andando); focada no mesmo inimigo com tiro livre fecha em
@@ -512,7 +594,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   VISÍVEL/INVISÍVEL (`Radar.INVISIBLE_AT` da `Radar._exposure`: agachada no aberto ao alcance de alguém não distraído = VISÍVEL, telhado ou alto da escada; nunca com alguém a vendo, `Enemy.has_eyes_on`)
   e o estado (DESCONFIADOS / BUSCA ATIVA / ALERTA!); o olho fecha escondida, olha para os lados na busca e fica vermelho no alerta.
   Perigo: cada inimigo diz `Enemy.threat()` (0..1, só em combate; esquivando = 0): soldado = chance de pelo menos um tiro da rajada
-  acertar (`Soldier._hit_chance`, a mesma do `_fire`); o primeiro acerto só vem depois de `Soldier.LOCK_TIME` (0,6 s) mirando nela à vista (antes os tiros passam raspando), então o sensor avisa antes do dano; travou, vale até ele esquecê-la (`alert_t` = 0 fora de combate): sumir de vista ou esquivar não traz o aviso de volta (teste `soldier_tests.test_danger_before_hit`), sniper = sobe com a mira do laser, raptor/alossauro = golpe ao alcance
+  acertar (`Soldier._hit_chance`, a mesma do `_fire`); o primeiro acerto só vem depois de `Soldier.LOCK_TIME` (0,3 s) mirando nela à vista (antes os tiros passam raspando), então o sensor avisa antes do dano; travou, vale até ele esquecê-la (`alert_t` = 0 fora de combate): sumir de vista ou esquivar não traz o aviso de volta (teste `soldier_tests.test_danger_before_hit`), sniper = sobe com a mira do laser, raptor/alossauro = golpe ao alcance
   (`_melee_threat`). O sensor junta tudo (1 - produto(1 - chance)), sobe rápido e desce devagar, rolando desce depressa e volta a subir
   se ela segue na mira; de `WARN` para cima pisca com "!!". Radar: centrado nela, girado com a câmera, contorno das salas
   (`Radar.ROOMS`) e portas (verde aberta/amarela fechada/vermelha trancada); inimigo só aparece depois de avistado uma vez (na tela, a
@@ -540,7 +622,7 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   olha para a beirada mais perto; direcional para os lados anda colada (passos laterais na velocidade do andar agachada com teto de `STEP_RATE` do ritmo do StrafeL/R ou CrouchStrafeL/R, sem trotinho, `PlayerCover.slide_speed`, cabeça para onde vai, `HeadLook`) e
   para na beirada (`EDGE_MARGIN`, `at_edge`; empurrando mais `EDGE_HOLD`, contorna); o mesmo comando solta; para longe da parede sai;
   rolar/pular/golpe saem. Mirar encostada (`PlayerCover.aim_from_cover`, `aim_mode`), com a câmera para o lado da parede (`TOWARD`):
-  na beirada (`PEEK_EDGE`) esgueira por ela; senão, bloco com o alto até `OVER_MAX` (1,2 m; o cano mirando em pé fica a ~1,37 m) =
+  na beirada (`PEEK_EDGE`) esgueira por ela; senão, bloco com o alto até `OVER_MAX` (1,3 m; o cano mirando em pé fica a ~1,37 m; mais alto, só pela beirada) =
   levanta e mira por cima (`OVER_MAX` = `Level.LOW_CRATE_H` + 0,1: as caixas baixas do galpão contam; o tiro sai pela linha da câmera,
   por cima da caixa, e os inimigos miram na cabeça dela, `Player.sight_point`); senão (ou câmera para o lado aberto) mira normal. O giro de ~180° até a parede passa pelo lado da
   beirada (`Player._aim_turn`) e, de volta à encostada, desfaz o giro pelo mesmo caminho (`_turned`/`_unwind`, nunca volta inteira). Mirar e levantar atrás de caixa baixa só pausam (`PlayerCover.hold`): soltou a mira, volta da quina / agacha de novo e,
@@ -548,10 +630,14 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   parte de cima vem da pose parada (`HeroineModel.cover_upper`/`HOLD_UPPER`): a arma fica junto ao corpo, não esticada como no StrafeL/R. A depuração do guerrilheiro em ragdoll passou do G para o J. Com arma longa só
   os braços vêm do RifleHold (`HeroineModel.COVER`, nó `carry_arms`). Ocultação: `Player.visibility_from(olho)` = ×`HIDE_MULT`
   para quem está do outro lado do plano da parede (`Enemy._sight_range`); do lado aberto, normal. Testes: `cover_tests.gd`.
-  ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO; árvore pausada, não abre por
+  ESC / START = menu de pausa (`PauseMenu`, ação "pause": CONTINUAR / REINICIAR / CONTROLES / OPÇÕES / MENU INICIAL / SHOWROOM / SAIR DO JOGO; árvore pausada, não abre por
   cima de tela de inspeção nem no game over; volta ao jogo dois passos de física depois para o botão não chegar nela).
-  TELA CHEIA: SIM/NÃO troca na hora e salva em `Settings` (`settings.gd`, `user://settings.cfg`); o `main` aplica ao abrir
-  (capturas `--capture` ficam sempre na janela; os testes usam outro arquivo).
+  OPÇÕES (`OptionsScreen`, `options_screen.gd`, uma só criada pelo `PauseMenu` = `pause_menu.options` e usada também pelo título):
+  TELA CHEIA / VOLUME / VIBRAÇÃO / VOLTAR; cima/baixo escolhe, esquerda/direita troca (volume -/+ 10%), confirmar troca (volume
+  sobe e no 100% volta ao 0%), ESC/START/bola voltam ao menu de quem abriu. Tudo vale na hora e salva em `Settings` (`settings.gd`,
+  `user://settings.cfg`); o `main` aplica ao abrir (capturas `--capture` ficam sempre na janela e no volume cheio; os testes usam
+  outro arquivo). VOLUME (`Settings.volume` 0..1, padrão 100%, seção "audio") = volume do barramento Master (todo som passa por
+  ele; 0 = mudo). Captura: `--shot=options`.
   VIBRAÇÃO (`Settings.vibration`, padrão SIM, mesmo arquivo): vibração do controle (`Rumble`, `rumble.gd`, todos os controles
   conectados, nos dois perfis). Vem do tremor da câmera (`CameraRig.shake` → `Rumble.shake`: tiro de cada arma, rugido, empurrão,
   arremesso, presa na boca, explosão, queda, abate furtivo; tremor pequeno = só o motor fraco) e de `Rumble.pulse` direto no
@@ -612,7 +698,8 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
   portão da pedreira; o detonador (`Tunnel`) estoura todas. R: caixotes de volta, fogo apagado (`Fire.clear`).
   Testes: `explosive_tests.gd`.
 - Container trancado e chave (jeito RE/Dino Crisis): `Chest.lock` = id da chave (ferrolho + cadeado na frente). A M79 fica no
-  container sem estêncil (surpresa) atrás de onde ela começa (`main.LOCKER_POS`); a chave (`KeyItem`) está na mão do guerrilheiro
+  container sem estêncil (surpresa) no pátio da mata, na saída da clareira do morto para o primeiro portão de grade, em chão
+  livre fora da trilha (`Yard.LOCKER`/`LOCKER_YAW`; o `_scatter` não põe nada em cima); a chave (`KeyItem`) está na mão do guerrilheiro
   morto no meio do pátio (`Corpse`, ver Pátio da mata); `TargetDummy.loot` (cai do alvo morto, brilhando) segue valendo para
   outros itens e testes. Item largado no chão (`KeyItem` "dropped": cartão do sniper, loot) brilha igual à arma largada
   (`Pickup.glow_set`: halo no chão e feixes em cruz) em azul claro (`KeyItem.DROP_GLOW`); o escondido na mão do morto ("held")
@@ -647,7 +734,11 @@ Protótipo de jogo no visual de PS2 do começo (com modo PS1 para comparar; Syph
 - Falas dos guerrilheiros (`Voice`, `voice.gd`; soldado e sniper têm `Enemy.voice` de `Voice.assign()`, as 3 vozes em rodízio;
   bicho = ""): `Enemy._voice_on` na troca de estado = "spot" (viu ela), "lost" (sumiu na luta), "huh" (desconfiou), "check"
   (foi ver sozinho) / "ack" (saiu pelo alarme de outro), "search" (chegou ao lugar da busca ativa); fim da busca no estado
-  "search" = "giveup" (ativa) / "nothing" (amarela); grito do `SHOUT_DELAY` = "corpse" / "hit". Uma fala por vez no jogo
+  "search" = "giveup" (ativa) / "nothing" (amarela); grito do `SHOUT_DELAY` = "corpse" / "hit". Falas gritadas têm variações furiosas
+  numeradas depois das normais (`make_voices.LINES` 3º campo: mais rápidas, tom acima, garganta forçada e estouradas; o
+  sorteio é entre todas) e "taunt" = provocação no tiroteio (`Soldier.TAUNT_CHANCE` no começo de uma rajada com ela à
+  vista); "down" = "Alvo abatido!" de quem a matou com o tiro (soldado/sniper, prioridade acima de todas).
+  `make_voices.py --new` gera só as que não têm arquivo (as aprovadas ficam iguais); `--fury` refaz só as furiosas. Uma fala por vez no jogo
   todo (`PRIORITY`: a mais alta corta a que toca; igual ou mais baixa se perde), intervalo por tipo (`GAP`), sem repetir a
   frase seguida, só se ela ouviria (`_reaches`, até `MAX_DIST`), nada na cena nem na rendição. Relógio = passos de física.
   `Voice.reset()` no `_reset_world`. Testes: `voice_tests.gd`.

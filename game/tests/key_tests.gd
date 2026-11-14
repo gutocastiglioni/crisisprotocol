@@ -284,8 +284,8 @@ func test_m79_fire() -> void:
 	GameMode.set_mode(GameMode.ARCADE)
 
 
-## Na fase: o container fica atrás de onde ela começa, trancado, e a chave está na mão do guerrilheiro morto no pátio
-## (a emboscada em volta dele é de ambush_tests.gd).
+## Na fase: o container fica no pátio da mata, na saída da clareira do morto (S1→S2), em chão livre, trancado, e a chave
+## está na mão do guerrilheiro morto (a emboscada em volta dele é de ambush_tests.gd).
 func test_main_layout() -> void:
 	# sem o mundo do teste anterior (a jogadora dele também está no grupo "player")
 	if t._world:
@@ -297,11 +297,27 @@ func test_main_layout() -> void:
 	await t._frames(5)
 	var locker: Chest = main.locker
 	var start: Vector3 = main.player._spawn.origin
-	# ela começa no telhado; o container fica embaixo, no mezanino do fundo, virado para o galpão
-	t.check(start.y > Level.WALL_H and is_equal_approx(locker.global_position.y, Catwalk.FLOOR_Y) and locker.global_position.z > Catwalk.FRONT_Z,
-		"container no mezanino, embaixo de onde ela começa (telhado)", "%s %s" % [start, locker.global_position])
+	# ela começa no telhado; o container fica no pátio da mata, perto do morto, no chão, virado para a trilha
+	t.check(start.y > Level.WALL_H and absf(locker.global_position.y) < 0.01 and Level.room_of(locker.global_position.x) == 1
+		and locker.global_position.distance_to(main.corpse.global_position) < 12.0,
+		"container no pátio da mata, na saída da clareira do morto", "%s %s" % [start, locker.global_position])
 	t.check(locker.is_locked() and locker.item == "m79" and locker.lock == main.key.id, "trancado, com a M79, abre com a chave do morto")
-	t.check(locker.global_basis.z.dot(Vector3.FORWARD) > 0.9, "de frente para o galpão")
+	t.check(Yard.road_distance(Vector2(locker.global_position.x, locker.global_position.z)) > Yard.ROAD_W * 0.5 + 0.3,
+		"fora da trilha", str(Yard.road_distance(Vector2(locker.global_position.x, locker.global_position.z))))
+	# chão livre: nada sólido em volta dele (cabe ela ajoelhada na frente), nem raptor de rota passando por cima
+	var space: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(2.4, 1.6, 2.4)
+	q.shape = box
+	q.collision_mask = 1
+	q.transform = Transform3D(Basis(), locker.global_position + Vector3.UP * 1.0)
+	q.exclude = [locker.get_rid()]
+	var hits := space.intersect_shape(q, 4).filter(func(h: Dictionary) -> bool: return h.collider != locker)
+	t.check(hits.is_empty(), "container em chão livre (nada sólido em volta)", str(hits.map(func(h: Dictionary) -> String: return str(h.collider))))
+	var kneel := locker.kneel_transform().origin
+	var floor := space.intersect_ray(PhysicsRayQueryParameters3D.create(kneel + Vector3.UP, kneel + Vector3.DOWN, 1))
+	t.check(not floor.is_empty() and absf(floor.position.y) < 0.1, "na frente dele, chão para ajoelhar", str(floor.get("position")))
 	t.check(main.corpse.key == main.key and main.key.state == "held", "a chave está na mão do guerrilheiro morto")
 	# pegar a chave (sem a cena da emboscada), abrir (zoom fecha sozinho), reiniciar
 	main.inspect.auto_close = 0.0
@@ -343,7 +359,7 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 	t.check(main.sniper != null and main.sniper.loot == main.keycard, "sniper possui o keycard como loot")
 	t.check(main.keycard.state == "hidden", "keycard começa oculto com o sniper")
 
-	t.check(main.soldiers.size() == 13, "13 soldados no total (5 em ronda + 5 sentinelas + 2 de posto na porta + 1 no painel)")
+	t.check(main.soldiers.size() == 27, "27 soldados no total (8 em ronda + 8 parados + 1 de posto + 10 distraídos)")
 	var sentinels := 0
 	var yard_patrollers := 0
 	var posts := 0
@@ -357,7 +373,9 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 			sentinels += 1
 		else:
 			yard_patrollers += 1
-	t.check(sentinels == 5 and yard_patrollers == 5 and posts == 2 and console == 1, "5 sentinelas parados (2 na porta do pátio, 1 no baú da M16, 2 na porta norte), 5 em ronda, 2 de posto e 1 no painel")
+	t.check(sentinels == 8 and yard_patrollers == 8 and posts == 1 and console == 10,
+		"8 parados (2 no portão da mata, o do baú da M16, 2 Flak no portão dos clones, S e os 2 A do escritório), 8 em ronda, 1 de posto e 10 distraídos",
+		"%d %d %d %d" % [sentinels, yard_patrollers, posts, console])
 
 	var gate: Door = null
 	for d: Door in t.get_nodes_in_group("doors"):

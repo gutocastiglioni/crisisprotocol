@@ -1,6 +1,6 @@
 extends RefCounted
 ## Testes do menu de pausa (PauseMenu): START do controle e ESC abrem o menu em vez de reiniciar; escolher com
-## cima/baixo, CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO, não abre por cima de tela de inspeção nem no game over.
+## cima/baixo, CONTINUAR / REINICIAR / OPÇÕES (tela cheia, volume, vibração) / SHOWROOM / SAIR DO JOGO, não abre por cima de tela de inspeção nem no game over.
 ## Showroom: lista de animações do bicho, troca de bicho/modo/velocidade, anda na roda sem patinar, volta ao menu.
 ## Chamado por run_tests.gd (usa check/_frames de lá).
 
@@ -114,6 +114,7 @@ func test_pause_menu() -> void:
 		"REINICIAR = jogo do começo", "%s vida %d" % [p.global_position, p.health])
 
 	await test_fullscreen(menu)
+	await test_volume(menu)
 	await test_vibration(menu, p)
 	main.reset_all()
 	await t._frames(2)
@@ -157,42 +158,100 @@ func test_pause_menu() -> void:
 	await t._frames(2)
 
 
-## TELA CHEIA: confirmar troca SIM/NÃO, grava no arquivo (um de teste, não a config de verdade) e o jogo relê ao abrir.
+## Abre a pausa (START) e nela OPÇÕES; deixa escolhida a opção `item` da tela de opções.
+func _open_options(menu: PauseMenu, item: String) -> void:
+	await _start_button()
+	for i in PauseMenu.ITEMS.find("OPÇÕES"):
+		await _tap("move_back")
+	await _tap("interact")
+	for i in OptionsScreen.ITEMS.find(item):
+		await _tap("move_back")
+
+
+## START na tela de opções volta à pausa; a pausa fecha.
+func _close_options(menu: PauseMenu) -> void:
+	await _start_button()
+	t.check(not menu.options.is_open and menu.is_open and menu._title.visible and t.paused, "START nas opções volta ao menu de pausa")
+	menu.close()
+	await t._frames(3)
+
+
+## OPÇÕES > TELA CHEIA: confirmar troca SIM/NÃO, grava no arquivo (um de teste, não a config de verdade) e o jogo relê ao abrir.
 func test_fullscreen(menu: PauseMenu) -> void:
 	var real_path := Settings.path
 	var real_full := Settings.fullscreen
-	Settings.path = "user://test_settings.cfg"
+	Settings.path = t.get("settings_file")
 	DirAccess.remove_absolute(Settings.path)
 	Settings.load_file()
 	t.check(not Settings.fullscreen, "sem arquivo de config = janela")
-	await _start_button()
-	for i in PauseMenu.ITEMS.find("TELA CHEIA"):
-		await _tap("move_back")
-	t.check(menu._rows[menu.selected].text == "> TELA CHEIA: NÃO <", "menu mostra TELA CHEIA: NÃO", menu._rows[menu.selected].text)
+	await _open_options(menu, "TELA CHEIA")
+	var opt := menu.options
+	t.check(opt.is_open and not menu._title.visible and opt._title.visible and t.paused, "OPÇÕES abre por cima da pausa (jogo pausado)")
+	t.check(opt._rows[opt.selected].text == "> TELA CHEIA: NÃO <", "opções mostram TELA CHEIA: NÃO", opt._rows[opt.selected].text)
 	await _tap("interact")
-	t.check(menu.is_open and Settings.fullscreen and menu._rows[menu.selected].text.contains("SIM"),
-		"confirmar liga a tela cheia e o menu segue aberto", menu._rows[menu.selected].text)
+	t.check(opt.is_open and Settings.fullscreen and opt._rows[opt.selected].text.contains("SIM"),
+		"confirmar liga a tela cheia e as opções seguem abertas", opt._rows[opt.selected].text)
 	var cfg := ConfigFile.new()
 	t.check(cfg.load(Settings.path) == OK and cfg.get_value("video", "fullscreen", false) == true, "tela cheia salva no arquivo")
 	Settings.fullscreen = false
 	Settings.load_file()
 	t.check(Settings.fullscreen, "ao abrir de novo o jogo lê SIM do arquivo")
-	await _tap("interact")
+	await _tap("move_left")
 	Settings.load_file()
-	t.check(not Settings.fullscreen and menu._rows[menu.selected].text.contains("NÃO"), "confirmar de novo desliga e salva NÃO")
-	menu.close()
-	await t._frames(3)
+	t.check(not Settings.fullscreen and opt._rows[opt.selected].text.contains("NÃO"), "esquerda/direita também troca: desliga e salva NÃO")
+	await _close_options(menu)
 	DirAccess.remove_absolute(Settings.path)
 	Settings.path = real_path
 	Settings.fullscreen = real_full
 
 
-## Vibração (`Rumble`): tiro da pistola só no motor fraco, escopeta e dano também no forte, a pausa para tudo; VIBRAÇÃO no
-## menu troca SIM/NÃO, grava no arquivo de teste e, desligada, nada chega aos motores.
+## OPÇÕES > VOLUME: esquerda/direita andam 10%, o barramento Master acompanha, grava no arquivo de teste; confirmar no 100%
+## dá a volta ao 0% (mudo).
+func test_volume(menu: PauseMenu) -> void:
+	var real_path := Settings.path
+	var real_vol := Settings.volume
+	Settings.path = t.get("settings_file")
+	DirAccess.remove_absolute(Settings.path)
+	Settings.load_file()
+	Settings.apply_volume()
+	t.check(Settings.volume == 1.0 and is_equal_approx(AudioServer.get_bus_volume_db(0), 0.0), "sem arquivo de config = volume cheio")
+	await _open_options(menu, "VOLUME")
+	var opt := menu.options
+	t.check(opt._rows[opt.selected].text == "> VOLUME: 100% <", "opções mostram VOLUME: 100%", opt._rows[opt.selected].text)
+	await _tap("move_left")
+	await _tap("move_left")
+	t.check(Settings.volume_percent() == 80 and opt._rows[opt.selected].text.contains("80%"), "esquerda duas vezes = 80%",
+		opt._rows[opt.selected].text)
+	t.check(absf(AudioServer.get_bus_volume_db(0) - linear_to_db(0.8)) < 0.01 and not AudioServer.is_bus_mute(0),
+		"o volume do Master acompanha", str(AudioServer.get_bus_volume_db(0)))
+	var cfg := ConfigFile.new()
+	t.check(cfg.load(Settings.path) == OK and is_equal_approx(float(cfg.get_value("audio", "volume", 1.0)), 0.8), "volume salvo no arquivo")
+	Settings.volume = 1.0
+	Settings.load_file()
+	t.check(Settings.volume_percent() == 80, "ao abrir de novo o jogo lê 80% do arquivo")
+	for i in 3:
+		await _tap("move_right")
+	t.check(Settings.volume_percent() == 100, "direita para no 100%", str(Settings.volume_percent()))
+	await _tap("interact")
+	t.check(Settings.volume_percent() == 0 and AudioServer.is_bus_mute(0) and opt._rows[opt.selected].text.contains(" 0%"),
+		"confirmar no 100% dá a volta ao 0% (mudo)", opt._rows[opt.selected].text)
+	await _tap("move_left")
+	t.check(Settings.volume_percent() == 0, "esquerda para no 0%")
+	await _tap("move_right")
+	t.check(Settings.volume_percent() == 10 and not AudioServer.is_bus_mute(0), "direita sai do mudo: 10%")
+	await _close_options(menu)
+	DirAccess.remove_absolute(Settings.path)
+	Settings.path = real_path
+	Settings.volume = real_vol
+	Settings.apply_volume()
+
+
+## Vibração (`Rumble`): tiro da pistola só no motor fraco, escopeta e dano também no forte, a pausa para tudo; OPÇÕES >
+## VIBRAÇÃO troca SIM/NÃO, grava no arquivo de teste e, desligada, nada chega aos motores.
 func test_vibration(menu: PauseMenu, p: Player) -> void:
 	var real_path := Settings.path
 	var real_vib := Settings.vibration
-	Settings.path = "user://test_settings.cfg"
+	Settings.path = t.get("settings_file")
 	DirAccess.remove_absolute(Settings.path)
 	Settings.load_file()
 	t.check(Settings.vibration, "sem arquivo de config = com vibração")
@@ -213,34 +272,29 @@ func test_vibration(menu: PauseMenu, p: Player) -> void:
 	Rumble.last = {}
 	p.take_hit(10, Vector3.FORWARD, p.global_position + Vector3.UP)
 	t.check(Rumble.last.get("strong", 0.0) > 0.3 and Rumble.last.get("time", 0.0) >= 0.2, "levar golpe vibra", str(Rumble.last))
-	await _start_button()
+	await _open_options(menu, "VIBRAÇÃO")
+	var opt := menu.options
 	t.check(menu.is_open and Rumble._until == 0, "abrir a pausa para a vibração")
-	for i in PauseMenu.ITEMS.find("VIBRAÇÃO"):
-		await _tap("move_back")
-	t.check(menu._rows[menu.selected].text == "> VIBRAÇÃO: SIM <", "menu mostra VIBRAÇÃO: SIM", menu._rows[menu.selected].text)
+	t.check(opt._rows[opt.selected].text == "> VIBRAÇÃO: SIM <", "opções mostram VIBRAÇÃO: SIM", opt._rows[opt.selected].text)
 	await _tap("interact")
-	t.check(menu.is_open and not Settings.vibration and menu._rows[menu.selected].text.contains("NÃO"),
-		"confirmar desliga a vibração e o menu segue aberto", menu._rows[menu.selected].text)
+	t.check(opt.is_open and not Settings.vibration and opt._rows[opt.selected].text.contains("NÃO"),
+		"confirmar desliga a vibração e as opções seguem abertas", opt._rows[opt.selected].text)
 	var cfg := ConfigFile.new()
 	t.check(cfg.load(Settings.path) == OK and cfg.get_value("input", "vibration", true) == false, "vibração desligada salva no arquivo")
 	Settings.vibration = true
 	Settings.load_file()
 	t.check(not Settings.vibration, "ao abrir de novo o jogo lê NÃO do arquivo")
-	menu.close()
-	await t._frames(3)
+	await _close_options(menu)
 	Rumble.last = {}
 	p.take_hit(10, Vector3.FORWARD, p.global_position + Vector3.UP)
 	p.camera_rig.shake(0.3, 0.5)
 	t.check(Rumble.last.is_empty(), "desligada: golpe e tremor não vibram", str(Rumble.last))
-	await _start_button()
-	for i in PauseMenu.ITEMS.find("VIBRAÇÃO"):
-		await _tap("move_back")
+	await _open_options(menu, "VIBRAÇÃO")
 	await _tap("interact")
 	Settings.load_file()
-	t.check(Settings.vibration and not Rumble.last.is_empty() and menu._rows[menu.selected].text.contains("SIM"),
+	t.check(Settings.vibration and not Rumble.last.is_empty() and opt._rows[opt.selected].text.contains("SIM"),
 		"confirmar de novo liga, dá um toque e salva SIM", str(Rumble.last))
-	menu.close()
-	await t._frames(3)
+	await _close_options(menu)
 	Rumble.stop()
 	DirAccess.remove_absolute(Settings.path)
 	Settings.path = real_path
@@ -260,6 +314,12 @@ func _key(code: Key) -> void:
 func test_showroom(main: Node) -> void:
 	var menu: PauseMenu = main.pause_menu
 	var room := menu.showroom
+	# versão exportada (marca "public" dos presets): sem SHOWROOM, o resto igual; aqui (editor/testes) ele existe
+	var pub := PauseMenu.menu_items(true)
+	t.check(not "SHOWROOM" in pub and pub.size() == PauseMenu.ITEMS.size() - 1, "exportada: menu sem SHOWROOM", str(pub))
+	t.check(not PauseMenu.is_public() and menu.items == PauseMenu.ITEMS, "testes: menu com SHOWROOM")
+	var cfg := FileAccess.get_file_as_string("res://export_presets.cfg")
+	t.check(cfg.count("custom_features=\"public\"") == cfg.count("[preset.") / 2, "todos os presets de exportação marcados \"public\"")
 	await _start_button()
 	for i in PauseMenu.ITEMS.find("SHOWROOM"):
 		await _tap("move_back")

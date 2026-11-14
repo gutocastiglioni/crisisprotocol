@@ -36,6 +36,8 @@ signal locked(chest: Node)
 signal keypad(door: Door)
 ## E embaixo da escada recolhida do mezanino (Ladder.locked): o main mostra Catwalk.LOCKED_TEXT
 signal ladder_locked(ladder: Ladder)
+## E numa porta que nunca abre (Door.locked_text): o main mostra o texto dela
+signal door_barred(door: Door)
 ## interagiu com a plaqueta de um tubo da sala dos clones (o main mostra de perto)
 signal read_plate(plate: SubjectPlate)
 ## rendida (`surrender`), ela fez um movimento brusco: "aim" mirou/atirou, "roll" rolou, "rush" correu ou pulou;
@@ -92,6 +94,8 @@ const SNIPER_ZOOM_LEVELS: Array[float] = [2.0, 4.0, 8.0, 16.0]
 const SNIPER_ZOOM_LABELS: Array[String] = ["2.0x", "4.0x", "8.0x", "16.0x"]
 const MAX_HEALTH := 100
 const BLEED_AT := 30  # vida até isto: ela pinga sangue (rastro `Blood.Trail`); acima, não sangra
+const STAND_H := 1.7  # cápsula em pé
+const CROUCH_H := 1.15  # cápsula agachada: passa por baixo de um vão de 1,25 m (pista de treino)
 const PICK_RANGE := 0.9  # distância até o lugar de ajoelhar para poder pegar
 const HIP_AIM_TIME := 0.6
 const SHOT_MASK := 1 | 2 | Ragdoll.LAYER
@@ -188,9 +192,9 @@ func _ready() -> void:
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.28
-	cap.height = 1.7
+	cap.height = STAND_H
 	_shape.shape = cap
-	_shape.position.y = 0.85
+	_shape.position.y = STAND_H * 0.5
 	add_child(_shape)
 	model = HeroineModel.new()
 	add_child(model)
@@ -198,7 +202,6 @@ func _ready() -> void:
 	camera_rig.target = self
 	camera_rig.yaw = rotation.y
 	add_child(camera_rig)
-	camera_rig.spring.add_excluded_object(get_rid())
 	moves = PlayerMoves.new(self)
 	stealth = PlayerStealth.new(self)
 	lean = PlayerLean.new(self)
@@ -209,6 +212,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	stealth.update(delta)
+	_fit_capsule()
 	if not dead and not grabbed:
 		_trail.update(self, delta, bleed())
 	if grabbed or dead or cutscene or surrendered or _down_t > 0.0 or _rising or _daze > 0.0 or _stun > 0.0 or moves.busy():
@@ -349,7 +353,10 @@ func _physics_process(delta: float) -> void:
 				return
 			var door := pick_door()
 			if door:
-				if door.is_locked() and door.code != "":
+				if door.locked_text != "":
+					door.deny(self)
+					door_barred.emit(door)
+				elif door.is_locked() and door.code != "":
 					keypad.emit(door)
 				elif door.is_locked():
 					if has_key(door.lock):
@@ -487,7 +494,10 @@ func stealth_prompt() -> String:
 
 
 ## Barulho no lugar dela que os inimigos a `radius` metros ouvem (a atenção deles sobe até `power`, mais quanto mais perto).
+## Numa cena (`cutscene`) ela não faz barulho: os passos da cena dos clones passam ao lado da ronda da entrada.
 func make_noise(radius: float, power: float) -> void:
+	if cutscene:
+		return
 	var heard: Array = []
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy and e.can_hear(global_position, radius):
@@ -1709,6 +1719,38 @@ func respawn() -> void:
 	reset_physics_interpolation()
 	camera_rig.yaw = rotation.y
 	_shape.set_deferred("disabled", false)
+
+
+## Agachada, a cápsula baixa para `CROUCH_H` (passa por baixo de vão baixo). Para voltar a `STAND_H` precisa de espaço em
+## cima (`_ceiling_blocked`): debaixo do vão ela segue agachada (o agachar não a levanta e rolar/pular não crescem a cápsula).
+func _fit_capsule() -> void:
+	var cap := _shape.shape as CapsuleShape3D
+	var low := crouching and not moves.busy()
+	if not low and cap.height < STAND_H and _ceiling_blocked():
+		if not moves.busy() and is_on_floor():
+			crouching = true
+		low = true
+	var h := CROUCH_H if low else STAND_H
+	if cap.height != h:
+		cap.height = h
+		_shape.position.y = h * 0.5
+
+
+static var _head_probe: CapsuleShape3D
+
+
+## Algo sólido entre o alto da cápsula agachada e o da cápsula em pé (raio menor: parede encostada não conta).
+func _ceiling_blocked() -> bool:
+	if _head_probe == null:
+		_head_probe = CapsuleShape3D.new()
+		_head_probe.radius = 0.22
+		_head_probe.height = STAND_H - CROUCH_H + 0.05
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _head_probe
+	q.transform = Transform3D(Basis(), global_position + Vector3.UP * (CROUCH_H - 0.05 + STAND_H) * 0.5)
+	q.collision_mask = collision_mask
+	q.exclude = [get_rid()]
+	return not get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
 
 
 ## Encontra a escada mais próxima que pode ser montada

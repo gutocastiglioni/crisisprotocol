@@ -3,7 +3,7 @@ extends "res://tests/ai_tests.gd"
 ## novas do galpão (Level.DIVIDERS). Usa os auxiliares de ai_tests.gd; chamado por run_tests.gd.
 
 
-func run(runner: SceneTree) -> void:
+func run(runner: SceneTree, _picks: Array = []) -> void:
 	t = runner
 	await test_distracted_sees_nothing()
 	await test_noise_wakes_him()
@@ -107,10 +107,7 @@ func test_back_to_the_panel() -> void:
 
 func test_console_in_level() -> void:
 	var main: Node = await _main_scene()
-	var g: Soldier = null
-	for sd: Soldier in main.soldiers:
-		if sd.distracted:
-			g = sd
+	var g: Soldier = main.soldiers[12]  # o do painel da faixa (os outros distraídos: mesa do escritório e cabine)
 	check(g != null and g.weapon == "pistol" and g.model.weapon == "pistol", "galpão: guarda de pistola no painel")
 	if g == null:
 		main.queue_free()
@@ -121,17 +118,19 @@ func test_console_in_level() -> void:
 	check(g.is_distracted() and g.model.state == "console", "galpão: o guarda está mexendo no painel", g.state)
 	# punhos no teclado: altura e distância da parede pela pose de verdade (osso da mão do esqueleto)
 	var sk: Skeleton3D = g.model.skeleton
-	var keys_x := Level.CONSOLE.x + Level.CONSOLE_DESK - 0.12
+	var keys := Level.console_stand(Level.CONSOLE, Level.CONSOLE_YAW, Level.CONSOLE_DESK - 0.12)
+	var out := Level.console_stand(Vector3.ZERO, Level.CONSOLE_YAW, 1.0)  # da parede para quem digita
 	for side in ["L", "R"]:
 		var hand := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Hand_" + side))
 		var fist := hand.origin + hand.basis.y.normalized() * 0.05
-		check(absf(fist.y - Level.CONSOLE_KEYS_Y - 0.04) < 0.06 and absf(fist.x - keys_x) < 0.1 and absf(fist.z - Level.CONSOLE.z) < 0.35,
+		var rel := Vector3(fist.x - keys.x, 0, fist.z - keys.z)
+		check(absf(fist.y - Level.CONSOLE_KEYS_Y - 0.04) < 0.06 and absf(rel.dot(out)) < 0.1 and absf(rel.cross(Vector3.UP).dot(out)) < 0.35,
 			"galpão: punho %s no teclado" % side, str(fist))
-	# caixas baixas novas: escondem agachada (algo a 1 m) e não tapam quem está em pé (nada a 1,7 m)
+	# caixas baixas (estantes e pátio descoberto): escondem agachada (algo a 1 m) e não tapam quem está em pé (nada a 1,7 m)
 	var space: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
-	for at: Vector2 in [Vector2(7.95, -6.45), Vector2(-6.65, 4.1), Vector2(-1.2, 4.1), Vector2(9.55, 4.1), Vector2(-11.55, 7.6)]:
-		var low := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(at.x, 1.0, at.y - 3.0), Vector3(at.x, 1.0, at.y), 1))
-		var high := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(at.x, 1.7, at.y - 3.0), Vector3(at.x, 1.7, at.y), 1))
+	for at: Vector2 in [Vector2(-12.0, 37.6), Vector2(-7.85, 31.9), Vector2(-11.0, -2.0), Vector2(-1.8, -5.0)]:
+		var low := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(at.x, 1.0, at.y + 2.0), Vector3(at.x, 1.0, at.y), 1))
+		var high := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(at.x, 1.7, at.y + 2.0), Vector3(at.x, 1.7, at.y), 1))
 		check(not low.is_empty() and high.is_empty(), "galpão: caixa baixa nova em %s" % str(at))
 	main.queue_free()  # a cena principal não é o _world do runner: sem isto seguiria rodando nas partes seguintes
 	await t.process_frame

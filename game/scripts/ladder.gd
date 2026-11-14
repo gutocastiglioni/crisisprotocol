@@ -18,8 +18,8 @@ const TOP_HANDRAIL_H := 0.8  # avanço dos corrimãos acima do piso da passarela
 @export var top_exit := 0.6
 ## altura da beira que ela passa por cima ao entrar pelo topo (moldura do alçapão)
 @export var top_lip := 0.0
-## quanto abaixo do alto do ciclo ela ainda fica escondida dos inimigos (alçapão do telhado: alguns degraus)
-@export var hidden_top := 0.0
+## nela inteira (montando, subindo/descendo, saindo pelo topo) ela fica escondida dos inimigos (alçapão do telhado)
+@export var hidden := false
 ## topo liberado (alçapão do telhado fechado = false: não dá para montar descendo)
 var top_open := true
 ## Recolhida (escada do mezanino): a parte de baixo encaixada atrás da de cima, os degraus só a partir de `lift` m do

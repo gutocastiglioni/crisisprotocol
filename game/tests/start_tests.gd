@@ -34,70 +34,64 @@ func _release_all() -> void:
 		Input.action_release(a)
 
 
-## Célula (coluna, linha) do labirinto é corredor?
+## Corredor do labirinto (célula que não é pilha)?
 func _open(c: int, r: int) -> bool:
-	return r >= 0 and r < Level.MAZE.size() and c >= 0 and c < Level.MAZE[r].length() and Level.MAZE[r][c] != "#"
+	return r >= 0 and r < Level.MAZE.size() and c >= 0 and c < Level.MAZE[r].length() and not Level.MAZE[r][c] in ["#", "Q"]
 
 
-## Vizinha `n` de `cur` é passagem? (atrás da escada do mezanino há a parede de caixas: Level._seal)
-func _link(cur: Vector2i, n: Vector2i) -> bool:
-	var lad := Level.maze_ladder_cell()
-	if (cur == lad and n == lad + Vector2i(0, 1)) or (n == lad and cur == lad + Vector2i(0, 1)):
-		return false
-	return _open(n.x, n.y)
+## Vizinha `n` de `cur` é passagem?
+func _link(_cur: Vector2i, n: Vector2i, cut := {}) -> bool:
+	return _open(n.x, n.y) and not cut.has(n)
 
 
-## Células alcançáveis a partir de `from` andando pelos corredores.
-func _reach(from: Vector2i) -> Dictionary:
+## Células alcançáveis a partir de `from` andando pelos corredores (sem passar pelas de `cut`).
+func _reach(from: Vector2i, cut := {}) -> Dictionary:
 	var seen := {from: true}
 	var todo: Array[Vector2i] = [from]
 	while not todo.is_empty():
 		var cur: Vector2i = todo.pop_back()
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = cur + d
-			if _link(cur, n) and not seen.has(n):
+			if _link(cur, n, cut) and not seen.has(n):
 				seen[n] = true
 				todo.append(n)
 	return seen
 
 
 func _cell_of(p: Vector3) -> Vector2i:
-	return Vector2i(roundi((p.x - Level.MAZE_X0) / Level.MAZE_CELL), roundi((p.z - Level.MAZE_Z0) / Level.MAZE_CELL))
+	return Level.maze_index(p)
 
 
 func test_maze_layout() -> void:
 	var w := await _level_world()
 	var built: Dictionary = Level.build(w)
 	var catwalk := Catwalk.new()
+	catwalk.suspended = true
 	w.add_child(catwalk)
 	await t._frames(3)
 	var hatch: Hatch = built.hatch
 	var cols: int = Level.MAZE[0].length()
 	var rows: int = Level.MAZE.size()
 	var start := _cell_of(hatch.ladder.bottom_pos + hatch.ladder.ladder_out * 0.45)
-	var exit := Vector2i(0, rows - 1)
-	t.check(start == Vector2i(cols - 1, rows - 1) and _open(start.x, start.y), "a escada do telhado desce no canto do fundo à direita do labirinto", str(start))
-	var lad := Level.maze_ladder_cell()
-	var front_open := []
-	for c in cols:
-		if _open(c, 0):
-			front_open.append(c)
-	t.check(front_open == [lad.x], "a frente do labirinto só tem a fresta do nicho da escada do mezanino", str(front_open))
+	var exit := _cell_of(Shed.MID_GATE + Vector3(0, 0, 0.5))
+	t.check(start == Level.MAZE_HATCH and _open(start.x, start.y), "a escada do telhado desce no nicho do canto do fundo à direita", str(start))
+	t.check(exit == Vector2i(5, rows - 1) and _open(exit.x, exit.y), "o portão do meio fica na frente da coluna 5", str(exit))
 	var reach := _reach(start)
-	t.check(reach.has(exit), "do pé da escada do telhado dá para chegar à saída")
-	# a única saída: a coluna 0 só tem corredor na linha do fundo (por baixo do mezanino, à esquerda)
-	var exits := []
-	for r in rows:
-		if _open(0, r):
-			exits.append(r)
-	var exit_x := Level.maze_cell(0, rows - 1).x
-	t.check(exits == [rows - 1] and exit_x < -Catwalk.PLATFORM_W * 0.5 + 0.5, "saída única à esquerda, na linha de baixo do mezanino", str(exits))
-	var spur := _cell_of(catwalk.ladder.bottom_pos + catwalk.ladder.ladder_out * 0.45)
-	var niche := _reach(Vector2i(lad.x, 0))
-	t.check(spur == lad and not reach.has(spur), "de dentro do labirinto não se chega à escada do mezanino", str(spur))
-	t.check(niche.has(spur) and not niche.has(start), "a escada do mezanino só se alcança pela fresta da frente (do galpão)", str(niche.keys()))
+	t.check(reach.has(exit), "do pé da escada do telhado dá para chegar ao portão")
+	# sem atalho: tirando a volta de baixo do mezanino, ou um trecho do corredor oeste, não se chega mais ao portão
+	var mezz := {}
+	for r in 3:
+		for c in 4:
+			mezz[Vector2i(c, r)] = true
+	t.check(not _reach(start, mezz).has(exit), "sem atalho: o caminho passa debaixo do mezanino")
+	for r in range(3, rows):
+		t.check(not _reach(start, {Vector2i(0, r): true}).has(exit), "sem atalho: passa pelo corredor da parede oeste (linha %d)" % r)
+	t.check(_open(Level.maze_ladder_cell().x, Level.maze_ladder_cell().y) and reach.has(Level.maze_ladder_cell()),
+		"a escada recolhida do mezanino fica em cima de um corredor do caminho")
+	t.check(not _open(Level.MAZE_Q.x, Level.MAZE_Q.y) and _open(Level.MAZE_Q.x, Level.MAZE_Q.y + 1) and _open(Level.MAZE_Q.x + 1, Level.MAZE_Q.y),
+		"a quina Q: pilha com corredor atrás (linha de baixo) e ao lado (coluna 3)")
 	for e in Pickup.LAYOUT:
-		t.check(not Level.in_maze(e.pos), "nenhum item no labirinto (embaixo da escada do alçapão)", str(e.pos))
+		t.check(not Level.in_maze(e.pos), "nenhum item no labirinto", str(e.pos))
 	# corredores livres, pilhas altas demais para pendurar e subir (labirinto não se pula por cima)
 	var space := w.get_world_3d().direct_space_state
 	var grab_top: float = Moves.data().hang.top + PlayerMoves.GRAB_MAX
@@ -126,42 +120,58 @@ func test_maze_layout() -> void:
 				if top.is_empty() or top.position.y <= grab_top:
 					low.append([Vector2i(c, r), top.get("position", Vector3.ZERO).y])
 	t.check(blocked.is_empty(), "corredores do labirinto livres para ela passar", str(blocked))
-	# atrás da escada do mezanino a parede de caixas fecha o vão para o corredor de baixo (raio e corpo não passam)
-	var behind := space.intersect_ray(PhysicsRayQueryParameters3D.create(Level.maze_cell(lad.x, lad.y) + Vector3(0.5, 0.9, 0),
-		Level.maze_cell(lad.x, lad.y + 1) + Vector3(0.5, 0.9, 0), 1))
-	t.check(not behind.is_empty() and behind.collider.get_meta("surface", "") == "crate", "atrás da escada do mezanino, caixas fecham o vão")
+	# pé da escada do alçapão (agora com a escada contando): a cápsula dela sai do vão atrás da escada pelo lado
+	var her := CapsuleShape3D.new()
+	her.radius = 0.28
+	her.height = 1.5
+	var foot := hatch.ladder.bottom_pos + hatch.ladder.ladder_out * 0.45
+	var way: Array[Vector3] = [foot, Vector3(Level.maze_cell(8, 0).x, 0, foot.z), Level.maze_cell(8, 1), Level.maze_cell(8, 2)]
+	var penned := []
+	for i in way.size() - 1:
+		var cq := PhysicsShapeQueryParameters3D.new()
+		cq.shape = her
+		cq.collision_mask = 1
+		cq.transform = Transform3D(Basis(), way[i] + Vector3.UP * 0.85)
+		cq.motion = way[i + 1] - way[i]
+		var r: PackedFloat32Array = space.cast_motion(cq)
+		if r.is_empty() or r[0] < 1.0:
+			penned.append([way[i], way[i + 1], r])
+	t.check(penned.is_empty(), "do pé da escada do alçapão ela sai do vão (passa ao lado da escada)", str(penned))
 	t.check(low.is_empty(), "pilhas do labirinto acima do alcance de pendurar (%.2f m)" % grab_top, str(low))
-	# a borda esquerda fecha (fora da saída): vindo de fora, o raio bate em caixa
-	for r in rows - 1:
-		var z := Level.maze_cell(0, r).z
-		var side := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-9.0, 0.9, z), Vector3(-3.0, 0.9, z), 1))
-		t.check(not side.is_empty() and side.collider.get_meta("surface", "") == "crate", "lateral esquerda do labirinto fechada (linha %d)" % r)
-	# a cápsula dela passa célula a célula pelo caminho do labirinto (por baixo das vigas do mezanino) e sai para o galpão
-	var route := _route(start, exit)
-	var stuck := []
+	# a parede da frente do labirinto: o corpo só passa pelo vão do portão (fechado, segura)
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.28
 	cap.height = 1.7
+	var out := []
+	for c in cols:
+		if not _open(c, rows - 1):
+			continue
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = cap
+		q.collision_mask = 1 | Yard.GRATE_LAYER
+		q.transform = Transform3D(Basis(), Level.maze_cell(c, rows - 1) + Vector3.UP * 0.9)
+		q.motion = Vector3(0, 0, -2.0)
+		var frac := space.cast_motion(q)
+		if frac.is_empty() or frac[0] >= 1.0:
+			out.append(c)
+	t.check(out.is_empty(), "da frente do labirinto ninguém sai sem o portão", str(out))
+	# a cápsula dela passa célula a célula pelo caminho do labirinto até o portão
+	var route := _route(start, exit)
+	var stuck := []
 	var pts: Array[Vector3] = []
-	for cell in route + [Vector2i(-1, rows - 1)]:  # e fora, à esquerda
-		var at := Level.maze_cell(cell.x, cell.y)
-		# debaixo do mezanino as vigas diagonais descem para a frente: ela passa rente à parede, e ao lado da viga
-		if at.z + Level.MAZE_CELL * 0.5 > Catwalk.FRONT_Z + 1.0:
-			at.z += 0.35
-		for bx in [-4.0, 0.0, 4.0]:
-			if absf(at.x - bx) < 0.3:
-				at.x += 0.45
-		pts.append(at)
+	for cell in route:
+		pts.append(Level.maze_cell(cell.x, cell.y))
 	for i in pts.size() - 1:
 		var q := PhysicsShapeQueryParameters3D.new()
 		q.shape = cap
 		q.collision_mask = 1
 		q.transform = Transform3D(Basis(), pts[i] + Vector3.UP * 0.9)
 		q.motion = pts[i + 1] - pts[i]
+		q.exclude = ladders
 		var frac := space.cast_motion(q)
 		if frac.is_empty() or frac[0] < 1.0:
 			stuck.append(pts[i])
-	t.check(route.size() > 1 and stuck.is_empty(), "ela passa pelo labirinto até a saída (%d células)" % route.size(), str(stuck))
+	t.check(route.size() > 20 and stuck.is_empty(), "ela passa pelo labirinto até o portão (%d células)" % route.size(), str(stuck))
 
 
 ## Caminho mais curto (células) entre duas células do labirinto.
@@ -266,7 +276,7 @@ func test_roof_and_hatch() -> void:
 	Input.action_release("move_back")
 	await t._frames(10)
 	t.check(bottom and absf(p.global_position.y) < 0.1 and p.health == 100, "chega ao chão do galpão inteira", "%s %d" % [p.global_position, p.health])
-	t.check(_cell_of(p.global_position) == Vector2i(Level.MAZE[0].length() - 1, Level.MAZE.size() - 1), "sai da escada dentro do labirinto", str(p.global_position))
+	t.check(_cell_of(p.global_position) == Level.MAZE_HATCH, "sai da escada dentro do labirinto, no nicho", str(p.global_position))
 	# e sobe de novo: no alto da escada as mãos vão para a beirada e ela sai pela moldura (LadderOut), de pé ao lado
 	# do alçapão (não em cima do parapeito)
 	p.moves.start_ladder(hatch.ladder, false)
@@ -283,7 +293,7 @@ func test_roof_and_hatch() -> void:
 	t.check(p.moves.mode == "" and absf(p.global_position.y - Roof.Y) < 0.1 and p.global_position.distance_to(hatch.kneel_point()) < 0.3,
 		"subindo, sai no telhado na frente do alçapão", str(p.global_position))
 	# o parapeito é baixo: correr e pular contra ele, ela escala, cai para fora do telhado e morre na queda
-	p.global_position = Vector3(0, Roof.Y, Level.SIZE * 0.5 - 1.2)
+	p.global_position = Vector3(-5.0, Roof.Y, Roof.Z1 - 1.2)
 	p.rotation.y = PI
 	p.camera_rig.yaw = PI
 	await t._frames(3)
@@ -302,7 +312,7 @@ func test_roof_and_hatch() -> void:
 		if p.dead:
 			break
 		await t._frames(1)
-	t.check(climbed and p.dead and p.death_cause == "fall" and p.global_position.z > Roof.EDGE,
+	t.check(climbed and p.dead and p.death_cause == "fall" and p.global_position.z > Roof.Z1,
 		"escala o parapeito, se joga do telhado e morre na queda", "%s %s %s" % [climbed, p.global_position, p.death_cause])
 	p.respawn()
 	hatch.reset()
@@ -334,7 +344,7 @@ func test_fall_damage() -> void:
 		"%s %d %s" % [p.global_position, p.health, p.death_cause])
 
 
-## Ela só aparece para o sniper na parte de baixo da escada do telhado, e só se ele estiver olhando para o canto.
+## Na escada do telhado inteira o guarda do mezanino não a vê, nem olhando para o canto, nem alertado.
 func test_sniper_ladder_window() -> void:
 	var w := await _level_world()
 	var built: Dictionary = Level.build(w)
@@ -343,7 +353,7 @@ func test_sniper_ladder_window() -> void:
 	var p: Player = t._spawn_player(w, Roof.START)
 	var s := Sniper.new()
 	s.target = p
-	s.position = Vector3(1.0, Catwalk.FLOOR_Y, 11.7)
+	s.position = Vector3(Catwalk.X1 - 0.6, Catwalk.FLOOR_Y, Catwalk.WALL_Z - 1.0)
 	w.add_child(s)
 	await t._frames(5)
 	s.process_mode = Node.PROCESS_MODE_DISABLED  # a cabeça fica onde o teste põe
@@ -353,26 +363,24 @@ func test_sniper_ladder_window() -> void:
 		p.moves._ladder_y = y
 		p.moves._update_ladder_pos()
 		p.stealth.update(0.016)
-	s.rotation.y = 0.0
-	s.head_yaw = -0.85  # olhando para o canto da escada
+	s.rotation.y = -PI * 0.5  # olhando para o canto da escada (leste)
+	s.head_yaw = 0.0
 	# agarrou a escada (alto do ciclo, peito já abaixo do forro) e os primeiros degraus: escondida, mesmo com ele alertado
 	var top := hatch.ladder.height - float(Moves.data().ladder.rise)
-	var hide := hatch.ladder.hidden_top
-	t.check(is_equal_approx(hide, Hatch.HIDDEN_RUNGS * Ladder.RUNG_SPACING) and Hatch.HIDDEN_RUNGS >= 3, "escada do alçapão: os primeiros degraus escondem", str(hide))
-	s.alert_t = Enemy.ALERT_TIME
-	for y in [top, top - hide * 0.5, top - hide + 0.05]:
-		at.call(y)
-		t.check(not s._sees_target() and not s._combat_sees(), "agarrou a escada, %.2f m abaixo do topo: o sniper ainda não vê" % (top - y))
+	t.check(hatch.ladder.hidden, "escada do alçapão: esconde do começo ao fim")
+	# a escada inteira, olhando para o canto e até alertado: ninguém a vê descendo
+	for alerted in [false, true]:
+		s.alert_t = Enemy.ALERT_TIME if alerted else 0.0
+		for y in [top, top * 0.75, top * 0.5, top * 0.25, 0.3]:
+			at.call(y)
+			t.check(not s._sees_target() and not s._combat_sees(), "na escada, %.2f m do chão (alertado=%s): o mezanino não vê" % [y, alerted])
 	s.alert_t = 0.0
-	at.call(top - hide - 0.1)
-	t.check(s._sees_target(), "desceu os degraus escondidos, sniper olhando para o canto: vê")
-	s.head_yaw = 0.85
-	t.check(not s._sees_target(), "sniper olhando para o outro lado: não vê (é a hora de descer)")
-	s.head_yaw = -0.85
-	at.call(4.6)
-	t.check(not s._sees_target(), "ainda no alto (peito acima do forro): a laje esconde")
-	at.call(1.5)
-	t.check(not s._sees_target(), "embaixo, entre as caixas e no ponto cego do mezanino: não vê")
+	# controle: o ponto da escada à vista do canto (abaixo do forro); sem o esconderijo da escada, ele a veria
+	at.call(top - 3.0 * Ladder.RUNG_SPACING - 0.1)
+	hatch.ladder.hidden = false
+	t.check(s._sees_target(), "controle: numa escada que não esconde, ali ele a veria")
+	hatch.ladder.hidden = true
+	t.check(not s._sees_target(), "com a escada do alçapão escondendo: não vê")
 	p.moves.cancel()
 
 
@@ -382,17 +390,17 @@ func test_sniper_looks_down_at_maze() -> void:
 	var w := await _level_world()
 	Level.build(w)
 	w.add_child(Catwalk.new())
-	var cell := Level.maze_cell(3, 1)
-	t.check(_open(3, 1) and Level.in_maze(cell) and not Level.in_maze(Vector3(cell.x, 0.0, 4.0)), "corredor da frente do labirinto conta como labirinto")
+	var cell := Level.maze_cell(8, 2)
+	t.check(_open(8, 2) and Level.in_maze(cell) and not Level.in_maze(Vector3(cell.x, 0.0, 50.0)), "corredor da linha 2 conta como labirinto; o escritório não")
 	var p: Player = t._spawn_player(w, cell)
 	var s := Sniper.new()
 	s.target = p
-	s.position = Vector3(-1.5, Catwalk.FLOOR_Y, 11.7)
+	s.position = Vector3(-7.8, Catwalk.FLOOR_Y, Catwalk.FRONT_Z + 0.6)
 	w.add_child(s)
 	await t._frames(5)
 	s.process_mode = Node.PROCESS_MODE_DISABLED  # a cabeça fica onde o teste põe
 	p.process_mode = Node.PROCESS_MODE_DISABLED
-	s.rotation.y = 0.0
+	s.rotation.y = -PI * 0.5  # virado para o corredor da linha 2
 	s.head_yaw = 0.0
 	p.global_position = cell
 	p.stealth.update(0.016)
@@ -404,9 +412,9 @@ func test_sniper_looks_down_at_maze() -> void:
 	p.stealth.update(0.016)
 	t.check(not s._sees_target(), "olhando para baixo: agachada as pilhas a tapam")
 	p.crouching = false
-	p.global_position = Vector3(cell.x, 0.0, 4.0)
+	p.global_position = Vector3(cell.x, 0.0, 50.0)
 	p.stealth.update(0.016)
-	t.check(not s._sees_target(), "fora do labirinto, no início da sala: ponto cego mesmo olhando para baixo")
+	t.check(not s._sees_target(), "fora do labirinto (escritório): ponto cego mesmo olhando para baixo")
 
 
 ## No telhado ela está fora do alcance de todos: passos, tiro e vista não atravessam a laje (nem alertados).
@@ -443,13 +451,14 @@ func test_sniper_knocks_off_ladder() -> void:
 	var p: Player = t._spawn_player(w, Roof.START)
 	var s := Sniper.new()
 	s.target = p
-	s.position = Vector3(1.0, Catwalk.FLOOR_Y, 11.7)
+	s.position = Vector3(Catwalk.X1 - 0.6, Catwalk.FLOOR_Y, Catwalk.WALL_Z - 1.0)
 	s.rotation.y = -PI * 0.5
 	w.add_child(s)
 	await t._frames(5)
 	hatch.open(0.01)
 	p.moves.start_ladder(hatch.ladder, true)
-	p.moves._ladder_y = hatch.ladder.height - float(Moves.data().ladder.rise) - hatch.ladder.hidden_top - 0.1
+	hatch.ladder.hidden = false  # a escada do alçapão esconde: aqui vale a mecânica de ser derrubada numa escada à vista
+	p.moves._ladder_y = hatch.ladder.height - float(Moves.data().ladder.rise) - 3.0 * Ladder.RUNG_SPACING - 0.1
 	p.moves._update_ladder_pos()
 	s.spot()
 	var knocked := false
@@ -478,7 +487,7 @@ func test_clone_lab_and_cutscene() -> void:
 	t.check(absf(p.global_position.y - Roof.Y) < 0.1 and p.global_position.distance_to(Roof.START) < 0.3, "na fase, ela começa no telhado", str(p.global_position))
 	t.check(gate != null and gate.room == -1 and not gate.opened, "portão da sala dos clones fechado, fora da corrente de salas")
 	var space: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
-	var through := PhysicsRayQueryParameters3D.create(Vector3(0, 2.5, -11.6), Vector3(0, 2.5, -15.0), 1)
+	var through := PhysicsRayQueryParameters3D.create(Vector3(CloneLab.CX, 2.5, CloneLab.Z_NEAR + 1.4), Vector3(CloneLab.CX, 2.5, CloneLab.Z_NEAR - 2.0), 1)
 	t.check(not space.intersect_ray(through).is_empty(), "portão fechado bloqueia passagem e visão")
 	# os clones: seis raptors parados dentro dos tubos, sem piar
 	t.check(lab.clones.size() == 6, "seis tubos com raptors", str(lab.clones.size()))
@@ -493,8 +502,10 @@ func test_clone_lab_and_cutscene() -> void:
 	var pose := lab.clones[0].skeleton.get_bone_pose_rotation(1)
 	await t._frames(30)
 	t.check(lab.clones[0].skeleton.get_bone_pose_rotation(1).is_equal_approx(pose), "a pose do clone não muda com o tempo")
-	# portão: na plataforma de carga, E abre
-	p.global_position = Vector3(0, CloneLab.FLOOR_Y, -11.4)
+	# portão: travado até o computador da cabine da doca (Shed); destravado, na doca, E abre
+	t.check(gate.held, "portão da sala dos clones travado no começo")
+	main.shed.booth_panel.use()
+	p.global_position = Vector3(CloneLab.CX, CloneLab.FLOOR_Y, CloneLab.Z_NEAR + 1.6)
 	await t._frames(5)
 	t.check(p.pick_door() == gate, "na plataforma: aviso de abrir o portão")
 	Input.action_press("interact")
@@ -505,14 +516,14 @@ func test_clone_lab_and_cutscene() -> void:
 	t.check(not cs.busy and not lab.played, "na porta, a cena ainda não começou")
 	# entra: a cena do choque (nunca vista: não dá para pular)
 	Settings.cutscenes_seen.clear()
-	p.global_position = Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
+	p.global_position = Vector3(CloneLab.CX, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
 	await t._frames(3)
 	t.check(cs.busy and p.cutscene and not main._hud.visible and cs.layer.visible, "entrou: cena com faixas pretas, sem HUD e sem controle")
 	var z0 := p.global_position.z
 	p.take_hit(50, Vector3.BACK, p.global_position + Vector3.UP)
 	t.check(p.health == 100, "na cena ela não leva dano")
 	await t._frames(int(Cutscene.WALK_TIME * 60) - 10)
-	t.check(p.global_position.z < z0 - 1.5 and p.model.state == "walk", "anda devagar entre os tubos", "%.2f %s" % [z0 - p.global_position.z, p.model.state])
+	t.check(p.global_position.z < z0 - 1.2 and p.model.state == "walk", "anda devagar entre os tubos", "%.2f %s" % [z0 - p.global_position.z, p.model.state])
 	t.check(not cs._hint.visible, "primeira vez: sem PULAR")
 	var tap := InputEventAction.new()
 	tap.action = "interact"
@@ -532,9 +543,9 @@ func test_clone_lab_and_cutscene() -> void:
 	t.check(lab.played and CloneLab.inside(p.global_position), "ela fica dentro da sala")
 	t.check(Settings.cutscene_seen("clones"), "vista até o fim: fica marcada")
 	# sair e entrar de novo não repete; reiniciar fecha tudo e a cena volta a valer
-	p.global_position = Vector3(0, CloneLab.FLOOR_Y, -11.4)
+	p.global_position = Vector3(CloneLab.CX, CloneLab.FLOOR_Y, CloneLab.Z_NEAR + 1.6)
 	await t._frames(3)
-	p.global_position = Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.4)
+	p.global_position = Vector3(CloneLab.CX, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.4)
 	await t._frames(3)
 	t.check(not cs.busy, "a cena só toca uma vez")
 	main.reset_all()
@@ -542,7 +553,7 @@ func test_clone_lab_and_cutscene() -> void:
 	t.check(not gate.opened and not lab.played and not main.hatch.opened and absf(p.global_position.y - Roof.Y) < 0.1, "R: portão e alçapão fechados, cena de novo, ela no telhado")
 	# pular a cena com E
 	gate.open()
-	p.global_position = Vector3(0, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
+	p.global_position = Vector3(CloneLab.CX, CloneLab.FLOOR_Y, CloneLab.ENTER_Z - 0.2)
 	await t._frames(int(Cutscene.SKIP_AFTER * 60) + 5)
 	t.check(cs.busy, "cena tocando de novo")
 	t.check(cs._hint.visible, "já vista: PULAR na faixa de baixo")
@@ -573,8 +584,8 @@ func test_clone_lab_and_cutscene() -> void:
 	_release_all()
 
 
-## Na fase de verdade (com o telhado e as caixas do labirinto embaixo), o sniper faz a ronda no mezanino de ponta a ponta
-## e não vai para a quina (a malha de navegação mais perto dele é a de outro andar: ele anda reto).
+## Na fase de verdade (com o telhado e as caixas do labirinto embaixo), o atirador faz a ronda no perímetro do mezanino
+## quadrado e não sai dele (a malha de navegação mais perto dele é a de outro andar: ele anda reto).
 func test_sniper_patrol_in_level() -> void:
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	t.get_root().add_child(main)
@@ -582,15 +593,17 @@ func test_sniper_patrol_in_level() -> void:
 	for e: Enemy in main.all_enemies():
 		if e != s:
 			e.process_mode = Node.PROCESS_MODE_DISABLED  # só a ronda dele importa (os outros pesavam cada passo)
-	var min_x := INF
-	var max_x := -INF
-	var corner := false
-	for i in 60 * 30:
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	var off := false
+	for i in 60 * 40:
 		await t.physics_frame
-		min_x = minf(min_x, s.global_position.x)
-		max_x = maxf(max_x, s.global_position.x)
-		corner = corner or s.global_position.x < -4.0 or s.global_position.z < Catwalk.FRONT_Z + 0.6
-	t.check(min_x < -2.8 and max_x > -0.2 and not corner, "sniper faz a ronda do mezanino sem ir para a quina", "x %.2f..%.2f quina=%s" % [min_x, max_x, corner])
+		var q := Vector2(s.global_position.x, s.global_position.z)
+		lo = lo.min(q)
+		hi = hi.max(q)
+		off = off or not Catwalk.covers(s.global_position) or s.global_position.y < Catwalk.FLOOR_Y - 0.3
+	t.check(lo.x < Catwalk.X0 + 1.2 and hi.x > Catwalk.X1 - 1.2 and lo.y < Catwalk.FRONT_Z + 1.2 and hi.y > Catwalk.WALL_Z - 1.2 and not off,
+		"atirador faz a ronda no perímetro do mezanino sem sair dele", "%s..%s fora=%s" % [lo, hi, off])
 	main.queue_free()
 	await t._frames(2)
 
@@ -608,7 +621,7 @@ func test_sniper_spots_standing_in_maze() -> void:
 				n.process_mode = Node.PROCESS_MODE_DISABLED
 		var s: Sniper = main.sniper
 		var p: Player = main.player
-		p.global_position = Level.maze_cell(3, 1)
+		p.global_position = Level.maze_cell(8, 2)
 		p.velocity = Vector3.ZERO
 		p.crouching = crouched
 		var looked_down := false
@@ -639,7 +652,7 @@ func test_blood_smell() -> void:
 	var p: Player = main.player
 	var ins: Inspect = main.inspect
 	t.check(not Roof.near_yard(Roof.START) and not main.smelled, "no começo do telhado: sem a mensagem do cheiro")
-	var edge := Vector3(-Roof.EDGE + 1.0, Roof.Y, Yard.DOOR_Z)
+	var edge := Vector3(Roof.X0 + 1.0, Roof.Y, Roof.START.z)
 	t.check(Roof.near_yard(edge) and not Roof.near_yard(Vector3(edge.x, 0.0, edge.z)), "a beira oeste conta, o chão embaixo dela não")
 	p.global_position = edge
 	p.reset_physics_interpolation()

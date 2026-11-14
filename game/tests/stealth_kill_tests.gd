@@ -146,9 +146,10 @@ func test_hud_prompts_and_boundaries() -> void:
 	var msd: Soldier = main.soldiers[0]
 	msd.route.clear()
 	msd._enter("idle", "Idle")
-	msd.global_position = Vector3(0, 0, 2)
+	# na sala dos clones, longe dos guardas dela (a ronda do corredor do meio fica a mais de 3 m)
+	msd.global_position = Vector3(-1.0, CloneLab.FLOOR_Y, 21.0)
 	msd.rotation.y = 0.0
-	mp.global_position = Vector3(0, 0, 3.5)
+	mp.global_position = Vector3(-1.0, CloneLab.FLOOR_Y, 22.5)
 	mp.rotation.y = 0.0
 	main._notice_t = 0.0
 	await t._frames(2)
@@ -160,7 +161,7 @@ func test_hud_prompts_and_boundaries() -> void:
 	var mr: Raptor = main.raptors[0]
 	mr.reset()  # fora da moita da emboscada
 	mr.route.clear()
-	mr.global_position = Vector3(0, 0, 2)
+	mr.global_position = Vector3(-1.0, CloneLab.FLOOR_Y, 21.0)
 	mr.start_down()
 	msd.global_position = Vector3(10, 0, -10)
 	await t._frames(2)

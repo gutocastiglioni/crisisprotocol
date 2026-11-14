@@ -154,7 +154,7 @@ func test_hud_in_game() -> void:
 	t.check(radar.rings.size() == 1 and not radar.heard_recently(), "radar: barulho no telhado = anel que ninguém ouviu", str(radar.rings))
 	# no canto da porta do pátio (por dentro do portão do canto), olhando para os guardas da porta do pátio: o 4 está à vista
 	# (de fora, pelo portão, as pilhas Shed.CORNER_SCREEN tapam a vista de propósito)
-	p.global_position = Vector3(-7.0, 0, -8.4)
+	p.global_position = Vector3(-8.5, 0, -8.4)  # a oeste das pilhas da frente do portão (a câmera atrás dela fica livre)
 	p.rotation.y = PI * 0.5
 	p.camera_rig.yaw = p.rotation.y
 	p.reset_physics_interpolation()
@@ -191,10 +191,7 @@ func test_hud_in_game() -> void:
 	var icon: WeaponIcon = main._weapon_icon
 	var i_rect := Rect2(icon.position, icon.size)
 	t.check(Rect2(Vector2.ZERO, area).encloses(i_rect) and i_rect.position.x > area.x * 0.5 and i_rect.end.y > area.y * 0.8, "HUD: arma embaixo à direita, inteira na tela", str(i_rect))
-	main._hud_help.visible = true
-	var help: Label = main._hud_help
-	t.check(help.position.x + help.size.x <= radar.position.x, "HUD: ajuda quebra antes do radar", "%s %s" % [help.size, radar.position])
-	t.check(Rect2(main.danger.position, main.danger.size).end.y <= help.position.y and main._hud_health.position.y < main.danger.position.y, "HUD: vida, perigo e ajuda um embaixo do outro")
+	t.check(main._hud_health.position.y < main.danger.position.y, "HUD: vida e perigo um embaixo do outro")
 	# arma: o modelo da arma na mão, a pistola com silenciador tem o seu
 	t.check(icon.kind == "pistol" and icon.texture != null, "HUD: modelo da pistola", icon.kind)
 	t.check(main._hud_weapon.text == "", "HUD: arcade (munição infinita) sem número de munição", main._hud_weapon.text)

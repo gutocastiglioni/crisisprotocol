@@ -164,8 +164,8 @@ func test_open_and_take() -> void:
 	t.check(not p.silencer and drop.has_item() and got[0] == 1, "R no meio de pegar: nada muda depois")
 
 
-## No jogo: a caixa no fundo do teto da sala dos clones, dá para subir lá do telhado, a neblina a esconde de longe,
-## a tela do item aparece e o R desfaz.
+## No jogo: a caixa no canto do fundo do telhado (no mesmo nível, sem subida), a neblina a esconde do começo, a telha
+## translúcida da frente é cercada, a tela do item aparece e o R desfaz.
 func test_main_layout() -> void:
 	if t._world:
 		t._world.queue_free()
@@ -177,45 +177,40 @@ func test_main_layout() -> void:
 	var drop: SupplyDrop = main.drop
 	var p: Player = main.player
 	var at := drop.global_position
-	t.check(is_equal_approx(at.y, Roof.LAB_Y) and at.z < CloneLab.Z_NEAR - 8.0 and absf(at.x) < Roof.LAB_X - 1.0,
-		"caixa no teto da sala dos clones, no fundo", str(at))
-	t.check(Roof.has(at) and Roof.has(drop.front_point()), "teto dos clones conta como telhado (fora da vista dos inimigos)")
-	# lona e caixa dentro do teto, longe da mureta
+	t.check(is_equal_approx(at.y, Roof.Y) and at.z > Roof.FENCE_Z + 4.0 and at.x < Roof.START.x - 3.0,
+		"caixa no telhado, no canto do fundo, no mesmo nível", str(at))
+	t.check(Roof.has(at) and Roof.has(drop.front_point()), "em cima do telhado (fora da vista dos inimigos)")
+	# lona e caixa dentro da mureta
 	for c: Vector3 in [Vector3(SupplyDrop.CHUTE[0], 0, SupplyDrop.CHUTE[3]), Vector3(SupplyDrop.CHUTE[1], 0, SupplyDrop.CHUTE[3])]:
 		var g := drop.global_transform * c
-		t.check(absf(g.x) < Roof.LAB_X - Roof.PARAPET_T and g.z > Roof.LAB_Z1 + Roof.PARAPET_T, "lona dentro da mureta", str(g))
-	# neblina: rala sobre o galpão, grossa sobre o anexo
+		t.check(g.x > Roof.X0 + Roof.PARAPET_T and g.x < Roof.X1 - Roof.PARAPET_T and g.z > Roof.FENCE_Z and g.z < Roof.Z1 - Roof.PARAPET_T,
+			"lona dentro da mureta", str(g))
+	# neblina: rala sobre o telhado, grossa no canto da caixa (a conta da névoa pelo caminho do olhar)
 	var fogs := main.find_children("*", "FogVolume", true, false).filter(func(f: FogVolume) -> bool: return f.global_position.y > Roof.Y)
-	t.check(fogs.size() == 2, "neblina do telhado (galpão e anexo)", str(fogs.size()))
-	var dist := Roof.START.distance_to(at)
-	var lab_part := absf(at.z - CloneLab.Z_NEAR)
-	var far := exp(-(Roof.FOG_DENSITY * dist + Roof.LAB_FOG_DENSITY * lab_part))
-	var near := exp(-(Roof.FOG_DENSITY + Roof.LAB_FOG_DENSITY) * 2.0)
-	t.check(far < 0.01 and near > 0.4, "do começo a caixa some na neblina; a 2 m aparece", "longe %.3f perto %.2f" % [far, near])
-	t.check(exp(-Roof.FOG_DENSITY * Roof.START.distance_to(main.hatch.global_position)) > 0.3, "o alçapão segue visível do começo")
-	# sobe do telhado do galpão para o teto do anexo (escalada de 1,5 m na parede do fundo)
-	p.global_position = Vector3(-3.0, Roof.Y, CloneLab.Z_NEAR + 0.75)
+	t.check(fogs.size() == 2, "neblina do telhado (toda e a do canto da caixa)", str(fogs.size()))
+	var depth := func(a: Vector3, b: Vector3) -> float:
+		var n := int(a.distance_to(b) / 0.05)
+		var sum := 0.0
+		for i in n:
+			var q := a.lerp(b, (i + 0.5) / n)
+			var d: Array = Roof.DROP_FOG
+			sum += Roof.FOG_DENSITY + (Roof.DROP_FOG_DENSITY if q.x > d[0] and q.x < d[1] and q.z > d[2] and q.z < d[3] else 0.0)
+		return sum * a.distance_to(b) / n
+	var far := exp(-depth.call(Roof.START, at))
+	var near := exp(-depth.call(drop.front_point() + drop.global_basis.z * 1.5, at))
+	t.check(far < 0.15 and near > 0.4, "do começo a caixa some na neblina; a 2 m aparece", "longe %.3f perto %.2f" % [far, near])
+	t.check(exp(-depth.call(Roof.START, main.hatch.global_position)) > 0.3, "o alçapão segue visível do começo")
+	# a telha translúcida da frente é cercada: correndo para lá ela não passa do alambrado
+	p.global_position = Vector3(-4.0, Roof.Y, Roof.FENCE_Z + 2.0)
 	p.rotation.y = 0.0
-	p.reset_physics_interpolation()
-	await t._frames(8)
-	var ledge := p.moves.find_ledge(Vector3.FORWARD)
-	t.check(not ledge.is_empty() and absf(ledge.top - Roof.LAB_Y) < 0.05, "parede do anexo: borda escalável", str(ledge))
-	t.check(p.moves.try_ledge(Vector3.FORWARD) and p.moves.mode == "mantle", "escala para o teto dos clones", p.moves.mode)
-	for i in 120:
-		await t.physics_frame
-		if p.moves.mode == "":
-			break
-	await t._frames(10)
-	t.check(absf(p.global_position.y - Roof.LAB_Y) < 0.1 and Roof.has(p.global_position), "de pé no teto dos clones", str(p.global_position))
-	# mureta do fundo segura: correndo para o fundo ela não cai
-	p.global_position = Vector3(2.0, Roof.LAB_Y, Roof.LAB_Z1 + 2.0)
+	p.camera_rig.yaw = 0.0
 	p.reset_physics_interpolation()
 	Input.action_press("move_forward")
-	p.camera_rig.yaw = 0.0
-	await t._frames(120)
+	await t._frames(150)
 	Input.action_release("move_forward")
-	t.check(p.global_position.y > Roof.LAB_Y - 0.1 and p.global_position.z > Roof.LAB_Z1, "mureta do fundo segura", str(p.global_position))
-	# abre, tela do item, pistola com silenciador
+	t.check(p.global_position.z > Roof.FENCE_Z and absf(p.global_position.y - Roof.Y) < 0.2, "o alambrado da telha translúcida segura", str(p.global_position))
+	# abre, tela do item, pistola com silenciador (o aviso do cheiro da beira oeste já visto: a caixa fica perto dela)
+	main.smelled = true
 	main.inspect.auto_close = 0.0
 	p.global_position = drop.front_point()
 	p.reset_physics_interpolation()

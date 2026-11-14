@@ -1,26 +1,30 @@
 class_name CloneLab
 extends Node3D
-## Sala dos clones: anexo atrás da plataforma de carga, ao norte do galpão. O portão de enrolar (Door, `room` -1: fora da
-## corrente galpão -> pátio -> pedreira) fica na parede do fundo do galpão, na altura da plataforma (o piso da sala é o
-## da doca). Dentro, duas fileiras de tubos de vidro com velociraptors clonados suspensos no líquido, parados como se
-## estivessem congelados (RaptorModel parado na pose de embrião, animação `Embryo`, azulados), bolhas subindo, névoa fria no chão e um console no
-## fundo. Ela entra pela primeira vez: sinal `entered` (o main toca a cena do choque, Cutscene.play_clones).
-## Cada tubo tem uma plaqueta (SubjectPlate, "SUBJECT XXXX", lida com E). No canto do fundo à esquerda fica o tanque
-## enorme do alossauro, inteiro, drenado e com a porta de vidro aberta (vazio: ele está na pedreira); o número da
-## plaqueta dele (ALLO_SUBJECT) é o código do teclado do portão da pedreira (Yard._gate); o cartão que liga esse teclado
-## cai do último sniper das torres de guarda do pátio.
+## Sala dos clones: a sala do galpão entre a doca e o pátio descoberto (Level, z de Z_FAR a Z_NEAR), com o piso na altura
+## da doca (FLOOR_Y) e o teto do galpão (CEIL_Y). O portão de enrolar (Door, `room` -1: fora da corrente galpão -> pátio
+## -> pedreira) fica na parede da doca (Z_NEAR). Dentro, duas fileiras de tubos de vidro com velociraptors clonados
+## suspensos no líquido, parados como se estivessem congelados (RaptorModel parado na pose de embrião, animação `Embryo`,
+## azulados), bolhas subindo, névoa fria no chão e o computador do laboratório na parede da frente (CONSOLE: abre a porta
+## enorme para o pátio descoberto, Shed.HUGE_DOOR). Ela entra pela primeira vez: sinal `entered` (o main toca a cena do
+## choque, Cutscene.play_clones).
+## Cada tubo tem uma plaqueta (SubjectPlate, "SUBJECT XXXX", lida com E). No fim da sala, à esquerda, fica o tanque
+## enorme do alossauro (TANK, 6 m), inteiro, drenado e com a porta de vidro aberta (vazio: ele está na pedreira; as marcas
+## de arrasto, Shed.DRAG, vão dele até a porta enorme); o número da plaqueta dele (ALLO_SUBJECT) é o código do teclado do
+## portão da pedreira (Yard._gate); o cartão que liga esse teclado cai do último sniper das torres de guarda do pátio.
 
 signal entered
 
-const FLOOR_Y := 1.3  # = altura da plataforma de carga
-const CEIL_Y := 6.7
-const HALF_W := 7.0
-const Z_NEAR := -Level.SIZE * 0.5  # parede do fundo do galpão
-const Z_FAR := -32.0  # fundo: cabe o tanque do alossauro no canto
+const FLOOR_Y := 1.3  # = altura da plataforma da doca
+const CEIL_Y := Level.WALL_H
+const CX := (Level.WEST + Level.EAST) * 0.5  # meio da sala (corredor do meio)
+const HALF_W := (Level.EAST - Level.WEST) * 0.5
+const Z_NEAR := 27.0  # parede da doca (portão)
+const Z_FAR := Level.ROOF_Z  # parede do pátio descoberto (porta enorme)
 const GATE_W := 3.6
 const GATE_TOP := 4.2
-const TUBE_X := 4.3
-const TUBE_Z := [-16.8, -20.3, -23.8]
+const GATE := Vector3(CX, FLOOR_Y, Z_NEAR)  # meio do pé do portão de enrolar
+const TUBE_X := 4.3  # do corredor do meio até cada fileira
+const TUBE_Z := [23.2, 19.7, 16.2]
 const TUBE_R := 0.85
 const TUBE_H := 3.9
 const BASE_H := 0.45
@@ -34,16 +38,21 @@ const ENTER_Z := Z_NEAR - 1.2  # passou do portão
 const SUBJECTS := ["0412", "0413", "0414", "0415", "0416", "0417"]  # um por tubo, na ordem em que são montados
 const ALLO_SUBJECT := "0927"  # o tanque vazio = código do portão da pedreira
 const PLATE_IN := 1.25  # pedestal da plaqueta: do centro do tubo para o corredor
-const TANK := Vector3(-4.5, FLOOR_Y, -29.4)  # centro do tanque do alossauro (canto do fundo à esquerda)
-const TANK_R := 1.9
-const TANK_H := 4.2
+const TANK := Vector3(-9.0, FLOOR_Y, 11.6)  # centro do tanque do alossauro (fim da sala, à esquerda)
+const TANK_R := 3.0
+const TANK_H := 4.6
 const TANK_BASE := 0.5
 const TANK_CAP := 0.5
 const TANK_SIDES := 16
-const TANK_DOOR_OPEN := 100.0  # graus: a porta de vidro (3 lados) aberta para fora
+const TANK_HINGE := -1.0  # a porta gira na quina do lado da doca (aberta, fica longe do computador da parede da frente)
+const TANK_DOOR_OPEN := 170.0  # graus: a porta de vidro (3 lados) aberta para fora, deitada junto do vidro (fora do corredor)
+const TANK_PLATE := 0.6  # plaqueta do tanque: do vidro para fora, na frente da porta (virada para o corredor do meio)
+## Computador do laboratório: ponto na face da parede da frente (Level.console_at), quem digita fica do lado da sala.
+const CONSOLE := Vector3(-4.5, FLOOR_Y, Z_FAR + 0.15)
+const CONSOLE_YAW := -PI * 0.5
 ## Caixas de equipamento (baixas: escondem ela agachada) para entrar sem ser vista pelos guardas do tanque e do computador
 ## (Shed.LAB_GUARDS): [x, giro, z]. A primeira fica na frente de onde a cena do susto a deixa.
-const COVER := [Vector3(0.2, 0.05, -18.4), Vector3(2.0, -0.1, -22.2), Vector3(-2.1, 0.08, -24.4)]
+const COVER := [Vector3(-6.6, 0.05, 21.5), Vector3(-3.4, -0.1, 18.0), Vector3(-2.4, 0.08, 13.0)]
 
 var gate: Door
 var clones: Array[RaptorModel] = []
@@ -58,10 +67,10 @@ func _ready() -> void:
 	_build_gate()
 	for s in [-1, 1]:
 		for z in TUBE_Z:
-			_tube(Vector3(s * TUBE_X, FLOOR_Y, z), -s * PI * 0.5)
-			_plate(self, Vector3(s * (TUBE_X - PLATE_IN), FLOOR_Y, z), -s * PI * 0.5, SUBJECTS[plates.size()], "VELOCIRAPTOR - CLONE", "CONGELADO / ESTÁVEL", false)
+			_tube(Vector3(CX + s * TUBE_X, FLOOR_Y, z), -s * PI * 0.5)
+			_plate(self, Vector3(CX + s * (TUBE_X - PLATE_IN), FLOOR_Y, z), -s * PI * 0.5, SUBJECTS[plates.size()], "VELOCIRAPTOR - CLONE", "CONGELADO / ESTÁVEL", false)
 	_build_tank()
-	_build_console()
+	Level.console_at(self, CONSOLE, CONSOLE_YAW, true)
 	_build_lights()
 
 
@@ -76,43 +85,30 @@ func _physics_process(_delta: float) -> void:
 
 ## O ponto está dentro da sala (depois do portão)?
 static func inside(p: Vector3) -> bool:
-	return p.z < ENTER_Z and p.z > Z_FAR and absf(p.x) < HALF_W and p.y > FLOOR_Y - 0.5
+	return p.z < ENTER_Z and p.z > Z_FAR and p.x > Level.WEST and p.x < Level.EAST and p.y > FLOOR_Y - 0.5 and p.y < CEIL_Y
 
 
 func _build_room() -> void:
 	var depth := Z_NEAR - Z_FAR
-	var mid_z := (Z_NEAR + Z_FAR) * 0.5 - 0.2
-	var wall_h := CEIL_Y - FLOOR_Y  # até debaixo da laje do teto: topo da parede no plano da laje piscava na beira
-	# base maciça até a altura da doca e o piso
-	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, FLOOR_Y, depth + 0.4), Vector3(0, FLOOR_Y * 0.5, mid_z), "concrete", 0.35)
-	Level.block(self, Vector3(0.4, wall_h, depth + 0.4), Vector3(-HALF_W, FLOOR_Y + wall_h * 0.5, mid_z), "wall", 0.5)
-	# parede leste com o vão da porta de serviço dos reforços (Shed.SERVICE 0)
-	var dz: float = Shed.SERVICE[0].door.z
-	var dw := Shed.SERVICE_W * 0.5
-	var z0 := Z_FAR - 0.2
-	var z1 := Z_NEAR + 0.2
-	Level.block(self, Vector3(0.4, wall_h, (dz - dw) - z0), Vector3(HALF_W, FLOOR_Y + wall_h * 0.5, (z0 + dz - dw) * 0.5), "wall", 0.5)
-	Level.block(self, Vector3(0.4, wall_h, z1 - (dz + dw)), Vector3(HALF_W, FLOOR_Y + wall_h * 0.5, (dz + dw + z1) * 0.5), "wall", 0.5)
-	Level.block(self, Vector3(0.4, wall_h - Shed.SERVICE_H, dw * 2.0), Vector3(HALF_W, FLOOR_Y + (wall_h + Shed.SERVICE_H) * 0.5, dz), "wall", 0.5)
+	var mid_z := (Z_NEAR + Z_FAR) * 0.5
+	# base maciça até a altura da doca (o piso); as paredes de fora são do galpão (Level), a da frente do Shed
+	Level.block(self, Vector3(HALF_W * 2.0, FLOOR_Y, depth), Vector3(CX, FLOOR_Y * 0.5, mid_z), "concrete", 0.35)
+	# parede da doca, até o teto, com o vão do portão de enrolar
+	var w := Level.WEST
+	Shed.wall(self, Vector2(w, Z_NEAR), Vector2(Level.EAST, Z_NEAR), 0.0, CEIL_Y,
+		[[CX - w - GATE_W * 0.5, CX - w + GATE_W * 0.5, FLOOR_Y, GATE_TOP]])
 	# cobertura baixa para entrar escondida (caixas de equipamento no corredor do meio e perto dos tubos)
 	for c: Vector3 in COVER:
-		Level.block(self, Vector3(1.2, Level.LOW_CRATE_H, 0.9), Vector3(c.x, FLOOR_Y + Level.LOW_CRATE_H * 0.5, c.z), "crate", 1.0 / 1.2, c.y)
-	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, wall_h, 0.4), Vector3(0, FLOOR_Y + wall_h * 0.5, Z_FAR), "wall", 0.5)
-	# parede de cima, acima da parede do galpão (o anexo é mais alto)
-	var top_h := CEIL_Y - Level.WALL_H
-	Level.block(self, Vector3(HALF_W * 2.0 + 0.4, top_h, 0.4), Vector3(0, Level.WALL_H + top_h * 0.5, Z_NEAR), "wall", 0.5)
-	# a laje vai até a face de fora da parede de cima (a beira por onde ela sobe do telhado do galpão é de concreto)
-	var ceil := Level.block(self, Vector3(HALF_W * 2.0 + 0.4, 0.3, depth + 0.6), Vector3(0, CEIL_Y + 0.15, mid_z + 0.1), "concrete", 0.35)
-	(ceil.get_child(0) as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		Level.block(self, Vector3(1.0, Level.LOW_CRATE_H, 1.0), Vector3(c.x, FLOOR_Y + Level.LOW_CRATE_H * 0.5, c.z), "crate", 1.0, c.y)
 	# faixa de perigo na entrada e no corredor do meio
-	Level.block(self, Vector3(GATE_W, 0.02, 0.5), Vector3(0, FLOOR_Y + 0.01, Z_NEAR - 0.6), "hazard", 1.0)
+	Level.block(self, Vector3(GATE_W, 0.02, 0.5), Vector3(CX, FLOOR_Y + 0.01, Z_NEAR - 0.6), "hazard", 1.0)
 	for s in [-1, 1]:
-		Level.block(self, Vector3(0.2, 0.02, depth - 3.0), Vector3(s * 2.4, FLOOR_Y + 0.01, mid_z - 0.6), "hazard", 1.0)
+		Level.block(self, Vector3(0.2, 0.02, depth - 8.0), Vector3(CX + s * 2.4, FLOOR_Y + 0.01, mid_z + 2.6), "hazard", 1.0)
 
 
-## Portão de enrolar: lâminas de aço que sobem para dentro da parede; a caixa do rolo fica do lado de dentro.
+## Portão de enrolar: lâminas de aço que sobem; a caixa do rolo fica do lado de dentro, acima do vão.
 func _build_gate() -> void:
-	gate = Door.create(self, Vector3(0, FLOOR_Y, Z_NEAR), Vector3(GATE_W, GATE_TOP - FLOOR_Y, 0.4), -1, "ABRIR PORTÃO")
+	gate = Door.create(self, GATE, Vector3(GATE_W, GATE_TOP - FLOOR_Y, 0.4), -1, "ABRIR PORTÃO")
 	var h := GATE_TOP - FLOOR_Y
 	var shutter := Node3D.new()
 	var slats := int(h / 0.24)
@@ -135,21 +131,21 @@ func _build_gate() -> void:
 	bar.position = Vector3(0, 0.1, 0)
 	shutter.add_child(bar)
 	gate.add_panel(shutter, Vector3(0, h - 0.25, 0), 0.0)
-	# guias laterais do lado do galpão
+	# guias laterais do lado da doca
 	for sx in [-1, 1]:
 		var rail := MeshInstance3D.new()
 		var rb := BoxMesh.new()
 		rb.size = Vector3(0.16, h + 0.3, 0.18)
 		rail.mesh = rb
 		rail.material_override = Level.material("wall", 2.0)
-		rail.position = Vector3(sx * (GATE_W * 0.5 + 0.08), FLOOR_Y + (h + 0.3) * 0.5, Z_NEAR + 0.29)
+		rail.position = Vector3(CX + sx * (GATE_W * 0.5 + 0.08), FLOOR_Y + (h + 0.3) * 0.5, Z_NEAR + 0.29)
 		add_child(rail)
 	var housing := MeshInstance3D.new()
 	var hb := BoxMesh.new()
 	hb.size = Vector3(GATE_W + 0.4, 0.5, 0.5)
 	housing.mesh = hb
 	housing.material_override = Level.material("wall", 1.0)
-	housing.position = Vector3(0, GATE_TOP + 0.25, Z_NEAR - 0.45)
+	housing.position = Vector3(CX, GATE_TOP + 0.25, Z_NEAR - 0.45)
 	add_child(housing)
 
 
@@ -361,7 +357,7 @@ func _plate(parent: Node3D, at: Vector3, yaw: float, number: String, species: St
 func _build_tank() -> void:
 	tank = Node3D.new()
 	tank.position = TANK
-	var to_room := Vector3(0, FLOOR_Y, -26.0) - TANK
+	var to_room := Vector3(CX, FLOOR_Y, TANK.z) - TANK
 	tank.rotation.y = atan2(to_room.x, to_room.z)
 	add_child(tank)
 	var metal := Level.material("wall", 1.5)
@@ -393,15 +389,16 @@ func _build_tank() -> void:
 	var edge := 1.5 * seg
 	var w := 2.0 * TANK_R * sin(edge)
 	var hinge := Node3D.new()
-	hinge.position = Vector3(sin(edge) * TANK_R, 0, cos(edge) * TANK_R)
-	hinge.rotation.y = deg_to_rad(TANK_DOOR_OPEN)
+	var hs := TANK_HINGE
+	hinge.position = Vector3(hs * sin(edge) * TANK_R, 0, cos(edge) * TANK_R)
+	hinge.rotation.y = hs * deg_to_rad(TANK_DOOR_OPEN)
 	tank.add_child(hinge)
-	_box(hinge, Vector3(w, TANK_H, 0.04), Vector3(-w * 0.5, y, 0), glass)
+	_box(hinge, Vector3(w, TANK_H, 0.04), Vector3(-hs * w * 0.5, y, 0), glass)
 	for x in [-0.04, -w + 0.04]:
-		_box(hinge, Vector3(0.08, TANK_H, 0.08), Vector3(x, y, 0), metal)
+		_box(hinge, Vector3(0.08, TANK_H, 0.08), Vector3(hs * x, y, 0), metal)
 	for yy in [TANK_BASE + 0.04, TANK_BASE + TANK_H - 0.04]:
-		_box(hinge, Vector3(w, 0.08, 0.08), Vector3(-w * 0.5, yy, 0), metal)
-	_box(tank, Vector3(0.07, TANK_H, 0.07), Vector3(-sin(edge) * TANK_R, y, cos(edge) * TANK_R), metal)
+		_box(hinge, Vector3(w, 0.08, 0.08), Vector3(-hs * w * 0.5, yy, 0), metal)
+	_box(tank, Vector3(0.07, TANK_H, 0.07), Vector3(-hs * sin(edge) * TANK_R, y, cos(edge) * TANK_R), metal)
 	# o vidro e a porta seguram o corpo e o tiro
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
@@ -419,7 +416,7 @@ func _build_tank() -> void:
 	var door_shape := BoxShape3D.new()
 	door_shape.size = Vector3(w, TANK_H, 0.1)
 	door_col.shape = door_shape
-	door_col.transform = hinge.transform * Transform3D(Basis.IDENTITY, Vector3(-w * 0.5, y, 0))
+	door_col.transform = hinge.transform * Transform3D(Basis.IDENTITY, Vector3(-hs * w * 0.5, y, 0))
 	body.add_child(door_col)
 	tank.add_child(body)
 	# resto do líquido drenado no fundo e escorrido pela porta, mangueiras soltas do tampo
@@ -447,7 +444,7 @@ func _build_tank() -> void:
 	lamp.albedo_color = Color(1.0, 0.25, 0.2)
 	_box(tank, Vector3(0.3, 0.12, 0.06), Vector3(0, TANK_BASE + TANK_H + TANK_CAP * 0.5, TANK_R + 0.23), lamp)
 	# plaqueta do lado da porta (à esquerda de quem chega), fora do caminho da folha aberta
-	_plate(tank, Vector3(-1.0, 0, TANK_R + 0.55), 0.0, ALLO_SUBJECT, "CONFIDENCIAL - PROTÓTIPO", "VAZIO / TRANSFERIDO", true)  # espécie escondida até a pedreira
+	_plate(tank, Vector3(0.0, 0, TANK_R + TANK_PLATE), 0.0, ALLO_SUBJECT, "CONFIDENCIAL - PROTÓTIPO", "VAZIO / TRANSFERIDO", true)  # espécie escondida até a pedreira
 
 
 func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
@@ -461,45 +458,14 @@ func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInst
 	return mi
 
 
-## Console de controle no fundo: mesa e três telas acesas.
-func _build_console() -> void:
-	var z := Z_FAR + 0.9
-	Level.block(self, Vector3(3.2, 0.9, 0.9), Vector3(0, FLOOR_Y + 0.45, z), "wall", 0.75)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(0.3, 1.0, 0.55)
-	for dx in [-1.0, 0.0, 1.0]:
-		var frame := MeshInstance3D.new()
-		var fb := BoxMesh.new()
-		fb.size = Vector3(0.8, 0.55, 0.08)
-		frame.mesh = fb
-		frame.material_override = Level.material("wall", 2.0)
-		frame.position = Vector3(dx, FLOOR_Y + 1.35, z - 0.25)
-		frame.rotation.x = deg_to_rad(-12.0)
-		add_child(frame)
-		var screen := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2(0.68, 0.43)
-		screen.mesh = q
-		screen.material_override = m
-		screen.position = Vector3(0, 0, 0.045)
-		frame.add_child(screen)
-	var glow := OmniLight3D.new()
-	glow.position = Vector3(0, FLOOR_Y + 1.4, z + 0.6)
-	glow.light_color = Color(0.3, 1.0, 0.55)
-	glow.light_energy = 0.8
-	glow.omni_range = 3.5
-	add_child(glow)
-
-
 ## Luz fria do teto (com sombra no PS2, como as do galpão).
 func _build_lights() -> void:
-	for z in [-16.0, -23.0, -29.5]:
+	for z in [23.0, 17.0, 11.0]:
 		var o := OmniLight3D.new()
-		o.position = Vector3(0, CEIL_Y - 0.6, z)
+		o.position = Vector3(CX, CEIL_Y - 0.9, z)
 		o.light_color = Color(0.6, 0.8, 1.0)
 		o.light_energy = 1.4
-		o.omni_range = 9.0
+		o.omni_range = 10.0
 		o.omni_attenuation = 1.2
 		o.add_to_group("lamps")
 		add_child(o)
@@ -512,7 +478,7 @@ func _build_lights() -> void:
 		m.albedo_color = Color(0.85, 0.95, 1.0)
 		panel.material_override = m
 		panel.rotation_degrees.x = 90.0
-		panel.position = Vector3(0, CEIL_Y - 0.02, z)
+		panel.position = Vector3(CX, CEIL_Y - 0.32, z)
 		add_child(panel)
 
 

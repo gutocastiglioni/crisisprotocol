@@ -216,7 +216,7 @@ func test_low_crate() -> void:
 	await t._frames(30)
 	t.check(not p.cover.active and not p.cover.held, "levantou e andou dali: agachar não encosta sozinha", p.model.state)
 	p.crouching = false
-	var p2: Player = await _covered(1.5)  # caixa baixa do galpão (Level.LOW_CRATE_H)
+	var p2: Player = await _covered(1.5)  # bloco de 1,5 m (paredinha, arquivo alto)
 	t.check(p2.cover.active and p2.model.state.begins_with("cover_") and not p2.model.state.begins_with("cover_crouch"),
 		"caixa de 1,5 m: encosta em pé", p2.model.state)
 	p2.crouching = true
@@ -320,17 +320,17 @@ func test_aim_over_low_crate() -> void:
 	t.check(p.cover.active and p.crouching and p.model.state.begins_with("cover_crouch_"),
 		"soltou a mira: agacha e fica encostada de novo", p.model.state)
 	p.crouching = false
-	# caixa baixa do galpão (Level.LOW_CRATE_H, 1,5 m): também mira por cima, e o tiro (pela linha da câmera) passa
+	# caixa baixa do galpão (Level.LOW_CRATE_H, 1,2 m): também mira por cima, e o tiro (pela linha da câmera) passa
 	var w2: Node3D = await _world_with_wall(Level.LOW_CRATE_H)
 	var r: Player = t._spawn_player(w2, Vector3(0, 0, -0.2))
 	r.crouching = true
 	await t._frames(10)
 	await _command()
 	await t._frames(40)
-	t.check(r.cover.active and r.crouching, "agachada encostada na caixa baixa do galpão (1,5 m)")
+	t.check(r.cover.active and r.crouching, "agachada encostada na caixa baixa do galpão (1,2 m)")
 	Input.action_press("aim")
 	await t._frames(40)
-	t.check(r.aiming and r.cover.aim_mode == "over" and not r.crouching, "caixa de 1,5 m: levanta e mira por cima",
+	t.check(r.aiming and r.cover.aim_mode == "over" and not r.crouching, "caixa baixa: levanta e mira por cima",
 		"modo %s" % r.cover.aim_mode)
 	var cam := r.get_viewport().get_camera_3d()
 	var ray: Array[Vector3] = [cam.global_position, -cam.global_basis.z]

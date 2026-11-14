@@ -57,7 +57,7 @@ const SWING_DAMP := 0.7  # amortecimento (< 1: na volta passa um pouco do ponto,
 var target: Node3D
 var yaw := 0.0
 var pitch := PITCH
-var spring: SpringArm3D
+var spring: Arm
 var camera: Camera3D
 var _idle_look := 0.0
 var _snapped := false
@@ -75,7 +75,7 @@ var _turn := 0.0  # giro da câmera (rad, + = para a direita) desde o último qu
 ## Ações (alçapão, porta abrindo, pegar item em pé, detonador; pegar arma no baú/caixa não): a câmera gira em volta dela
 ## até um ângulo que mostra a ação (perfil / 3/4 de frente: rosto, mãos e o objeto), mais perto e de cima, e no fim volta
 ## devagar ao enquadramento de antes (o giro do jogador fica guardado em `yaw`). Lado escolhido no começo da ação: o mais
-## livre de parede (`_pick_side`); o SpringArm segue encurtando se algo entrar no meio.
+## livre de parede (`_pick_side`); `_place_camera` segue encurtando se algo entrar no meio.
 ## angle = graus em volta dela a partir das costas (180 = de frente), length, pitch (rad), fov, fwd = m que o ponto
 ## olhado avança para a frente dela (para as mãos/o objeto), drop = m abaixo do osso da cabeça (peito/mãos).
 const ACTIONS := {
@@ -94,25 +94,31 @@ var _act_kind := ""
 var _act_side := 1.0  # +1/-1: de que lado dela a câmera gira
 var _pulse := 0.0
 var _head_bone := -1
+## Raio da esfera que a câmera arrasta pelo cenário (camada 1): o centro dela nunca chega mais perto que isto de uma
+## superfície, e o plano de perto (`camera.near`) fica sempre do lado de fora.
+const CAM_RADIUS := 0.15
+var _ball := SphereShape3D.new()
+var _anchor := Vector3.ZERO  # ponto dentro do corpo dela (o pivô sem atraso): de onde o caminho da câmera parte
+
+
+## Braço da câmera: só guarda o enquadramento pedido (`position.x` = desvio do ombro, `spring_length` = distância atrás);
+## onde a câmera fica de fato sai de `_place_camera`, que desvia do cenário.
+class Arm extends Node3D:
+	var spring_length := 3.0
 
 
 func _ready() -> void:
 	top_level = true
 	# movida a cada quadro da tela, não no passo da física (que é interpolado)
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	spring = SpringArm3D.new()
-	spring.spring_length = 3.0
-	spring.collision_mask = 1
-	spring.margin = 0.15
-	var probe := SphereShape3D.new()
-	probe.radius = 0.15
-	spring.shape = probe
+	spring = Arm.new()
 	add_child(spring)
+	_ball.radius = CAM_RADIUS
 	camera = Camera3D.new()
 	camera.fov = 62.0
 	camera.near = 0.05
 	camera.far = 140.0
-	spring.add_child(camera)
+	add_child(camera)
 	camera.current = true
 	if GameMode.shoulder_cam():
 		pitch = SHOULDER.pitch
@@ -169,6 +175,7 @@ func _process(delta: float) -> void:
 		goal = goal.lerp(_act_pivot(), act)
 	if in_sniper:
 		goal.y = focus.y + (1.15 if target.get("crouching") else 1.52)
+	_anchor = goal
 	global_position = goal if not _snapped else global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
 	_snapped = true
 	rotation = Vector3(lerpf(pitch, float(_act_cfg.pitch), act), lerp_angle(yaw, _act_yaw(), act) if act > 0.0 else yaw, 0.0)
@@ -207,11 +214,46 @@ func _process(delta: float) -> void:
 			spring.spring_length = lerpf(spring.spring_length, lerpf(1.6 if aiming else 3.0, float(_act_cfg.length), act), k)
 			spring.position.x = lerpf(spring.position.x, lerpf(off, signf(lean) * PlayerLean.CAM_SIDE, absf(lean)), k)
 			camera.fov = lerpf(camera.fov, lerpf(50.0 if aiming else 62.0, float(_act_cfg.fov), act), k)
+	_place_camera()
 	_shake_t = maxf(0.0, _shake_t - delta)
 	var amp := _shake if _shake_t > 0.0 else 0.0
 	camera.h_offset = randf_range(-amp, amp)
 	camera.v_offset = randf_range(-amp, amp)
 	_turn = 0.0
+
+
+## Põe a câmera no fim do caminho corpo dela → pivô (atrasado) → ombro → atrás, arrastando uma esfera pelo cenário em cada
+## trecho: parede/caixa no meio encurta o trecho. Antes só o trecho de trás desviava (SpringArm saindo do ombro), e colada
+## numa caixa do lado do ombro, ou com o pivô atrasado passando por uma quina, a câmera nascia dentro dela.
+func _place_camera() -> void:
+	var pivot := _sweep(_anchor, global_position)
+	var shoulder := _sweep(pivot, pivot + global_basis.x * spring.position.x)
+	camera.global_position = _sweep(shoulder, shoulder + global_basis.z * spring.spring_length)
+
+
+## Até onde a esfera da câmera vai de `from` para `to` sem encostar no cenário. Começando encostada (cabeça colada na
+## parede), vale um raio que ignora o que já toca, parando CAM_RADIUS antes do que achar.
+func _sweep(from: Vector3, to: Vector3) -> Vector3:
+	var d := to - from
+	var dist := d.length()
+	if dist < 0.001:
+		return to
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _ball
+	q.collision_mask = 1
+	q.transform = Transform3D(Basis(), from)
+	q.motion = d
+	var r := space.cast_motion(q)
+	if r.is_empty() or r[0] >= 1.0:
+		return to
+	if r[0] > 0.0:
+		return from + d * r[0]
+	var ray := PhysicsRayQueryParameters3D.create(from, to, 1)
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty():
+		return to
+	return from + d / dist * maxf(0.0, from.distance_to(hit.position) - CAM_RADIUS)
 
 
 ## Giro da câmera para o lado em que ela está na tela (sem mirar): a mola puxa `swing` para a rapidez do giro; parou, volta.
@@ -314,6 +356,8 @@ func focus_pulse(snap := false) -> void:
 	spring.spring_length = float(_act_cfg.length)
 	spring.position.x = 0.0
 	camera.fov = float(_act_cfg.fov)
+	_anchor = global_position
+	_place_camera()
 
 
 ## Ombro da câmera sem mirar (survival): o direito, a não ser que parede/caixa feche um lado da frente do corpo dela; aí o

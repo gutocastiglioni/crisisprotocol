@@ -38,8 +38,14 @@ const HEARD := UiStyle.WARN  # barulho que algum inimigo ouviu
 const BLIP_CALM := Color(0.92, 0.95, 0.9)  # inimigo calmo: branco (o verde do alerta calmo some nas paredes)
 ## contorno das salas no chão (x, z, largura em x, comprimento em z)
 const ROOMS := [
-	Rect2(-Level.SIZE * 0.5, -Level.SIZE * 0.5, Level.SIZE, Level.SIZE),
-	Rect2(-CloneLab.HALF_W, CloneLab.Z_FAR, CloneLab.HALF_W * 2.0, CloneLab.Z_NEAR - CloneLab.Z_FAR),
+	Rect2(Level.WEST, Level.SOUTH, Level.WIDTH, Level.DEPTH),
+	# salas do galpão (Shed), da frente para o fundo: pátio descoberto, sala dos clones, estantes e doca, escritório (com o
+	# corredor do meio) e o labirinto
+	Rect2(Level.WEST, Level.SOUTH, Level.WIDTH, Level.ROOF_Z - Level.SOUTH),
+	Rect2(Level.WEST, CloneLab.Z_FAR, Level.WIDTH, CloneLab.Z_NEAR - CloneLab.Z_FAR),
+	Rect2(Level.WEST, CloneLab.Z_NEAR, Level.WIDTH, Shed.OFFICE_Z0 - CloneLab.Z_NEAR),
+	Rect2(Level.WEST, Shed.OFFICE_Z0, Level.WIDTH, Shed.OFFICE_Z1 - Shed.OFFICE_Z0),
+	Rect2(Shed.HALL_X[0], Shed.OFFICE_Z0, Shed.HALL_X[1] - Shed.HALL_X[0], Shed.OFFICE_Z1 - Shed.OFFICE_Z0),
 	Rect2(Yard.GATE_X, -Yard.Z_HALF, Yard.X_NEAR - Yard.GATE_X, Yard.Z_HALF * 2.0),
 	Rect2(Arena.X_FAR, -Arena.Z_HALF, Arena.X_NEAR - Arena.X_FAR, Arena.Z_HALF * 2.0),
 	# túnel da mina: corredores e as duas câmaras (Tunnel.SECTIONS)

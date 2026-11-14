@@ -59,15 +59,19 @@ func test_lab_contents() -> void:
 	for i in lab.clones.size():
 		var pl: SubjectPlate = lab.plates[i]
 		var front := pl.global_transform * Vector3(0, 0, 0.8)
-		t.check(CloneLab.inside(front) and absf(front.x) < absf(pl.global_position.x), "plaqueta %s de frente para o corredor" % pl.number, str(front))
-	# tanque no canto do fundo à esquerda, dentro das paredes, sem encostar nos tubos nem no console
+		t.check(CloneLab.inside(front) and absf(front.x - CloneLab.CX) < absf(pl.global_position.x - CloneLab.CX), "plaqueta %s de frente para o corredor" % pl.number, str(front))
+	# tanque de 6 m no fim da sala, à esquerda, dentro das paredes, sem encostar nos tubos nem no computador
 	var c := lab.tank.global_position
 	var r := CloneLab.TANK_R + 0.2
-	t.check(c.x < 0.0 and c.z < CloneLab.TUBE_Z[-1] and c.x - r > -CloneLab.HALF_W + 0.15 and c.z - r > CloneLab.Z_FAR + 0.15,
-		"tanque no canto do fundo à esquerda, dentro da sala", str(c))
-	var tube_far := Vector2(-CloneLab.TUBE_X, CloneLab.TUBE_Z[-1])
-	t.check(Vector2(c.x, c.z).distance_to(tube_far) > r + CloneLab.TUBE_R + 0.15 + 1.0, "passagem entre o tanque e o último tubo")
-	t.check(c.x + r < -1.6 - 0.3, "tanque longe do console do fundo")
+	t.check(is_equal_approx(CloneLab.TANK_R * 2.0, 6.0), "tanque do alossauro com 6 m de diâmetro")
+	t.check(c.x < CloneLab.CX and c.z < CloneLab.TUBE_Z[-1] and c.x - r > Level.WEST + 0.15 and c.z - r > CloneLab.Z_FAR + 0.15,
+		"tanque no fim da sala, à esquerda, dentro dela", str(c))
+	t.check(c.x + r < CloneLab.CX - 0.5, "o tanque deixa o corredor do meio livre (a passagem para o fim da sala)")
+	t.check(Vector2(c.x, c.z).distance_to(Vector2(CloneLab.CONSOLE.x, CloneLab.CONSOLE.z)) > r + 0.8, "tanque longe do computador da parede da frente")
+	# o corredor do meio fica livre da porta aberta do tanque (a folha deitada junto do vidro)
+	var space0: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
+	var mid := PhysicsRayQueryParameters3D.create(Vector3(CloneLab.CX, CloneLab.FLOOR_Y + 1.0, CloneLab.TUBE_Z[-1]), Vector3(CloneLab.CX, CloneLab.FLOOR_Y + 1.0, CloneLab.Z_FAR + 0.6), 1)
+	t.check(space0.intersect_ray(mid).is_empty(), "corredor do meio livre até a parede da frente")
 	t.check(lab.tank.find_children("*", "RaptorModel", true, false).is_empty() and lab.tank.find_children("*", "CPUParticles3D", true, false).is_empty(),
 		"tanque vazio: sem clone nem bolhas")
 	# o corpo não atravessa o vidro nem a porta aberta
@@ -92,7 +96,7 @@ func test_lab_contents() -> void:
 	await _stand(p, pl0.global_transform * Vector3(0, 0, -0.8), pl0.global_rotation.y)
 	t.check(p.pick_plate() == null, "por trás da plaqueta não lê")
 	# o console não tem mais a chave do painel (é o cartão do último sniper das torres)
-	await _stand(p, Vector3(0.55, CloneLab.FLOOR_Y, CloneLab.Z_FAR + 1.95), 0.0)
+	await _stand(p, Shed.LAB_USE[0], Shed.LAB_USE[1])
 	t.check(p.pick_key() == null, "na frente do console não há chave para pegar")
 	main.inspect.on_shown = Callable()
 	main.inspect.auto_close = -1.0

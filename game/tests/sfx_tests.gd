@@ -4,7 +4,7 @@ extends "res://tests/ai_tests.gd"
 ## baú, raptor, guerrilheiro, avisos de furtividade e ambiente). Usa os auxiliares de ai_tests.gd; chamado por run_tests.gd.
 
 
-func run(runner: SceneTree) -> void:
+func run(runner: SceneTree, _picks: Array = []) -> void:
 	t = runner
 	test_files()
 	await test_player_node()

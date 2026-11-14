@@ -42,6 +42,7 @@ signal finished
 const SUBTITLE := "O QUE...?!"
 const WALK_SPEED := 1.0
 const WALK_TIME := 2.4
+const COVER_STOP := 1.25  # onde ela para: isto atrás do meio da primeira caixa de equipamento (lado do portão)
 const REVEAL_AT := 2.4
 const FACE_AT := 3.4
 const SUB_AT := 3.6
@@ -272,9 +273,13 @@ func _physics_process(delta: float) -> void:
 	if scene == "standoff":
 		_standoff_step(delta)
 		return
-	if t < WALK_TIME:
-		player.cutscene_walk = Vector3(0, 0, -WALK_SPEED)
-		player.model.set_state("walk", WALK_SPEED / Moves.speed("walk"))
+	# anda até logo atrás da primeira caixa de equipamento (CloneLab.COVER): é ali que ela se abaixa no fim
+	var cover: Vector3 = CloneLab.COVER[0]
+	var to_cover := Vector3(cover.x - player.global_position.x, 0.0, cover.z + COVER_STOP - player.global_position.z)
+	if t < WALK_TIME and to_cover.length() > 0.1:
+		var speed := clampf(to_cover.length() / maxf(WALK_TIME - t, 0.05), WALK_SPEED, Moves.speed("walk"))
+		player.cutscene_walk = to_cover.normalized() * speed
+		player.model.set_state("walk", speed / Moves.speed("walk"))
 	else:
 		player.cutscene_walk = Vector3.ZERO
 		if t < FACE_AT:
@@ -525,7 +530,7 @@ func _place_camera() -> void:
 		var clone: RaptorModel = lab.clones[0]
 		var sk := clone.skeleton
 		var face := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Head")).origin
-		var side := Vector3(1, 0, 0) if clone.global_position.x < 0.0 else Vector3(-1, 0, 0)
+		var side := Vector3(1, 0, 0) if clone.global_position.x < CloneLab.CX else Vector3(-1, 0, 0)
 		_cam.fov = 42.0
 		_cam.global_position = face + side * (2.4 - 0.5 * k) + Vector3(0, -0.35, 0.8)
 		_cam.look_at(face)

@@ -6,29 +6,29 @@ extends RefCounted
 var t: SceneTree  # o runner (run_tests.gd)
 
 
+## Em ordem. A parte é longa: o runner divide estes testes entre os processos em paralelo (`ai=teste+teste`).
+const TESTS := [
+	"test_suspicion_then_spot", "test_cone_and_hearing", "test_crouch_stays_hidden", "test_crouch_close_is_seen",
+	"test_cover_hides", "test_footsteps_make_noise", "test_gunshot_investigates", "test_raptor_gait", "test_patrol_route",
+	"test_alarm_calls_others", "test_damage_while_unaware_alarms", "test_loses_target_and_gives_up",
+	"test_alerted_can_hide", "test_yard_nav", "test_main_scene_patrols", "test_blind_spot_kills", "test_shout_earshot",
+	"test_post_keeps_half", "test_doors_seal_rooms", "test_unreachable_hunt_gives_up", "test_sniper_forgets",
+]
+
+
 func run(runner: SceneTree) -> void:
+	await run_picked(runner, [])
+
+
+## Só os testes `picks` (vazio = todos); o tempo de cada um sai em "@@tempo ai=<teste> <ms>" para o runner montar os
+## lotes. (`run` fica com a assinatura de antes: soldier/console/explosive/sfx/voice herdam deste arquivo e o redefinem.)
+func run_picked(runner: SceneTree, picks: Array) -> void:
 	t = runner
-	await test_suspicion_then_spot()
-	await test_cone_and_hearing()
-	await test_crouch_stays_hidden()
-	await test_crouch_close_is_seen()
-	await test_cover_hides()
-	await test_footsteps_make_noise()
-	await test_gunshot_investigates()
-	await test_raptor_gait()
-	await test_patrol_route()
-	await test_alarm_calls_others()
-	await test_damage_while_unaware_alarms()
-	await test_loses_target_and_gives_up()
-	await test_alerted_can_hide()
-	await test_yard_nav()
-	await test_main_scene_patrols()
-	await test_blind_spot_kills()
-	await test_shout_earshot()
-	await test_post_keeps_half()
-	await test_doors_seal_rooms()
-	await test_unreachable_hunt_gives_up()
-	await test_sniper_forgets()
+	for name in TESTS:
+		if picks.is_empty() or name in picks:
+			var t0 := Time.get_ticks_msec()
+			await call(name)
+			print("@@tempo ai=%s %d" % [name, Time.get_ticks_msec() - t0])
 
 
 func check(cond: bool, name: String, detail := "") -> void:
@@ -439,7 +439,8 @@ func test_main_scene_patrols() -> void:
 	var rs: Array = main.raptors
 	check(main.soldiers.size() == Soldier.GUARDS.size(), "cena principal: soldados de guarda no galpão", str(main.soldiers.size()))
 	for sd: Soldier in main.soldiers:
-		check(absf(sd.global_position.x) < 13.0 and absf(sd.global_position.z) < 13.0, "soldado começa dentro do galpão", str(sd.global_position))
+		check(sd.global_position.x > Level.WEST and sd.global_position.x < Level.EAST and sd.global_position.z > Level.SOUTH and sd.global_position.z < Level.NORTH,
+			"soldado começa dentro do galpão", str(sd.global_position))
 	check(rs.size() == Yard.POSTS.size() + Arena.POSTS.size() + Yard.WAVES.reduce(func(n: int, w: Dictionary) -> int: return n + w.entries.size(), 0) + Yard.CLIFF_RAPTORS.size(), "cena principal: um raptor por posto (emboscada, trechos e barranco da trilha, pedreira)", str(rs.size()))
 	var start := []
 	for r: Raptor in rs:
@@ -471,9 +472,9 @@ func test_main_scene_patrols() -> void:
 			check(moved[k] > 4.0, "raptor %d patrulha de verdade" % k, "%.1f m" % moved[k])
 		check(rs[k].global_position.y > -0.5, "raptor %d não caiu do mundo" % k, str(rs[k].global_position))
 	check(sold_moved > 3.0, "soldado faz a ronda de verdade", "%.1f m" % sold_moved)
-	# os guardas novos da porta do pátio: de posto, no canto cercado pelas caixas (Level.DIVIDERS), parados
-	check(posts.size() == 2 and posts.all(func(s: Soldier) -> bool: return s.route.is_empty() and s.global_position.x < -3.75 and s.global_position.z < 0.4),
-		"2 guardas de posto na porta do pátio, no canto cercado de caixas", str(posts.size()))
+	# o guarda de posto do pátio descoberto: parado, sem ronda
+	check(posts.size() == 1 and posts.all(func(s: Soldier) -> bool: return s.route.is_empty() and s.global_position.z < Level.ROOF_Z),
+		"1 guarda de posto no pátio descoberto", str(posts.size()))
 	check(post_moved < 0.2, "os guardas de posto ficam parados (sem ronda)", "%.2f m" % post_moved)
 	check(main.dummies.is_empty() and t.get_nodes_in_group("dummies").is_empty(), "o galpão não tem mais bonecos de treino")
 	check(not alerted, "a heroína parada na entrada não é notada por ninguém (raptors, alossauro nem guardas do galpão)")
@@ -481,17 +482,17 @@ func test_main_scene_patrols() -> void:
 	await t.process_frame
 
 
-## Cada ronda do galpão tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás das paredes de caixas): morta ali, em silêncio
-## ou não (o barulho do corpo caindo não atravessa caixa, `Enemy.hear_death`), ninguém é alertado — nem os sentinelas, nem
-## o sniper do mezanino, nem as outras rondas passando. Fora dele é achada: no canto que o guarda de posto 5 vigia,
-## na descida do 6 (o outro vertical, o 11, e a porta norte) e no fim do 6, bem na frente da rota do 8.
+## Cada ronda do galpão tem um ponto cego (`Soldier.BLIND_SPOTS`, atrás de parede, estante ou pilha de caixas): morta ali,
+## em silêncio ou não (o barulho do corpo caindo não atravessa caixa nem parede, `Enemy.hear_death`), ninguém é alertado —
+## nem os sentinelas, nem o atirador do mezanino, nem as outras rondas passando. Fora dele é achada: na frente do posto 7 do
+## pátio descoberto, na frente dos sentinelas da doca, no caminho da ronda 6 do escritório e ao lado do sentinela 2 do baú
+## da M16.
 func test_blind_spot_kills() -> void:
-	# furtivo: as rondas que podem achar o corpo de uma seguem andando uma volta inteira depois da morte (quem acha o corpo
-	# de quem: 6 e 11 se veem, o 8 passa perto do 1, do 6 e do 11; o 0 não passa perto de ninguém); então morrem juntas só
-	# as que não acham uma à outra: 0 com 6, 1 com 11, e o 8 sozinho. Com barulho: todas na mesma cena, menos o 6 (o
-	# corredor dele abre para a rota do 8: o corpo caindo é ouvido pelo vão)
-	var runs: Array = [[true, [0, 6]], [true, [1, 11]], [true, [8]]]
-	runs.append([false, Soldier.BLIND_SPOTS.keys().filter(func(gi: int) -> bool: return gi != 6)])
+	# furtivo: as rondas que podem achar o corpo de uma seguem andando uma volta inteira depois da morte; morrem juntas só as
+	# de salas diferentes (escritório 0 e 6, estantes 1, 8 e 14, labirinto 18 e 19, pátio 5). Com barulho: todas na mesma
+	# cena, menos o 5 (o T, distraído no caminhão, ouve o corpo cair a 5 m sem nada no meio)
+	var runs: Array = [[true, [0, 1, 18, 5]], [true, [6, 8, 19]], [true, [14]]]
+	runs.append([false, Soldier.BLIND_SPOTS.keys().filter(func(gi: int) -> bool: return gi != 5)])
 	var covered := {}
 	for run: Array in runs.slice(0, 3):
 		for gi: int in run[1]:
@@ -528,9 +529,10 @@ func test_blind_spot_kills() -> void:
 		main.queue_free()
 		await t.process_frame
 	# controles: fora do ponto cego alguém acha o corpo
-	for c in [[0, Vector3(-7.2, 0, -5.4), "no canto que o guarda de posto 5 vigia"],
-			[6, Vector3(-1.5, 0, -5.5), "do 6 no meio da descida (o 11 desce paralelo)"],
-			[6, Vector3(-1.8, 0, 1.7), "do 6 no fim, bem na frente da rota do 8"]]:
+	for c in [[5, Vector3(-4.0, 0, -7.6), "no pátio descoberto, na frente do posto 7"],
+			[8, Vector3(-3.0, 0, 34.0), "da ronda 8 na frente dos sentinelas da doca"],
+			[0, Vector3(-4.2, 0, 47.0), "no escritório, no caminho da ronda 6"],
+			[19, Vector3(0.6, 0, 59.4), "da ronda 19 no corredor do baú da M16 (o sentinela 2 vê)"]]:
 		var main: Node = await _main_scene(true)
 		var v: Soldier = main.soldiers[c[0]]
 		v.global_position = c[1]
@@ -553,10 +555,14 @@ func test_blind_spot_kills() -> void:
 ## outros olham e ficam. Ninguém fica desconfiando do mesmo corpo sem parar (cada um conhece o corpo que já foi ver,
 ## `_known_dead`) e, com ela vista (vermelho), o posto libera todos.
 func test_post_keeps_half() -> void:
-	for spot: Vector3 in [Vector3(-8.5, 0, -8.4), Vector3(-7.2, 0, -5.4)]:
+	for spot: Vector3 in [Vector3(-12.3, 0, -8.1), Vector3(-4.0, 0, -7.6)]:
 		var main: Node = await _main_scene(true)
 		var post: Array = main.soldiers.filter(func(s: Soldier) -> bool: return s.post == "patio")
 		var v: Soldier = main.soldiers[0]
+		# só o canto conta (portão fechado: nada de fora chega lá dentro); os outros parados pesam menos
+		for e: Enemy in main.all_enemies():
+			if not (e is Soldier and e in post) and e != v:
+				e.process_mode = Node.PROCESS_MODE_DISABLED
 		v.global_position = spot
 		v.route.clear()
 		v.reset_physics_interpolation()
@@ -578,11 +584,11 @@ func test_post_keeps_half() -> void:
 				was[s] = s.state
 			max_away = maxi(max_away, away)
 		var where := "corpo em %s" % spot
-		check(post.size() == 4, "o posto do portão do pátio tem os 4 fixos", str(post.size()))
+		check(post.size() == 3, "o posto do portão do pátio tem os 3 fixos", str(post.size()))
 		check(not left.is_empty(), "alguém do posto vai ver o corpo (%s)" % where)
-		check(max_away <= 2, "no máximo metade do posto sai sem ela ter sido vista (%s)" % where, str(max_away))
+		check(max_away <= maxi(post.size() / 2, 1), "no máximo metade do posto sai sem ela ter sido vista (%s)" % where, str(max_away))
 		check(late_doubts == 0, "depois da busca ninguém fica desconfiando do mesmo corpo (%s)" % where, str(late_doubts))
-		if spot == Vector3(-8.5, 0, -8.4):
+		if spot == Vector3(-12.3, 0, -8.1):
 			main.reset_all()
 			await t._frames(3)
 			check(not v.has_meta("reported"), "reiniciar esquece o alarme do corpo da outra vez")
@@ -599,22 +605,17 @@ func test_post_keeps_half() -> void:
 ## Gente avisa gritando (`Enemy.shouts`): ferido sem tê-la notado grita `SHOUT_DELAY` depois (morto antes, nada) e quem acha
 ## um corpo grita na hora; o grito só chega a quem está perto com linha livre, não à sala toda.
 func test_shout_earshot() -> void:
-	# parados longe ou atrás das caixas: porta do pátio (3, 4), canto da M16 (2) e o de posto colado na parede do sul (5); as rondas
-	# dependem de onde estão na hora do grito
-	# (3 e 5, do posto do canto, ouvem pelo portão de grade do canto quando o 7 ouve: o alambrado não abafa o grito)
-	var far := [2, 4]
-	# ronda 6 morta no alto do corredor: o sentinela 9 ouve o corpo cair e vai lá; achando o corpo, grita
+	# longe ou atrás de parede/porta fechada: o pátio descoberto (4), o labirinto (2), o escritório (11) e o arsenal (22)
+	var far := [2, 4, 11, 22]
+	# ronda 8 morta na frente dos sentinelas da doca: o 10 ouve o corpo cair e vai lá; achando o corpo, grita
 	var main: Node = await _main_scene(true)
-	# a ronda 0 (barra do T fora do canto, atrás da grade do painel) acharia o corpo também e gritaria pela grade da quina:
-	# aqui só conta o grito de quem acha primeiro
-	main.soldiers[0].process_mode = Node.PROCESS_MODE_DISABLED
-	var v: Soldier = main.soldiers[6]
-	v.global_position = Vector3(-1.5, 0, -6.0)
+	var v: Soldier = main.soldiers[8]
+	v.global_position = Vector3(-3.0, 0, 34.0)
 	v.route.clear()
 	v.reset_physics_interpolation()
 	await t._frames(5)
 	v.take_headshot(34, Vector3.FORWARD, v.global_position + Vector3.UP * 1.6)
-	var finder: Soldier = main.soldiers[9]
+	var finder: Soldier = main.soldiers[10]
 	var heard := {}  # quem se alertou -> distância até o 9 na hora
 	for i in 60 * 12:
 		await t._frames(1)
@@ -624,16 +625,16 @@ func test_shout_earshot() -> void:
 	var names := func(list: Array) -> String:
 		return str(list.map(func(e: Enemy) -> String: return "%s %d" % [e.get_script().get_global_name(), main.soldiers.find(e) if e is Soldier else -1]))
 	check(heard.has(finder), "quem acha o corpo de perto se alerta", names.call(heard.keys()))
-	check(heard.has(main.soldiers[10]), "o grito dele chega ao sentinela ao lado")
+	check(heard.has(main.soldiers[9]), "o grito dele chega ao sentinela ao lado")
 	var leaked: Array = heard.keys().filter(func(e: Enemy) -> bool:
 		return e != finder and (not e is Soldier or main.soldiers.find(e) in far or heard[e] > Enemy.SHOUT_RANGE))
 	check(leaked.is_empty(), "o grito não chega a quem está longe ou atrás das caixas (nem ao sniper)", names.call(leaked))
 	main.queue_free()
 	await t.process_frame
-	# ferido e morto logo em seguida (no ponto cego do 6): ninguém fica sabendo
+	# ferido e morto logo em seguida (no ponto cego do 1, atrás da estante): ninguém fica sabendo
 	main = await _main_scene(true)
-	v = main.soldiers[6]
-	v.global_position = Soldier.BLIND_SPOTS[6][0]
+	v = main.soldiers[1]
+	v.global_position = Soldier.BLIND_SPOTS[1][0]
 	v.route.clear()
 	v.reset_physics_interpolation()
 	await t._frames(5)
@@ -657,8 +658,8 @@ func test_shout_earshot() -> void:
 	await t._frames(roundi(60 * Enemy.SHOUT_DELAY))
 	check(not early and main.soldiers[10].alert_t > 0.0, "ferido grita depois de SHOUT_DELAY e o vizinho ouve",
 		"antes=%s depois=%.1f" % [early, main.soldiers[10].alert_t])
-	# a ala norte (0, 3, 4, 5, 7) tem linha livre até ele a menos de SHOUT_RANGE: ouve; o canto da M16 (1, 2) não
-	var far_told: Array = [1, 2].filter(func(i: int) -> bool: return main.soldiers[i].alert_t > 0.0)
+	# o escritório e o pátio descoberto (11, 4), atrás de parede e porta fechada, não ouvem
+	var far_told: Array = [11, 4].filter(func(i: int) -> bool: return main.soldiers[i].alert_t > 0.0)
 	check(far_told.is_empty(), "grito do ferido não chega à sala toda", str(far_told))
 	main.queue_free()
 	await t.process_frame
@@ -694,8 +695,8 @@ func test_doors_seal_rooms() -> void:
 	var doors := t.get_nodes_in_group("doors")
 	var grates := doors.filter(func(d: Door) -> bool: return d.solid_layer == Yard.GRATE_LAYER)
 	var service := doors.filter(func(d: Door) -> bool: return d.sealed and d.room == -1)
-	check(doors.size() - grates.size() - service.size() == 4 and grates.size() == Yard.GRATES.size() + 2 and service.size() == Shed.SERVICE.size(),
-		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + grades da trilha e do galpão + portas de serviço",
+	check(doors.size() - grates.size() - service.size() == 9 and grates.size() == Yard.GRATES.size() + 1 and service.size() == Shed.SERVICE.size(),
+		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + as 5 do galpão (arquivo, 2 trancadas, falsa, porta enorme) + grades da trilha e do labirinto + portas de serviço",
 		str([doors.size(), grates.size(), service.size()]))
 	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
 	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2 and Level.room_of(-140.0) == 3,
@@ -747,9 +748,9 @@ func test_doors_seal_rooms() -> void:
 ## Antes ficavam parados na boca do corredor ou presos na quina em "hunt" para sempre (HUD "BUSCA ATIVA" sem fim).
 func test_unreachable_hunt_gives_up() -> void:
 	var ladder_top := Vector3(Catwalk.LADDER_X, Catwalk.FLOOR_Y, Catwalk.FRONT_Z + 0.5)
-	var maze_in := Level.maze_cell(1, 1)
+	var maze_in := Level.maze_cell(0, 0)
 	var searching := ["hunt", "investigate", "search", "sweep"]
-	for at: Vector3 in [ladder_top, maze_in, Level.maze_cell(2, 0) + Vector3(0, Level.MAZE_STACK, 0)]:
+	for at: Vector3 in [ladder_top, maze_in, Level.maze_cell(6, 0) + Vector3(0, Level.MAZE_STACK, 0)]:
 		if t._world:
 			t._world.queue_free()
 			t._world = null
@@ -759,6 +760,10 @@ func test_unreachable_hunt_gives_up() -> void:
 		await t._frames(3)
 		main.shed.mid_gate.set_held(false, true)  # a grade do painel aberta: o meio do galpão chega ao labirinto
 		main.shed.mid_gate.open()
+		# fora do labirinto e do escritório (porta fechada: o alarme não chega lá) ninguém entra na conta: parados, pesam menos
+		for e: Enemy in main.all_enemies():
+			if Level.room_of(e.global_position.x) != 0 or not Shed.zone_of(e.global_position) in ["strip", "office"]:
+				e.process_mode = Node.PROCESS_MODE_DISABLED
 		var people: RID = main.soldiers[0].nav_map
 		check(people.is_valid() and main.soldiers.all(func(s: Soldier) -> bool: return s.nav_map == people), "soldados andam na malha de gente")
 		# a sincronização do mapa roda em outra thread: espera por relógio
@@ -772,13 +777,14 @@ func test_unreachable_hunt_gives_up() -> void:
 			for r in Level.MAZE.size():
 				for c in Level.MAZE[r].length():
 					var cell := Level.maze_cell(c, r)
-					if Vector2i(c, r) == Level.maze_ladder_cell():
-						# a caixa da subida do mezanino (Catwalk.CLIMB_CRATE) ocupa o fundo do nicho: o chão é na frente dela
-						cell.z = Catwalk.CLIMB_CRATE.z - Catwalk.CLIMB_CRATE_SIZE.z * 0.5 - 0.35
+					if Level.MAZE[r][c] == "L":
+						continue  # o pé da escada do alçapão (entre a escada e a parede): a célula da frente do nicho conta
+					if cell.distance_to(main.chest.global_position) < 0.8:
+						cell = main.chest.kneel_transform().origin  # o baú da M16 ocupa a célula: o chão é na frente dele
 					var path := NavigationServer3D.map_get_path(people, probe, cell, true)
-					if Level.MAZE[r][c] == "." and (path.is_empty() or Enemy._flat(path[path.size() - 1] - cell).length() > 0.5):
+					if Level.MAZE[r][c] in [".", "_", "L"] and (path.is_empty() or Enemy._flat(path[path.size() - 1] - cell).length() > 0.5):
 						cut.append(Vector2i(c, r))
-			check(cut.is_empty(), "todo corredor do labirinto (e o nicho da escada do mezanino) é chão para os soldados", str(cut))
+			check(cut.is_empty(), "todo corredor do labirinto (debaixo do mezanino e o nicho do alçapão também) é chão para os soldados", str(cut))
 			var raptor_path := NavigationServer3D.map_get_path(raptor_map, probe, maze_in, true)
 			check(raptor_path.is_empty() or Enemy._flat(raptor_path[raptor_path.size() - 1] - maze_in).length() > 0.5, "raptor (malha grossa) não cabe no labirinto")
 		# ela fica no telhado (começo da fase), longe da vista: só o alarme manda os guardas ao ponto
@@ -798,7 +804,7 @@ func test_unreachable_hunt_gives_up() -> void:
 				if sd.state in searching:
 					went[sd] = true
 					busy.append(sd)
-				in_niche = in_niche or (absf(sd.global_position.x - Catwalk.LADDER_X) < 0.8 and sd.global_position.z > Level.MAZE_Z0 + Level.MAZE_CELL)
+				in_niche = in_niche or Enemy._flat(sd.global_position - Vector3(Catwalk.LADDER_X, 0, Catwalk.FRONT_Z - 0.6)).length() < 1.2
 				reached = reached or Enemy._flat(sd.global_position - at).length() < 1.2
 				swept = swept or sd.state == "sweep"
 			if i == 90:
@@ -835,7 +841,7 @@ func test_unreachable_hunt_gives_up() -> void:
 		await t.process_frame
 
 
-## Sniper do mezanino: com ela à vista mira (laser) e atira; ela some atrás das caixas do labirinto = o laser apaga, ele
+## Guarda do mezanino (M16): com ela à vista mira e atira rajadas; ela some atrás das caixas do labirinto = ele
 ## não atira mais nas caixas e, sem vê-la por LOSE_TIME, procura na passarela e esquece. Antes cada ciclo de mira e
 ## recarga zerava o tempo sem vê-la: atirava nas caixas para sempre (impossível de jogar).
 func test_sniper_forgets() -> void:
@@ -851,8 +857,8 @@ func test_sniper_forgets() -> void:
 	for sd: Soldier in main.soldiers:
 		sd.global_position = Vector3(0, -40, 0)  # só o sniper
 	var sn: Sniper = main.sniper
-	# no chão, à frente do mezanino (fora do ponto cego), parada à vista
-	p.global_position = Vector3(-1.0, 0, -4.0)
+	# no chão, num corredor do labirinto à vista do mezanino (a parede do labirinto tapa o resto do galpão), parada
+	p.global_position = Level.maze_cell(8, 2)
 	p.reset_physics_interpolation()
 	await t._frames(3)
 	sn.spot()
@@ -862,8 +868,8 @@ func test_sniper_forgets() -> void:
 		if sn.shots_fired > shots0:
 			break
 	check(sn.shots_fired > shots0, "sniper atira nela à vista")
-	# ela some no canto do labirinto onde a escada do telhado desce (atrás das pilhas de caixas: dali ele não a vê)
-	p.global_position = Level.maze_cell(11, 3)
+	# ela some no nicho onde a escada do telhado desce (atrás das pilhas de caixas: dali ele não a vê)
+	p.global_position = Level.maze_cell(Level.MAZE_HATCH.x, Level.MAZE_HATCH.y)
 	p.reset_physics_interpolation()
 	await t._frames(30)
 	var shots1 := sn.shots_fired
@@ -874,7 +880,7 @@ func test_sniper_forgets() -> void:
 			calm_at = i / 60.0
 			break
 	check(sn.shots_fired == shots1, "escondida: ele não atira mais nas caixas", str(sn.shots_fired - shots1))
-	check(not sn.laser.visible, "escondida: laser apagado")
+	check(sn.rifleman() and sn.laser == null, "o do mezanino é de M16, sem laser")
 	check(calm_at >= 0.0 and calm_at < 15.0, "sem vê-la, procura na passarela e esquece (em menos de 15 s)", "%s %.1f" % [sn.state, calm_at])
 	main.queue_free()
 	await t.process_frame

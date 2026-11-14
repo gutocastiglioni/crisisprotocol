@@ -16,6 +16,8 @@ const WEAPON_SCENES := {
 	"m79": preload("res://assets/characters/m79.glb"),
 	"sniper": preload("res://assets/characters/sniper.glb"),
 }
+## a pistola é pequena: no chão aparece maior que as armas longas (que já ficam em 1,15)
+const PISTOL_SCALE := 1.8
 const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 const GLOW := preload("res://shaders/item_glow.gdshader")
 ## faixa de cada tipo (a cor diz a arma de longe)
@@ -24,20 +26,15 @@ const COLORS := {
 	"m79": Color(0.45, 1.0, 0.3), "sniper": Color(0.2, 0.8, 1.0),
 	"health": Color(1.0, 0.15, 0.12),
 }
-## onde ficam: galpão (pentes extras; as armas dos baús já trazem um pente cheio), trilha do pátio da mata (na beira da trilha e
+## onde ficam: galpão (só o kit de vida: munição lá é a que os guardas largam), trilha do pátio da mata (na beira da trilha e
 ## das faixas, longe das moitas dos raptors: um pouco antes de cada seção, o que ela pede; no planalto da escopeta, o
 ## prêmio de quem sobe o barranco), túnel da mina e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de
 ## munição dela) ou "health".
 const LAYOUT := [
-	{"pos": Vector3(-11.5, 0, 3.0), "kind": "health", "amount": 35},
-	# pentes extras no galpão (pistola = 1 pente, M16 = meio pente): faixa do painel, meio, ala da M16, sala dos clones e
-	# o canto da porta do pátio
-	{"pos": Vector3(-10.0, 0, 5.6), "kind": "pistol", "amount": 10},
-	{"pos": Vector3(3.0, 0, -4.5), "kind": "pistol", "amount": 10},
-	{"pos": Vector3(11.5, 0, -5.0), "kind": "m16", "amount": 15},
-	{"pos": Vector3(-6.0, CloneLab.FLOOR_Y, -18.5), "kind": "pistol", "amount": 10},
-	{"pos": Vector3(6.0, CloneLab.FLOOR_Y, -25.5), "kind": "m16", "amount": 15},
-	{"pos": Vector3(-12.2, 0, -4.0), "kind": "pistol", "amount": 10},
+	# galpão: o kit de vida no corredor escondido das estantes e a munição de pistola no arsenal do escritório; fora isso,
+	# só a que os guardas largam
+	{"pos": Vector3(-12.0, 0, 40.5), "kind": "health", "amount": 35},
+	{"pos": Vector3(-1.8, 0, 44.1), "kind": "pistol", "amount": 10},
 	# S1 (faixa leste, até a emboscada) e o fim dela, antes do primeiro portão de grade
 	{"pos": Vector3(-15.0, 0, -15.5), "kind": "pistol", "amount": 10},
 	{"pos": Vector3(-15.2, 0, -21.0), "kind": "m16", "amount": 15},
@@ -84,6 +81,7 @@ var is_drop := false
 var _home := Vector3.ZERO
 var _body: Node3D
 var _t := 0.0
+static var _pistol_mesh: ArrayMesh
 
 
 ## Cria um item dropado de inimigo no mundo com queda suave até o chão.
@@ -120,7 +118,7 @@ func _ready() -> void:
 	_body = Node3D.new()
 	_body.scale = Vector3.ONE * (1.15 if is_weapon else BODY_SCALE)
 	add_child(_body)
-	if is_weapon and kind in WEAPON_SCENES:
+	if is_weapon and (kind in WEAPON_SCENES or kind == "pistol"):
 		_build_weapon()
 	elif kind == "health":
 		_build_kit()
@@ -145,8 +143,45 @@ func fall_to_ground(from: Vector3) -> void:
 		Sfx.play(self, "casing_brass", global_position))
 
 
+## A pistola comum não tem .glb solto: é a malha "Pistol" do corpo dela (como no WeaponIcon), sem pele.
+static func pistol_mesh() -> ArrayMesh:
+	if _pistol_mesh == null:
+		var body: Node = HeroineModel.SCENE.instantiate()
+		var src := body.find_child("Pistol", true, false) as MeshInstance3D
+		_pistol_mesh = WeaponIcon._unskinned(src.mesh) if src else null
+		body.free()
+	return _pistol_mesh
+
+
+## Pistola deitada de lado no chão (o perfil para cima; giro do WeaponIcon = perfil para a câmera, mais 90° para deitar).
+func _pistol_node() -> Node3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = pistol_mesh()
+	var inst := Node3D.new()
+	inst.add_child(mi)
+	if mi.mesh:
+		mi.position = -mi.mesh.get_aabb().get_center()
+	var turn: Array = WeaponIcon.TURN.pistol
+	inst.basis = Basis(Vector3.RIGHT, deg_to_rad(-90.0)) * Basis(Vector3.BACK, deg_to_rad(turn[1])) \
+		* Basis(Vector3.UP, deg_to_rad(turn[0]))
+	inst.position.y = 0.08
+	return inst
+
+
 ## Malha 3D da arma girando, com halo suave no chão e feixe de luz da cor da arma.
 func _build_weapon() -> void:
+	if kind == "pistol":
+		_body.scale = Vector3.ONE * PISTOL_SCALE
+		var gun := _pistol_node()
+		for mi in WeaponIcon._meshes(gun):
+			var pm := ShaderMaterial.new()
+			pm.shader = Gfx.shader()
+			pm.set_shader_parameter("albedo_tex", ATLAS)
+			pm.set_shader_parameter("rim", 0.4)
+			mi.material_override = pm
+		_body.add_child(gun)
+		glow_set(self, COLORS.pistol, _t)
+		return
 	var scene: PackedScene = WEAPON_SCENES[kind]
 	var inst: Node3D = scene.instantiate()
 	var holder := Node3D.new()

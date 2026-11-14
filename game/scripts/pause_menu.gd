@@ -1,17 +1,22 @@
 class_name PauseMenu
 extends Node
 ## Menu de pausa (ESC / START): árvore pausada (este nó roda mesmo assim), fundo escurecido e a lista
-## CONTINUAR / REINICIAR / SHOWROOM / TELA CHEIA / VIBRAÇÃO / SAIR DO JOGO (SHOWROOM abre o `Showroom` dos dinossauros por
-## cima; voltar dele devolve o menu; TELA CHEIA e VIBRAÇÃO trocam SIM/NÃO na hora e salvam em `Settings` para o jogo já abrir
-## assim). Abrir o menu para a vibração do controle (`Rumble.stop`).
+## CONTINUAR / REINICIAR / CONTROLES / OPÇÕES / MENU INICIAL / SHOWROOM / SAIR DO JOGO (CONTROLES abre a `ControlsScreen`,
+## OPÇÕES a `OptionsScreen` (tela cheia, volume, vibração; a mesma do menu inicial) e SHOWROOM o `Showroom` dos dinossauros
+## por cima; voltar deles devolve o menu; MENU INICIAL = sinal `to_title`, o main volta à tela de título). Abrir o menu
+## para a vibração do controle (`Rumble.stop`).
 ## Cima/baixo (W/S, setas, analógico, direcional) escolhe, E / X / ENTER confirma,
 ## ESC / START / bola volta ao jogo; o mouse também escolhe e clica. Quem abre é o `main` (não abre com o jogo já pausado
 ## por uma tela de inspeção nem no game over). Captura e testes: `on_shown` é chamado quando o menu aparece.
 
 signal restart
 signal quit
+signal to_title
 
-const ITEMS := ["CONTINUAR", "REINICIAR", "SHOWROOM", "TELA CHEIA", "VIBRAÇÃO", "SAIR DO JOGO"]
+const ITEMS := ["CONTINUAR", "REINICIAR", "CONTROLES", "OPÇÕES", "MENU INICIAL", "SHOWROOM", "SAIR DO JOGO"]
+## Versão para jogadores (marca "public" nos presets de `export_presets.cfg`): sem SHOWROOM, que mostraria o chefe antes da hora.
+const PUBLIC_FEATURE := "public"
+const DEV_ONLY := ["SHOWROOM"]
 const UP := ["move_forward", "ui_up"]
 const DOWN := ["move_back", "ui_down"]
 const CONFIRM := ["interact", "crouch", "ui_accept"]
@@ -22,6 +27,7 @@ const HINT_ITEMS := [{"keys": ["SETAS"], "pad": "dpad", "text": "ESCOLHER"}, {"a
 	{"action": "pause", "text": "VOLTAR"}]
 const ROW := 14.0  # altura de cada opção (unidades do HUD de 320x240)
 
+var items: Array = menu_items(is_public())  # as opções desta versão (ITEMS, menos DEV_ONLY na exportada)
 var is_open := false
 var selected := 0
 var on_shown := Callable()
@@ -33,6 +39,16 @@ var _hint: UiStyle.Hint
 var _rows: Array[Label] = []
 var _opened_frame := -1
 var showroom: Showroom
+var controls: ControlsScreen
+var options: OptionsScreen
+
+
+static func is_public() -> bool:
+	return OS.has_feature(PUBLIC_FEATURE)
+
+
+static func menu_items(public: bool) -> Array:
+	return ITEMS.filter(func(it: String) -> bool: return not (public and it in DEV_ONLY))
 
 
 func _ready() -> void:
@@ -47,8 +63,8 @@ func _ready() -> void:
 	_hint = UiStyle.Hint.new()
 	layer.add_child(_hint)
 	_hint.set_items(HINT_ITEMS)
-	for i in ITEMS.size():
-		var l := _label(_item_text(i), TEXT)
+	for i in items.size():
+		var l := _label(items[i], TEXT)
 		l.mouse_filter = Control.MOUSE_FILTER_STOP
 		l.mouse_entered.connect(_select.bind(i))
 		l.gui_input.connect(_on_row_input.bind(i))
@@ -56,6 +72,12 @@ func _ready() -> void:
 	showroom = Showroom.new()
 	add_child(showroom)
 	showroom.closed.connect(_on_showroom_closed)
+	controls = ControlsScreen.new()
+	add_child(controls)
+	controls.closed.connect(_on_showroom_closed)
+	options = OptionsScreen.new()
+	add_child(options)
+	options.closed.connect(_on_showroom_closed)
 	_set_visible(false)
 
 
@@ -74,6 +96,8 @@ func _set_visible(v: bool) -> void:
 func set_ui_scale(k: float) -> void:
 	layer.scale = Vector2(k, k)
 	showroom.set_ui_scale(k)
+	controls.set_ui_scale(k)
+	options.set_ui_scale(k)
 
 
 func open() -> void:
@@ -114,18 +138,8 @@ func _select(i: int, beep := true) -> void:
 		Sfx.ui(self, "keypad_beep")
 	selected = i
 	for k in _rows.size():
-		_rows[k].text = ("> %s <" if k == selected else "%s") % _item_text(k)
+		_rows[k].text = ("> %s <" if k == selected else "%s") % items[k]
 		_rows[k].add_theme_color_override("font_color", PICK if k == selected else TEXT)
-
-
-## Texto da opção; tela cheia e vibração mostram o estado atual.
-func _item_text(i: int) -> String:
-	match ITEMS[i]:
-		"TELA CHEIA":
-			return "TELA CHEIA: %s" % ("SIM" if Settings.fullscreen else "NÃO")
-		"VIBRAÇÃO":
-			return "VIBRAÇÃO: %s" % ("SIM" if Settings.vibration else "NÃO")
-	return ITEMS[i]
 
 
 func _on_row_input(e: InputEvent, i: int) -> void:
@@ -138,26 +152,31 @@ func _choose() -> void:
 	if not is_open:
 		return
 	Sfx.ui(self, "keypad_ok")
-	match ITEMS[selected]:
+	match items[selected]:
 		"CONTINUAR":
 			close()
 		"REINICIAR":
 			close()
 			restart.emit()
+		"CONTROLES":
+			_set_visible(false)
+			controls.open()
+		"MENU INICIAL":
+			# some sem soltar a pausa: a tela de título abre por cima com o jogo parado
+			is_open = false
+			_set_visible(false)
+			to_title.emit()
 		"SHOWROOM":
 			_set_visible(false)
 			showroom.open()
-		"TELA CHEIA":
-			Settings.set_fullscreen(not Settings.fullscreen)
-			_select(selected, false)
-		"VIBRAÇÃO":
-			Settings.set_vibration(not Settings.vibration)
-			_select(selected, false)
+		"OPÇÕES":
+			_set_visible(false)
+			options.open()
 		"SAIR DO JOGO":
 			quit.emit()
 
 
-## Voltou do showroom: o menu reaparece e o botão que fechou o showroom não conta aqui.
+## Voltou do showroom, dos controles ou das opções: o menu reaparece e o botão que fechou não conta aqui.
 func _on_showroom_closed() -> void:
 	if not is_open:
 		return
@@ -168,20 +187,20 @@ func _on_showroom_closed() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if is_open and not showroom.is_open and event.is_action_pressed("pause") and not event.is_echo():
+	if is_open and not showroom.is_open and not controls.is_open and not options.is_open and event.is_action_pressed("pause") and not event.is_echo():
 		get_viewport().set_input_as_handled()
 		close()
 
 
 func _process(_delta: float) -> void:
-	if not is_open or showroom.is_open:
+	if not is_open or showroom.is_open or controls.is_open or options.is_open:
 		return
 	_layout()
 	if Engine.get_process_frames() == _opened_frame:
 		return  # o botão que abriu não conta
 	var step := int(_just(DOWN)) - int(_just(UP))
 	if step != 0:
-		_select(posmod(selected + step, ITEMS.size()))
+		_select(posmod(selected + step, items.size()))
 	var pad_x := _just(["crouch"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_A)
 	var pad_o := _just(["roll"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_B)
 	var pad_y := _just(["interact"]) and Input.is_joy_button_pressed(0, JOY_BUTTON_Y)
@@ -200,7 +219,7 @@ func _just(actions: Array) -> bool:
 
 func _layout() -> void:
 	var area := get_viewport().get_visible_rect().size / layer.scale
-	var h := 40.0 + ROW * ITEMS.size() + 18.0
+	var h := 40.0 + ROW * items.size() + 18.0
 	var top := roundf(area.y * 0.5 - h * 0.5)
 	_shade.size = area
 	_band.position = Vector2(0, top)

@@ -7,15 +7,17 @@ class_name Voice
 
 const DIR := "res://assets/voices/"
 const VOICES := ["cadu", "faber", "jeff"]
-## fala -> quantas variações (tem que bater com LINES de make_voices.py; voice_tests confere os arquivos)
-const LINES := {"huh": 4, "check": 3, "nothing": 3, "spot": 4, "lost": 3, "search": 3, "corpse": 3, "hit": 3,
-	"giveup": 3, "ack": 3}
+## fala -> quantas variações, normais + furiosas (tem que bater com LINES de make_voices.py; voice_tests confere os
+## arquivos). O sorteio é entre todas: às vezes sai a furiosa ("Ali, desgraçada!"). "taunt" = provocação no tiroteio,
+## "down" = o tiro dele a matou.
+const LINES := {"huh": 4, "check": 3, "nothing": 3, "spot": 7, "lost": 5, "search": 5, "corpse": 5, "hit": 5,
+	"giveup": 4, "ack": 5, "taunt": 5, "down": 4}
 ## mais alto corta a fala que estiver tocando; igual ou mais baixo espera a vez (e se perde)
-const PRIORITY := {"spot": 5, "hit": 5, "corpse": 4, "lost": 3, "search": 3, "ack": 2, "giveup": 2, "huh": 1,
-	"check": 1, "nothing": 1}
+const PRIORITY := {"down": 6, "spot": 5, "hit": 5, "corpse": 4, "lost": 3, "search": 3, "ack": 2, "giveup": 2,
+	"taunt": 2, "huh": 1, "check": 1, "nothing": 1}
 ## segundos mínimos entre duas falas do mesmo tipo (de qualquer um)
-const GAP := {"spot": 2.5, "hit": 3.0, "corpse": 3.0, "lost": 5.0, "search": 6.0, "ack": 4.0, "giveup": 8.0,
-	"huh": 4.0, "check": 5.0, "nothing": 6.0}
+const GAP := {"down": 2.0, "spot": 2.5, "hit": 3.0, "corpse": 3.0, "lost": 5.0, "search": 6.0, "ack": 4.0, "giveup": 8.0,
+	"taunt": 7.0, "huh": 4.0, "check": 5.0, "nothing": 6.0}
 const AFTER := 0.4  # silêncio depois de cada fala antes da próxima
 const MAX_DIST := 35.0
 const UNIT := 4.0  # distância até onde a fala toca cheia (AudioStreamPlayer3D.unit_size)

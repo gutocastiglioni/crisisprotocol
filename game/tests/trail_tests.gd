@@ -79,20 +79,28 @@ func test_layout() -> void:
 	var top := Yard.PLATEAU_Y
 	t.check(not _hit(space, Vector3(-26.0, top + 1.5, 20), Vector3(-34, 1.0, 20)), "da beira do planalto a vista e o tiro descem em S3")
 	t.check(_hit(space, Vector3(-23, top + 1.0, 20), Vector3(-30, top + 1.0, 20), Yard.GRATE_LAYER), "a borda do planalto segura quem quer pular para S3")
-	# do telhado do galpão não se pula para o planalto: o alambrado da borda colada no galpão segura em toda a altura
+	# do telhado do galpão não se chega ao planalto: a parte do telhado onde ela anda (atrás da telha translúcida) fica
+	# longe dele, e o alambrado da borda colada no galpão fecha o planalto em toda a altura
+	t.check(Roof.FENCE_Z > Yard.PLATEAU.end.y + 5.0, "o telhado andável fica longe do planalto")
 	var roof_ok := true
-	for z in [-1.8, 3.0, 8.0, 12.9]:
-		for y in [Roof.Y + 0.5, Roof.Y + Roof.PARAPET_H + 1.0, Roof.Y + Roof.PARAPET_H + 3.0]:
+	for z in [-1.8, 10.0, 25.0, 44.0]:
+		for y in [Yard.PLATEAU_Y + 0.5, Yard.PLATEAU_Y + 3.0, Yard.WALL_H - 0.5]:
 			if not _hit(space, Vector3(-12.6, y, z), Vector3(-15.0, y, z), Yard.GRATE_LAYER):
 				roof_ok = false
-	t.check(roof_ok, "alambrado entre a mureta oeste do telhado e o planalto")
-	# fim de S1: alambrado do chão para cima na frente da face do planalto; pulando do telhado na diagonal ela não agarra
+	t.check(roof_ok, "alambrado na borda do planalto colada no galpão")
+	# fim de S1: alambrado em cima da borda do planalto (a face de pedra fica livre embaixo); pulando do telhado na
+	# diagonal ela não agarra
 	var end_ok := true
+	var ground_free := true
 	for x in [-13.6, -18.0, -23.0]:
-		for y in [0.5, 2.5, Yard.PLATEAU_Y + 1.0, Roof.Y + 1.0]:
+		for y in [Yard.PLATEAU_Y + 0.3, Yard.PLATEAU_Y + 1.0, Roof.Y + 1.0]:
 			if not _hit(space, Vector3(x, y, -3.0), Vector3(x, y, -1.0), Yard.GRATE_LAYER):
 				end_ok = false
-	t.check(end_ok, "alambrado fecha o fim de S1 (face sul do planalto)")
+		for y in [0.5, 2.5]:
+			if _hit(space, Vector3(x, y, -3.0), Vector3(x, y, -1.0), Yard.GRATE_LAYER):
+				ground_free = false
+	t.check(end_ok, "alambrado fecha o fim de S1 (em cima da borda sul do planalto)")
+	t.check(ground_free, "sem grade no chão de S1 na frente da face do planalto")
 	var pl: Player = main.player
 	var no_grab := true
 	for x in [-13.8, -16.0, -22.0]:

@@ -18,6 +18,10 @@ extends Enemy
 ## linha livre até ela por STANDOFF_BLIND s, `standoff_lost`. `release(como)` no
 ## movimento brusco: mirou, correu/pulou ou rolou = tiro na hora (rolando, erra) e, em todo caso, a próxima mira leva
 ## `STANDOFF_LOCK` s (o sensor enche devagar); depois, o fluxo de sempre.
+## Guarda do mezanino do galpão (`weapon` = "m16", antes de entrar na árvore): mesmo posto, ronda e ponto cego, mas de
+## M16 e sem laser: com ela à vista mira `RIFLE_AIM` s (o sensor de perigo sobe), solta rajadas curtas de longe
+## (`RIFLE_BURST`, até FIRE_RANGE, chance `_rifle_chance`), descansa `RIFLE_REST` e mira de novo em `RIFLE_REAIM`. Morto,
+## larga o M16.
 
 signal killed
 signal fired
@@ -34,7 +38,12 @@ const DAMAGE := 38
 const FIRE_RANGE := 35.0
 const AIM_LOCK_TIME := 1.25  # tempo de mira com laser vermelho antes do disparo
 const COOLDOWN_TIME := 2.2   # intervalo de recarga do ferrolho entre disparos
-const COMBAT := ["alert", "aim_lock", "cooldown", "standoff"]
+const COMBAT := ["alert", "aim_lock", "burst", "cooldown", "standoff"]
+## De M16 (`weapon` "m16", o guarda do mezanino): rajadas, sem laser
+const RIFLE_AIM := 0.9  # s mirando nela à vista antes da primeira rajada (o sensor de perigo avisa)
+const RIFLE_REAIM := 0.35  # s de mira entre uma rajada e a seguinte
+const RIFLE_BURST := [3, 5]
+const RIFLE_REST := [0.8, 1.4]
 const STANDOFF_LOCK := 5.0  # s da primeira mira depois da rendição (`release`): o sensor de perigo enche nesse tempo
 const SWEEP_SETTLE := 0.6  # fração da mira em que o ponto do laser chega ao peito dela
 const BLINK_AT := 0.75  # daqui até o tiro o laser pisca, cada vez mais rápido
@@ -43,11 +52,12 @@ const STANDOFF_TIMEOUT := 15.0  # s rendida na mira (fora da cena) até eles ati
 const STANDOFF_BLIND := 0.4  # s sem linha livre até ela na rendição: perdeu a vista (`standoff_lost`)
 const BODY_DEPTH := 0.13  # m do ponto mirado (meio do peito dela) até a frente da roupa: o ponto do laser fica ali
 const SEES_GRACE := 0.3  # sem vê-la por mais que isto, a mira não avança nem dispara
-const BLIND_SPOT_Z := 0.0  # metade da sala (z > 0 = início da sala no chão, protegido pelo mezanino)
+const BLIND_SPOT_Z := Level.MAZE_FRONT  # chão do labirinto (z > MAZE_FRONT), embaixo e em volta do mezanino
 ## Na ronda do mezanino ele também olha para baixo, para as caixas do labirinto (Level.MAZE): com a cabeça baixa
 ## (head_pitch <= DOWN_AT) o ponto cego não vale lá dentro para ela em pé e a vista é a de sempre (as pilhas tapam parte
 ## dos corredores); agachada entre as pilhas ele não a vê (de alguns pontos a linha passava raspando a quina de uma pilha).
 const LOOK_DOWN := -0.55
+const PATROL_LOOK := 0.75  # na ronda, até quanto a cabeça vira (rad) para o lado do galpão
 const DOWN_AT := -0.35
 ## Caindo do posto (`falls`): ainda em pé ele cambaleia para a frente (StaggerFwd) até a barriga bater na barra da cerca
 ## (`ledge`); aí amolece com o embalo, o tronco passa por cima da barra (dobra na cintura) e a gravidade leva o corpo.
@@ -70,12 +80,16 @@ const FALL_SETTLE := 0.5  # corpo mais lento que isto (m/s) já parou: a loot ca
 const FALL_MAX := 6.0  # s depois de morrer a loot cai de qualquer jeito (no chão na frente do posto, se o corpo ficou lá em cima)
 
 var model: HeroineModel
+var weapon := WEAPON  # "sniper" (laser e tiro forte) ou "m16" (rajadas; antes de entrar na árvore)
 var health := MAX_HEALTH
 var _shape: CollisionShape3D
 var laser: SniperLaser
 var shots_fired := 0
 var aim_progress := 0.0
 var _cooldown_t := 0.0
+var _burst := 0  # tiros que faltam na rajada (M16)
+var _burst_i := 0
+var _shot_t := 0.0
 var _lock_time := AIM_LOCK_TIME  # tempo desta mira (a primeira depois da rendição é STANDOFF_LOCK)
 var _sweep := Vector3.ZERO  # de onde o ponto do laser começa, em relação ao peito dela
 var _laser_t := 0.0  # s com o laser aceso nesta mira (tremida, acender, pisca-pisca)
@@ -90,6 +104,8 @@ var perch := Rect2()
 var floor_y := Catwalk.FLOOR_Y
 var home_yaw := 0.0
 var falls := false
+## Morto, o fuzil e a `loot` caem aqui (no chão) em vez de onde ele está (o mezanino não tem subida: Catwalk.DROP_POINT).
+var drop_at: Variant = null
 ## alto do guarda-corpo na frente do posto (mundo; só a altura e a distância para a frente contam)
 var ledge := Vector3.ZERO
 var _staggering := false
@@ -101,7 +117,7 @@ var _landed := false  # caiu do posto e já largou o que tinha (fuzil, cartão)
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1
-	
+
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.3
@@ -109,15 +125,16 @@ func _ready() -> void:
 	_shape.shape = cap
 	_shape.position.y = 0.86
 	add_child(_shape)
-	
+
 	model = HeroineModel.new()
 	model.scene = BODY
 	model.atlas = ATLAS
 	add_child(model)
-	model.set_weapon(WEAPON)
-	
-	_setup_laser()
-	
+	model.set_weapon(weapon)
+
+	if not rifleman():
+		_setup_laser()
+
 	# Percepção de atirador de elite no alto
 	# Ponto cego para baixo: não enxerga o início da sala (z > BLIND_SPOT_Z) no chão abaixo do mezanino.
 	# Ao avançar da metade da sala para a frente (z <= 0), ela entra no campo de visão e alcance de tiro (35m)
@@ -134,9 +151,9 @@ func _ready() -> void:
 	armor = Soldier.FLAK_MULT if flak else Soldier.VEST_MULT
 	armor_name = Soldier.FLAK_TEXT if flak else ""
 	can_stealth = true
-	drop_kind = "sniper"
+	drop_kind = weapon
 	drop_is_weapon = true
-	drop_amount = 5
+	drop_amount = 15 if rifleman() else 5  # o M16 largado vem com meio pente, como o do guerrilheiro
 	drop_chance = 1.0
 	arrival_dist = 0.5
 	search_sweeps = 0
@@ -166,9 +183,11 @@ func _physics_process(delta: float) -> void:
 				_face(_to_target(), delta, turn_rate * 2.0)
 				_update_pitch(delta)
 				if _t >= 0.25:
-					start_aim_lock()
+					start_aim_lock(RIFLE_AIM if rifleman() else AIM_LOCK_TIME)
 			"aim_lock":
 				_aim_lock_process(delta)
+			"burst":
+				_burst_process(delta)
 			"cooldown":
 				_cooldown_process(delta)
 			"standoff":
@@ -189,10 +208,11 @@ func _physics_process(delta: float) -> void:
 			if _vigil_t <= 0.0:
 				_vigil_t = rng.randf_range(1.5, 2.8)
 				_vigil_target_pitch = LOOK_DOWN if _vigil_target_pitch > DOWN_AT and not perch.has_area() else -0.15
-			if velocity.x > 0.05:
-				_vigil_target_yaw = 0.65
-			elif velocity.x < -0.05:
-				_vigil_target_yaw = -0.65
+			# a cabeça vira para o lado do galpão que ele vigia (home_yaw), andando para onde for na ronda
+			if Vector2(velocity.x, velocity.z).length() > 0.05:
+				var off := angle_difference(rotation.y, home_yaw)
+				# de costas para o galpão (andando para a parede): olha para a frente, a cabeça não torce para trás
+				_vigil_target_yaw = 0.0 if absf(off) > PI * 0.6 else clampf(off, -PATROL_LOOK, PATROL_LOOK)
 			head_yaw = lerpf(head_yaw, _vigil_target_yaw, 1.0 - exp(-3.5 * delta))
 			head_pitch = lerpf(head_pitch, _vigil_target_pitch, 1.0 - exp(-3.5 * delta))
 			if model:
@@ -231,12 +251,24 @@ func in_combat() -> bool:
 	return state in COMBAT
 
 
+## De M16 (o guarda do mezanino): rajadas sem laser.
+func rifleman() -> bool:
+	return weapon == "m16"
+
+
 ## Sensor de perigo: com o laser nela, sobe junto com a mira até o disparo (que não erra quem não esquiva); recarregando
 ## o ferrolho ou sem vê-la, pouco.
 func _threat() -> float:
 	if state == "standoff":
 		# rendida: o sensor sai do zero e enche até o tiro em STANDOFF_TIMEOUT s
 		return _share(clampf(_standoff_clock / STANDOFF_TIMEOUT, 0.0, 1.0), func(e: Sniper) -> bool: return e.state == "standoff")
+	if state == "burst" and _lost_t <= SEES_GRACE:
+		# chance de pelo menos um tiro do resto da rajada acertar
+		var miss := 1.0
+		var dist := _to_target().length()
+		for i in maxi(_burst, 1):
+			miss *= 1.0 - _rifle_chance(dist, _burst_i + i)
+		return maxf(1.0 - miss, 0.35)
 	if state == "aim_lock" and _lost_t <= SEES_GRACE:
 		var p := clampf(aim_progress / _lock_time, 0.0, 1.0)
 		if _lock_time > AIM_LOCK_TIME:
@@ -352,7 +384,7 @@ func _steer(_goal: Vector3, to: Vector3, _delta: float) -> Vector3:
 func _catwalk_point(pos: Vector3) -> Vector3:
 	if perch.has_area():
 		return Vector3(clampf(pos.x, perch.position.x, perch.end.x), floor_y, clampf(pos.z, perch.position.y, perch.end.y))
-	var cx := clampf(pos.x, -3.8, 1.0)
+	var cx := clampf(pos.x, Catwalk.X0 + 0.5, Catwalk.X1 - 0.5)
 	var cz := clampf(pos.z, Catwalk.FRONT_Z + 0.5, Catwalk.WALL_Z - 0.5)
 	return Vector3(cx, Catwalk.FLOOR_Y, cz)
 
@@ -366,7 +398,7 @@ func _clamp_to_catwalk() -> void:
 			global_position.y = floor_y
 			velocity.y = 0.0
 		return
-	global_position.x = clampf(global_position.x, -4.6, 1.2)
+	global_position.x = clampf(global_position.x, Catwalk.X0 + 0.3, Catwalk.X1 - 0.3)
 	global_position.z = clampf(global_position.z, Catwalk.FRONT_Z + 0.3, Catwalk.WALL_Z - 0.3)
 	if absf(global_position.y - Catwalk.FLOOR_Y) < 0.25 or global_position.y < Catwalk.FLOOR_Y:
 		global_position.y = Catwalk.FLOOR_Y
@@ -418,19 +450,102 @@ func _aim_lock_process(delta: float) -> void:
 		aim_progress = maxf(aim_progress - delta * 2.0, 0.0)
 		_face(_last_known - global_position, delta, turn_rate)
 		return
-	
+
 	var to: Vector3 = _to_target()
 	_face(to, delta, turn_rate * 1.5)  # mira firme e focada
 	_update_pitch(delta)
-	
+
 	aim_progress += delta
 	_laser_t += delta
 	var p := clampf(aim_progress / _lock_time, 0.0, 1.0)
 	var settle := smoothstep(0.0, SWEEP_SETTLE, p)
 	_point_laser(target.sight_point() + _sweep * (1.0 - settle) + _sway() * (1.0 - 0.8 * settle), _laser_strength(p))
-	
+
 	if aim_progress >= _lock_time:
-		_fire_sniper()
+		if rifleman():
+			_start_burst()
+		else:
+			_fire_sniper()
+
+
+## M16: começa uma rajada (às vezes provocando).
+func _start_burst() -> void:
+	_enter("burst", "Idle", 0.05)
+	_burst = rng.randi_range(RIFLE_BURST[0], RIFLE_BURST[1])
+	_burst_i = 0
+	_shot_t = 0.0
+	if randf() < Soldier.TAUNT_CHANCE:
+		Voice.say(self, "taunt")
+
+
+## M16: um tiro a cada SHOT_GAP até a rajada acabar; sumiu de vista, para de atirar. Depois descansa (cooldown).
+func _burst_process(delta: float) -> void:
+	if not _has_target() or dead:
+		_resume()
+		return
+	velocity.x = 0.0
+	velocity.z = 0.0
+	if _lost_t > SEES_GRACE:
+		_burst = 0
+	else:
+		_face(_to_target(), delta, turn_rate * 1.5)
+		_update_pitch(delta)
+		_shot_t -= delta
+		if _burst > 0 and _shot_t <= 0.0:
+			_fire_rifle()
+			_burst -= 1
+			_burst_i += 1
+			_shot_t = Soldier.SHOT_GAP
+	if _burst <= 0:
+		_enter("cooldown", "Idle", 0.1)
+		_cooldown_t = rng.randf_range(RIFLE_REST[0], RIFLE_REST[1])
+
+
+## M16: chance de acertar o tiro `nth` da rajada a `dist` m. Atirador de posto, firme de longe (cai devagar com a
+## distância), e o cano sobe a cada tiro como o do guerrilheiro.
+func _rifle_chance(dist: float, nth: int) -> float:
+	var chance := clampf(0.75 - dist * 0.012, 0.35, 0.7) * pow(Soldier.BURST_DECAY, nth)
+	if target.crouching:
+		chance *= 0.8
+	if Vector2(target.velocity.x, target.velocity.z).length() > 3.0:
+		chance *= 0.7
+	if target.is_dodging():
+		chance = 0.0
+	return chance
+
+
+## M16: um tiro da rajada; acerta com `_rifle_chance`, senão passa raspando. Cenário no meio = bate nele.
+func _fire_rifle() -> void:
+	shots_fired += 1
+	if model:
+		model.shoot()
+	var parent: Node = get_parent()
+	var muzzle: Vector3 = model.muzzle_position() if model else global_position + Vector3.UP * 1.3
+	var chest: Vector3 = target.sight_point()
+	var dir: Vector3 = (chest - muzzle).normalized()
+	Fx.muzzle_flash(parent, muzzle, weapon, dir)
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var block: Dictionary = space.intersect_ray(_ray(muzzle, chest))
+	var end := chest
+	var hit_her := false
+	if not block.is_empty():
+		end = block.position
+		Fx.impact(parent, end, false, block.normal, str((block.collider as Node).get_meta("surface", "concrete")))
+	elif rng.randf() < _rifle_chance(muzzle.distance_to(chest), _burst_i):
+		hit_her = true
+	else:
+		var side := dir.cross(Vector3.UP).normalized() * rng.randf_range(-1.0, 1.0)
+		var miss := (chest + side * 0.9 + Vector3.UP * rng.randf_range(-0.4, 0.4) - muzzle).normalized()
+		var far: Dictionary = space.intersect_ray(_ray(muzzle, muzzle + miss * FIRE_RANGE * 1.5))
+		end = far.position if not far.is_empty() else muzzle + miss * FIRE_RANGE
+		if not far.is_empty():
+			Fx.impact(parent, end, false, far.normal, str((far.collider as Node).get_meta("surface", "concrete")))
+	Fx.tracer(parent, muzzle, end, weapon)
+	if hit_her:
+		target.take_hit(GameMode.enemy_damage(Soldier.DAMAGE), dir, chest)
+		if target.dead:
+			Voice.say(self, "down")  # "Alvo abatido!"
+	fired.emit()
 
 
 func _cooldown_process(delta: float) -> void:
@@ -446,10 +561,10 @@ func _cooldown_process(delta: float) -> void:
 	_update_pitch(delta)
 	velocity.x = 0.0
 	velocity.z = 0.0
-	
+
 	_cooldown_t -= delta
 	if _cooldown_t <= 0.0:
-		start_aim_lock()
+		start_aim_lock(RIFLE_REAIM if rifleman() else AIM_LOCK_TIME)
 
 
 ## Sem vê-la por LOSE_TIME: sai do combate e vai procurar na passarela onde a viu por último; sem achar, esquece.
@@ -561,20 +676,20 @@ func _fire_sniper() -> void:
 	if model:
 		model.shoot()
 	_hide_laser()
-	
+
 	var parent: Node = get_parent()
 	var muzzle: Vector3 = model.muzzle_position() if model else global_position + Vector3.UP * 1.3
 	var chest: Vector3 = target.sight_point()
 	var dir: Vector3 = (chest - muzzle).normalized()
-	
+
 	Fx.muzzle_flash(parent, muzzle, WEAPON, dir)
-	
+
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var block: Dictionary = space.intersect_ray(_ray(muzzle, chest))
-	
+
 	var hit_her := false
 	var end: Vector3 = (block.position as Vector3) if not block.is_empty() else chest
-	
+
 	# Se a jogadora estiver em esquiva/rolamento ou atrás de obstáculo, o tiro erra
 	if not block.is_empty():
 		end = block.position
@@ -588,14 +703,16 @@ func _fire_sniper() -> void:
 			Fx.impact(parent, end, false, far.normal, str((far.collider as Node).get_meta("surface", "concrete")))
 	else:
 		hit_her = true
-	
+
 	Fx.tracer(parent, muzzle, end, WEAPON)
-	
+
 	if hit_her:
 		target.take_hit(GameMode.enemy_damage(DAMAGE), dir, chest)
-	
+		if target.dead:
+			Voice.say(self, "down")  # "Alvo abatido!"
+
 	fired.emit()
-	
+
 	# Entra no estado de recarga de ferrolho / cooldown
 	_enter("cooldown", "Idle", 0.1)
 	_cooldown_t = COOLDOWN_TIME
@@ -642,10 +759,16 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 	velocity = Vector3.ZERO
 	if drop_is_weapon and model and not perch.has_area():
 		model.holster(true)  # no posto alto o fuzil fica na mão: quem cai o larga no chão (_drop_when_landed), quem fica lá em cima não
-	if not perch.has_area():
-		drop_loot()
-	if loot and not falls:
-		loot.drop(global_position + Vector3.UP * 1.1)
+	if drop_at is Vector3:
+		# mezanino sem subida: o fuzil e a loot caem da beira no chão, onde ela alcança (Catwalk.DROP_POINT)
+		_ground_drop(drop_at + Vector3.UP * 0.8)
+		if loot:
+			loot.drop(drop_at + Vector3(0.3, 1.1, -0.4))
+	else:
+		if not perch.has_area():
+			drop_loot()
+		if loot and not falls:
+			loot.drop(global_position + Vector3.UP * 1.1)
 	if model and model.ragdoll and perch.has_area():
 		for b: PhysicalBone3D in model.ragdoll.bodies.values():
 			b.collision_mask |= GuardTower.RAIL_LAYER  # o corpo mole encosta na barra da frente da torre
@@ -803,7 +926,7 @@ func appear() -> void:
 func reset() -> void:
 	if model:
 		model.stop_ragdoll()
-		model.set_weapon(WEAPON)
+		model.set_weapon(weapon)
 		model.holster(false)
 		model.set_head_look(0.0, 0.0)
 	head_yaw = 0.0
@@ -811,6 +934,7 @@ func reset() -> void:
 	_staggering = false
 	_tipping = false
 	_landed = false
+	_burst = 0
 	_firm(false)
 	_reset_enemy()
 	health = MAX_HEALTH

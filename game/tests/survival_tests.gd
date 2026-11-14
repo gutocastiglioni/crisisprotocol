@@ -21,6 +21,7 @@ func run(runner: SceneTree) -> void:
 	await test_shoulder_camera()
 	await test_back_walk()
 	await test_smart_side()
+	await test_camera_outside_scenery()
 	await test_recoil_kick()
 	await test_roll_cooldown()
 	await test_survival_roll()
@@ -610,6 +611,65 @@ func test_smart_side() -> void:
 		min_x = minf(min_x, rig.spring.position.x)
 	Input.action_release("aim")
 	t.check(absf(min_x - CameraRig.SHOULDER.side_aim) < 0.05, "lado: mirando, sem o puxão, sempre o ombro direito", "%.2f" % min_x)
+	p.queue_free()
+
+
+## A câmera nunca fica dentro do cenário: colada numa caixa baixa ao lado dela e num canto de paredes altas, em pé, agachada
+## e mirando, girando em volta dela e olhando para baixo/para cima (o desvio do ombro e o pivô atrasado também desviam).
+func test_camera_outside_scenery() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+	await t._frames(20)
+	var rig := p.camera_rig
+	var boxes: Array[StaticBody3D] = []
+	var add_box := func(size: Vector3, at: Vector3) -> void:
+		var b := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = size
+		cs.shape = bs
+		b.add_child(cs)
+		w.add_child(b)
+		b.global_position = p.global_position + at + Vector3.UP * size.y * 0.5
+		boxes.append(b)
+	var probe := PhysicsShapeQueryParameters3D.new()
+	var ball := SphereShape3D.new()
+	ball.radius = 0.05
+	probe.shape = ball
+	probe.collision_mask = 1
+	var space := p.get_world_3d().direct_space_state
+	var setups := {
+		"caixa baixa à direita": [[Vector3(1.0, 1.5, 2.4), Vector3(0.85, 0, 0)]],
+		"canto de paredes altas": [[Vector3(0.3, 2.7, 4.0), Vector3(0.6, 0, 0)], [Vector3(4.0, 2.7, 0.3), Vector3(0, 0, -0.6)]],
+	}
+	for setup: String in setups:
+		for b in boxes:
+			b.queue_free()
+		boxes.clear()
+		for spec: Array in setups[setup]:
+			add_box.call(spec[0], spec[1])
+		var bad := 0
+		var first := ""
+		for state: String in ["em pé", "agachada", "mirando"]:
+			p.crouching = state == "agachada"
+			if state == "mirando":
+				Input.action_press("aim")
+			for step in 8:
+				for pt: float in [-0.6, -0.1, 0.95]:
+					rig.yaw = TAU * step / 8.0
+					rig.pitch = pt
+					for f in 10:
+						await t._frames(1)
+						probe.transform = Transform3D(Basis(), rig.camera.global_position)
+						if not space.intersect_shape(probe, 1).is_empty():
+							bad += 1
+							if first == "":
+								first = "%s giro %d° incl. %.1f" % [state, step * 45, pt]
+			Input.action_release("aim")
+			p.crouching = false
+		t.check(bad == 0, "câmera fora do cenário: " + setup, "%d quadros dentro (%s)" % [bad, first])
+	for b in boxes:
+		b.queue_free()
 	p.queue_free()
 
 

@@ -8,7 +8,7 @@ extends "res://tests/ai_tests.gd"
 const WORKERS := [2, 3, 4, 5]  # índices em Tunnel.GUARDS dos que mexem nos caixotes
 
 
-func run(runner: SceneTree) -> void:
+func run(runner: SceneTree, _picks: Array = []) -> void:
 	t = runner
 	await test_layout()
 	await test_bullet_pings()
@@ -55,7 +55,7 @@ func test_layout() -> void:
 		n += int(s[1])
 	check(crates.size() == n and tn.crates.size() == n, "um caixote por lugar das pilhas do túnel", "%d de %d" % [crates.size(), n])
 	var g7: Soldier = main.soldiers[7]
-	check(Enemy._flat(g7.global_position - Vector3(-8.2, 0, -12.0)).length() < 0.2 and not g7.distracted, "guarda 7 do galpão no canto, de posto (sem detonador)", str(g7.global_position))
+	check(Enemy._flat(g7.global_position - Soldier.GUARDS[7].pos).length() < 0.2 and not g7.distracted, "guarda 7 do galpão no pátio descoberto, de posto (sem detonador)", str(g7.global_position))
 	for i: int in WORKERS:
 		var s: Soldier = tn.guards[i]
 		var spot := Tunnel.guard_spot(i)

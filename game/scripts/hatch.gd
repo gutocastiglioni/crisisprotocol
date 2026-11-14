@@ -20,10 +20,9 @@ const LET_GO_FRAME := 38.0  # = heroine_cutscene.HATCH_LET_GO (até aqui as mão
 const ANIM_FRAMES := 66.0  # = heroine_cutscene.HATCH_FRAMES
 const LADDER_INSET := 0.07  # da beira do furo (lado de quem chega) até a escada
 const KNEEL_DIST := 0.5  # da escada até onde ela ajoelha (e sai ao subir), no telhado
-const BRACKETS := [2.2, 3.6, 4.8]  # alturas dos suportes até a parede (acima da cabeça de quem passa embaixo)
+const BRACKETS := [2.2, 3.6, 4.8, 6.2]  # alturas dos suportes até a parede (acima da cabeça de quem passa embaixo)
 const REACH := 0.8
 const HANDLE := Vector3(0, LID_T * 0.5 + 0.03, -(HOLE.y + CURB_T) + 0.08)  # centro da alça, em relação à dobradiça
-const HIDDEN_RUNGS := 3  # degraus que ela desce, depois de agarrar a escada, antes de o mezanino poder vê-la
 
 var ladder: Ladder
 var opened := false
@@ -39,7 +38,7 @@ func _ready() -> void:
 	ladder.top_open = false
 	ladder.handrail = CURB_H - 0.05
 	ladder.top_lip = CURB_H
-	ladder.hidden_top = HIDDEN_RUNGS * Ladder.RUNG_SPACING
+	ladder.hidden = true  # descendo do telhado ninguém a vê (nem o guarda do mezanino olhando para o canto)
 	# degraus virados para a parede: quem desce fica entre a escada e a parede
 	ladder.position = Vector3(0, 0, -HOLE.y + LADDER_INSET)
 	ladder.rotation.y = PI

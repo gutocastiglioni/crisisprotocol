@@ -166,7 +166,7 @@ func test_no_shot_from_roof_or_offstage() -> void:
 				break
 		return best
 	Input.action_press("aim")
-	var roof_edge := Vector3(-Roof.EDGE + 1.0, Roof.Y, clampf(s.global_position.z, -Roof.EDGE + 1.0, Roof.EDGE - 1.0))
+	var roof_edge := Vector3(Roof.X0 + 1.0, Roof.Y, clampf(s.global_position.z, Roof.FENCE_Z + 1.0, Roof.Z1 - 1.0))
 	t.check(Roof.has(roof_edge), "ponto de teste na beira oeste do telhado")
 	# na praça das torres, de frente para a primeira (a mata ainda com raptors: as torres não acordam)
 	var trail_pt := Vector3(main.towers[0].global_position.x + 7.5, 0, s.global_position.z)

@@ -491,14 +491,10 @@ func _ladder_mount() -> void:
 		p.model.set_state("ladder_idle")
 
 
-## Na parte de cima da escada do alçapão (entrando, saindo, ou a menos de `Ladder.hidden_top` do alto do ciclo):
-## escondida dos inimigos, mesmo com linha livre até o peito.
+## Na escada do alçapão (`Ladder.hidden`: montando, subindo/descendo ou saindo pelo topo): escondida dos inimigos,
+## mesmo com linha livre até o peito.
 func hidden_on_ladder() -> bool:
-	if _ladder == null or not is_instance_valid(_ladder) or _ladder.hidden_top <= 0.0:
-		return false
-	if mode == "ladder_in" or mode == "ladder_out" or (mode == "ladder_mount" and _mount_top):
-		return true
-	return mode == "ladder" and _ladder_y > _ladder_top_y() - _ladder.hidden_top
+	return on_ladder() and _ladder.hidden
 
 
 ## Numa escada (a do alçapão, do telhado ao labirinto, ou a do mezanino), entrando, subindo/descendo ou saindo: dali

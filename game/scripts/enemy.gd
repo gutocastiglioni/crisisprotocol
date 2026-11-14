@@ -101,6 +101,16 @@ var nav_map := RID()
 var search_sweeps := SEARCH_SWEEPS  # 0 = só olha em volta onde chegou (sniper preso à passarela)
 var alarm_responders := 99  # quantos do mesmo tipo (os mais perto) saem do posto quando um dá o alarme (raptors: a matilha toda)
 var alarm_walks := false  # vai ao alarme como quem investiga (gente: trote, "?"), em vez de caçar na corrida
+## Gente: tiro ouvido (barulho de alcance `GUNFIRE_RADIUS` ou mais) vai ver na busca ativa, correndo de arma pronta (não a
+## amarela andando; o guarda de posto só olha, como antes) e companheiro morto à vista (`witness_death`) põe em alerta
+## indo para o lado de onde ela atacou.
+var tactical := false
+const GUNFIRE_RADIUS := 20.0
+var _shot_heard := false  # o último barulho que chamou a atenção foi tiro: a busca que vem é a ativa
+## Morte vista: até `WITNESS_RANGE` m (mais que o corpo caído, `CORPSE_SIGHT`; menos que os pontos cegos das rondas,
+## `Soldier.BLIND_SPOTS`) e sabe de que lado ela atacou, não o ponto exato (o lugar procurado sai até `WITNESS_GUESS` dela).
+const WITNESS_RANGE := 9.0
+const WITNESS_GUESS := 2.0
 var shouts := false  # gente: ferido ou achando corpo avisa só quem ouve o grito (raptor: o guincho chama a sala toda)
 var _shout_t := -1.0  # > 0: o grito sai quando chegar a 0
 var _shout_at := Vector3.ZERO
@@ -274,7 +284,7 @@ func _calm_state(delta: float) -> bool:
 				aware = 0.0
 				_resume()
 		"sweep":
-			if _go(_goal, patrol_speed, delta):  # vasculhando: passo de ronda, com calma
+			if _go(_goal, _sweep_speed(), delta):
 				start_search()
 		"guard":
 			_guard(delta)
@@ -392,18 +402,20 @@ func _reset_enemy() -> void:
 	_corpse = null
 	_note_t = 0.0
 	active_search = false
+	_shot_heard = false
 	_was_alerted = false
 	_guard_body = null
 	_guard_at = false
 	remove_meta("reported")  # o alarme do corpo dele era da outra vez
 
-## Solta item ao morrer (arma ou munição). Devolve o Pickup instanciado ou null.
-func drop_loot() -> Pickup:
+## Solta item ao morrer (arma ou munição). `aside` = deslocamento no chão a partir dele (o corpo não cobre o item).
+## Devolve o Pickup instanciado ou null.
+func drop_loot(aside := Vector3.ZERO) -> Pickup:
 	if _dropped or drop_kind == "" or randf() > drop_chance:
 		return null
 	_dropped = true
 	var p := get_parent()
-	return Pickup.spawn_drop(p, global_position + Vector3.UP * 0.8, drop_kind, drop_amount, drop_is_weapon) if p else null
+	return Pickup.spawn_drop(p, global_position + aside + Vector3.UP * 0.8, drop_kind, drop_amount, drop_is_weapon) if p else null
 
 # ------------------------------------------------------------------ IA: percepção, patrulha e alarme
 func start_patrol() -> void:
@@ -418,6 +430,7 @@ func start_patrol() -> void:
 ## Volta à rotina (patrulha pelo ponto mais próximo, ou guarda parada, que antes anda de volta ao posto).
 func _resume() -> void:
 	active_search = false
+	_shot_heard = false
 	if _start_guard():
 		return
 	if route.is_empty():
@@ -463,7 +476,8 @@ func start_hunt(at: Vector3) -> void:
 
 func _begin_search(at: Vector3) -> void:
 	# alertado = busca ativa; a que já era ativa não volta a ser amarela no meio (barulho novo durante a busca)
-	active_search = alert_t > 0.0 or (active_search and state in ["investigate", "hunt", "search", "sweep"])
+	active_search = alert_t > 0.0 or _shot_heard or (active_search and state in ["investigate", "hunt", "search", "sweep"])
+	_shot_heard = false
 	_search_center = at
 	_sweeps_left = search_sweeps
 	_visited.clear()
@@ -668,6 +682,9 @@ func _reaches(pos: Vector3) -> bool:
 	# canto da porta do pátio com o portão dele fechado (Shed.apart): som, grito e alarme não passam
 	if Shed.apart(get_tree(), pos, global_position):
 		return false
+	# salas do galpão: entre a faixa, o escritório, a doca e a ala leste o som só passa por porta aberta ou janela
+	if Shed.muffled(get_tree(), pos, global_position):
+		return false
 	var a := Level.room_of(pos.x)
 	var b := Level.room_of(global_position.x)
 	if (a == 2 or b == 2) and _flat(pos - global_position).length() > Tunnel.SOUND_REACH:
@@ -694,6 +711,12 @@ func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 		aware = 1.0
 		spot()
 		return
+	if tactical and radius >= GUNFIRE_RADIUS:
+		# tiro: ninguém vai ver "o que foi" andando; vai correndo, de arma pronta (busca ativa)
+		_shot_heard = true
+		aware = 1.0
+		_heard = true
+		return
 	aware = minf(aware + power * (1.0 - d / radius), 1.0)
 	_heard = _heard or aware >= 1.0
 
@@ -707,6 +730,39 @@ func hear_death(at: Vector3, radius: float, power: float) -> void:
 func _clear_line(at: Vector3) -> bool:
 	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * eye_height, at + Vector3.UP * 0.3, 1)
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## `victim` acabou de morrer: quem tem o corpo dele à vista (no cone, até `WITNESS_RANGE`, nada no meio) viu a morte. Gente
+## (`tactical`) se alerta: grita, avisa quem ouve e corre para o lado de onde ela atacou (se a vê, já entra em luta). Não é
+## tê-la visto (`identified` fica como estava: o posto do portão ainda manda só metade). Distraído no posto não vê nada.
+func witness_death(victim: Enemy) -> void:
+	if not tactical or dead or lurking or victim == self or in_combat() or is_distracted() or not _has_target():
+		return
+	if state in ["dead", "down"] or not _reaches(victim.global_position):
+		return
+	var to := _flat(victim.global_position - global_position)
+	var d := to.length()
+	if d > WITNESS_RANGE:
+		return
+	var half := fov_half + (ALERT_FOV_BONUS if alert_t > 0.0 else 0.0)
+	if d > CLOSE_SIGHT and absf(angle_difference(rotation.y + head_yaw, atan2(-to.x, -to.z))) > half:
+		return
+	var eye := global_position + Vector3.UP * eye_height
+	var q := PhysicsRayQueryParameters3D.create(eye, victim.global_position + Vector3.UP * 1.0, 1)
+	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+		return
+	if not victim in _known_dead:
+		_known_dead.append(victim)
+	victim.set_meta("reported", true)
+	_corpse = null
+	var at := target.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.0, rng.randf_range(-1.0, 1.0)) * WITNESS_GUESS
+	_alert_self(at)
+	if voice != "":
+		Voice.say(self, "corpse")
+	broadcast_alarm(at, true, false, victim)
+	if _sees_target():
+		spot()
+	else:
+		start_hunt(at)
 
 ## Morte de companheiro próximo (com linha livre até ele): se estiver vasculhando, interpreta como posição revelada e encontra.
 func on_nearby_kill(at: Vector3, radius := 8.0) -> void:
@@ -784,8 +840,8 @@ func _alarm_from(at: Vector3, about: Enemy = null) -> void:
 ## Avisa os outros que ela está em `at`, do mais perto ao mais longe (a ordem de cada tipo é o `rank` de `on_alarm`).
 ## `earshot` = grito: só quem ouve (`_hears_shout`). `seen` = quem avisa a viu (vermelho: libera os postos).
 func broadcast_alarm(at: Vector3, earshot := false, seen := false, about: Enemy = null) -> void:
-	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool:
-		return e is Enemy and e != self and not e.dead and (not earshot or _hears_shout(e)) and (about == null or not about in e._known_dead))
+	# só quem o alarme alcança disputa as vagas de quem sai (os de outra sala do galpão, atrás de porta fechada, não ocupam)
+	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool: return _alarm_reaches(e, earshot, about))
 	others.sort_custom(func(a: Enemy, b: Enemy) -> bool: return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
 	var ranks := {}
 	for e: Enemy in others:
@@ -794,6 +850,16 @@ func broadcast_alarm(at: Vector3, earshot := false, seen := false, about: Enemy 
 		if about != null and not about in e._known_dead:
 			e._known_dead.append(about)
 		ranks[kind] = ranks.get(kind, 0) + 1
+
+func _alarm_reaches(e: Node, earshot: bool, about: Enemy) -> bool:
+	var en := e as Enemy
+	if en == null or en == self or en.dead or en.lurking:
+		return false
+	if earshot and not _hears_shout(en):
+		return false
+	if about != null and about in en._known_dead:
+		return false
+	return en._reaches(global_position)
 
 ## `e` ouve o grito deste: até SHOUT_MUFFLED sempre, até SHOUT_RANGE só com nada do cenário entre as cabeças.
 func _hears_shout(e: Enemy) -> bool:
@@ -1192,6 +1258,10 @@ func _note_corpses(delta: float) -> void:
 			continue
 		if space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, e.global_position + Vector3.UP * 0.3, 1)).is_empty():
 			_known_dead.append(e)
+
+## Velocidade vasculhando em volta do lugar procurado (passo de ronda; o guerrilheiro na busca ativa vai no trote).
+func _sweep_speed() -> float:
+	return patrol_speed
 
 ## Velocidade indo ver um lugar (quem herda escolhe: o guerrilheiro anda na busca amarela e corre na ativa).
 func _investigate_speed() -> float:
