@@ -16,6 +16,7 @@ const ACTION := Color(0.4, 1.0, 0.5)
 const WARN := Color(1.0, 0.55, 0.15)
 const DANGER := Color(1.0, 0.3, 0.25)
 const MUTED := Color(0.55, 0.55, 0.55)
+const ARMOR := Color(0.45, 0.7, 1.0)  # colete (Player.armor): faixa por cima da barra de vida
 const OUTLINE := 2
 const XS := 6
 const S := 8

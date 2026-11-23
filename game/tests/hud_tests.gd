@@ -390,7 +390,7 @@ func test_radar_all_enemies() -> void:
 		await t._frames(2)
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	t.get_root().add_child(main)
-	await t._frames(5)
+	await t._frames(40)  # os guardas assentam no chão (nos testes, sem a tela de título, o T2 da traseira do caminhão nasce no ar e cai)
 	var p: Player = main.player
 	var radar: Radar = main.radar
 	# começa no telhado: ninguém visto
@@ -407,13 +407,15 @@ func test_radar_all_enemies() -> void:
 	await t._frames(10)
 	# um lugar sabidamente à vista: o de um guarda que o radar já pegou e que a câmera de agora vê (caixas tapam boa parte
 	# do galpão, e nos primeiros quadros a câmera ainda vinha do telhado)
+	# (o mais perto dela, no chão: o de longe pode ficar meio tapado para um bicho mais baixo ou mais alto que o guarda)
 	var spot := Vector3.INF
 	var cam := main.get_viewport().get_camera_3d()
 	var space := p.get_world_3d().direct_space_state
 	for sd: Soldier in main.soldiers:
 		var body := sd.global_position + Vector3.UP * sd.eye_height * 0.75
 		if not sd in all and radar.is_tracked(sd) and cam.is_position_in_frustum(body) \
-				and space.intersect_ray(PhysicsRayQueryParameters3D.create(cam.global_position, body, 1)).is_empty():
+				and space.intersect_ray(PhysicsRayQueryParameters3D.create(cam.global_position, body, 1)).is_empty() \
+				and sd.is_on_floor() and sd.global_position.y < 0.3 and (spot == Vector3.INF or p.global_position.distance_to(sd.global_position) < p.global_position.distance_to(spot)):
 			spot = sd.global_position
 	t.check(spot != Vector3.INF, "radar: algum guarda à vista no galpão")
 	var homes := {}

@@ -11,6 +11,7 @@ func run(runner: SceneTree) -> void:
 	GameMode.set_mode(GameMode.SURVIVAL)
 	await test_profiles()
 	await test_enemy_damage()
+	await test_vest()
 	await test_aim_to_shoot_and_ammo()
 	await test_reload()
 	await test_weapon_ammo_and_collect()
@@ -109,6 +110,25 @@ func test_enemy_damage() -> void:
 	t.check(p.health == 100 - 2 * Allosaurus.DAMAGE.stomp, "survival: pisada do alossauro tira o dobro", str(p.health))
 
 
+## Colete (Player.armor): começa cheio no survival, leva o dano antes da vida, queda não passa por ele, o kit enche os
+## dois; no arcade não há colete.
+func test_vest() -> void:
+	var w: Node3D = await t._fresh_world()
+	var p: Player = t._spawn_player(w, Vector3(0, 0, 8), true)
+	await t._frames(3)
+	t.check(p.armor == Player.MAX_ARMOR, "survival: começa com o colete cheio", str(p.armor))
+	p.take_hit(30, Vector3.BACK, p.global_position + Vector3.UP)
+	t.check(p.armor == Player.MAX_ARMOR - 30 and p.health == 100, "o colete leva o tiro antes da vida", "%d/%d" % [p.armor, p.health])
+	p.take_hit(90, Vector3.BACK, p.global_position + Vector3.UP)
+	t.check(p.armor == 0 and p.health == 80, "o que passa do colete vai para a vida", "%d/%d" % [p.armor, p.health])
+	t.check(p.collect("health", 35) and p.health == 100 and p.armor == 35, "kit enche a vida e o colete", "%d/%d" % [p.armor, p.health])
+	p.armor = Player.MAX_ARMOR
+	t.check(not p.collect("health", 35), "vida e colete cheios: o kit fica no chão")
+	GameMode.set_mode(GameMode.ARCADE)
+	t.check(Player.start_armor() == 0, "arcade: sem colete")
+	GameMode.set_mode(GameMode.SURVIVAL)
+
+
 func test_aim_to_shoot_and_ammo() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
@@ -197,6 +217,7 @@ func test_reload() -> void:
 func test_weapon_ammo_and_collect() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+	p.armor = Player.MAX_ARMOR  # colete cheio: o kit conta só a vida (o colete tem o test_vest)
 	await t._frames(5)
 	var notices: Array[String] = []
 	p.notice.connect(func(text: String) -> void: notices.append(text))
@@ -223,6 +244,7 @@ func test_weapon_ammo_and_collect() -> void:
 func test_pickup_in_world() -> void:
 	var w: Node3D = await t._fresh_world()
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 6))
+	p.armor = Player.MAX_ARMOR  # colete cheio: o kit conta só a vida
 	var box := Pickup.new()
 	box.kind = "m16"
 	box.amount = 10
@@ -260,6 +282,7 @@ func test_layout_clear() -> void:
 	for c in w.get_children():
 		c.free()
 	Level.build(w)
+	w.add_child(Catwalk.new())  # o kit do mezanino
 	await t._frames(3)
 	var space := w.get_world_3d().direct_space_state
 	var box := BoxShape3D.new()
@@ -289,7 +312,7 @@ func test_weapon_movement() -> void:
 	var p: Player = t._spawn_player(w, Vector3(0, 0, 18))
 	await t._frames(10)
 	var run := await _forward_speed(p)
-	t.check(absf(run - Player.RUN_SPEED * GameMode.move_scale()) < 0.15, "survival: corrida mais lenta", str(run))
+	t.check(absf(run - Player.JOG_SPEED) < 0.15, "survival: o direcional todo é o trote, mais lento que a corrida", str(run))
 	t.check(p.model.state == "run", "survival: continua usando a animação de corrida", p.model.state)
 	# SHIFT / L3: corrida forte, acima da normal mas longe de velocista
 	Input.action_release("move_forward")
@@ -367,7 +390,7 @@ func test_aim_lock() -> void:
 	t.check(Vector2(p.velocity.x, p.velocity.z).length() < 0.05, "escopeta: mirando, travada")
 	Input.action_release("aim")
 	await t._frames(20)
-	t.check(Vector2(p.velocity.x, p.velocity.z).length() > 3.0 and p.model.state == "run", "escopeta: soltou a mira, corre de novo", str(p.velocity))
+	t.check(Vector2(p.velocity.x, p.velocity.z).length() > Player.JOG_SPEED - 0.2 and p.model.state == "run", "escopeta: soltou a mira, trota de novo", str(p.velocity))
 	# atira com o direcional empurrado, sem aviso nem bloqueio, e o corpo continua parado
 	Input.action_press("aim")
 	await t._frames(25)

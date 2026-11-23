@@ -373,8 +373,8 @@ func test_sniper_keycard_and_proximity_gate() -> void:
 			sentinels += 1
 		else:
 			yard_patrollers += 1
-	t.check(sentinels == 8 and yard_patrollers == 8 and posts == 1 and console == 10,
-		"8 parados (2 no portão da mata, o do baú da M16, 2 Flak no portão dos clones, S e os 2 A do escritório), 8 em ronda, 1 de posto e 10 distraídos",
+	t.check(sentinels == 8 and yard_patrollers == 9 and posts == 1 and console == 9,
+		"8 parados (2 no portão da mata, o do baú da M16, 2 Flak no portão dos clones, S e os 2 A do escritório), 9 em ronda, 1 de posto e 9 distraídos",
 		"%d %d %d %d" % [sentinels, yard_patrollers, posts, console])
 
 	var gate: Door = null

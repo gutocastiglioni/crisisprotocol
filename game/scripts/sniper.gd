@@ -104,7 +104,7 @@ var perch := Rect2()
 var floor_y := Catwalk.FLOOR_Y
 var home_yaw := 0.0
 var falls := false
-## Morto, o fuzil e a `loot` caem aqui (no chão) em vez de onde ele está (o mezanino não tem subida: Catwalk.DROP_POINT).
+## Morto, o fuzil e a `loot` caem aqui (no chão) em vez de onde ele está (posto sem subida). null = ficam com ele.
 var drop_at: Variant = null
 ## alto do guarda-corpo na frente do posto (mundo; só a altura e a distância para a frente contam)
 var ledge := Vector3.ZERO
@@ -760,7 +760,7 @@ func die(dir := Vector3.ZERO, at: Variant = null, head := false, silent := false
 	if drop_is_weapon and model and not perch.has_area():
 		model.holster(true)  # no posto alto o fuzil fica na mão: quem cai o larga no chão (_drop_when_landed), quem fica lá em cima não
 	if drop_at is Vector3:
-		# mezanino sem subida: o fuzil e a loot caem da beira no chão, onde ela alcança (Catwalk.DROP_POINT)
+		# posto sem subida: o fuzil e a loot caem no chão, onde ela alcança
 		_ground_drop(drop_at + Vector3.UP * 0.8)
 		if loot:
 			loot.drop(drop_at + Vector3(0.3, 1.1, -0.4))

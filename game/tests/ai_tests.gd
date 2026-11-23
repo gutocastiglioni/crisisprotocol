@@ -13,6 +13,7 @@ const TESTS := [
 	"test_alarm_calls_others", "test_damage_while_unaware_alarms", "test_loses_target_and_gives_up",
 	"test_alerted_can_hide", "test_yard_nav", "test_main_scene_patrols", "test_blind_spot_kills", "test_shout_earshot",
 	"test_post_keeps_half", "test_doors_seal_rooms", "test_unreachable_hunt_gives_up", "test_sniper_forgets",
+	"test_far_enemies_sleep",
 ]
 
 
@@ -489,9 +490,9 @@ func test_main_scene_patrols() -> void:
 ## da M16.
 func test_blind_spot_kills() -> void:
 	# furtivo: as rondas que podem achar o corpo de uma seguem andando uma volta inteira depois da morte; morrem juntas só as
-	# de salas diferentes (escritório 0 e 6, estantes 1, 8 e 14, labirinto 18 e 19, pátio 5). Com barulho: todas na mesma
+	# de salas diferentes (escritório 0 e 6, estantes 1, 8 e 14, labirinto 18 e 19 / 16, pátio 5). Com barulho: todas na mesma
 	# cena, menos o 5 (o T, distraído no caminhão, ouve o corpo cair a 5 m sem nada no meio)
-	var runs: Array = [[true, [0, 1, 18, 5]], [true, [6, 8, 19]], [true, [14]]]
+	var runs: Array = [[true, [0, 1, 18, 5]], [true, [6, 8, 19]], [true, [14, 16]]]
 	runs.append([false, Soldier.BLIND_SPOTS.keys().filter(func(gi: int) -> bool: return gi != 5)])
 	var covered := {}
 	for run: Array in runs.slice(0, 3):
@@ -695,8 +696,8 @@ func test_doors_seal_rooms() -> void:
 	var doors := t.get_nodes_in_group("doors")
 	var grates := doors.filter(func(d: Door) -> bool: return d.solid_layer == Yard.GRATE_LAYER)
 	var service := doors.filter(func(d: Door) -> bool: return d.sealed and d.room == -1)
-	check(doors.size() - grates.size() - service.size() == 9 and grates.size() == Yard.GRATES.size() + 1 and service.size() == Shed.SERVICE.size(),
-		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + as 5 do galpão (arquivo, 2 trancadas, falsa, porta enorme) + grades da trilha e do labirinto + portas de serviço",
+	check(doors.size() - grates.size() - service.size() == 10 and grates.size() == Yard.GRATES.size() + 1 and service.size() == Shed.SERVICE.size(),
+		"quatro portas (galpão-pátio, pátio-túnel, túnel-pedreira arrombável, sala dos clones) + as 5 do galpão (arquivo, 2 trancadas, falsa, porta enorme) + o portão emperrado do telhado + grades da trilha e do labirinto + portas de serviço",
 		str([doors.size(), grates.size(), service.size()]))
 	check(doors.all(func(d: Door) -> bool: return not d.opened), "as portas começam fechadas")
 	check(Level.room_of(0.0) == 0 and Level.room_of(-30.0) == 1 and Level.room_of(-80.0) == 2 and Level.room_of(-140.0) == 3,
@@ -882,5 +883,39 @@ func test_sniper_forgets() -> void:
 	check(sn.shots_fired == shots1, "escondida: ele não atira mais nas caixas", str(sn.shots_fired - shots1))
 	check(sn.rifleman() and sn.laser == null, "o do mezanino é de M16, sem laser")
 	check(calm_at >= 0.0 and calm_at < 15.0, "sem vê-la, procura na passarela e esquece (em menos de 15 s)", "%s %.1f" % [sn.state, calm_at])
+	main.queue_free()
+	await t.process_frame
+
+## Desempenho: quem está calmo e não tem como percebê-la (ela no telhado, ou longe com porta/parede fechada no meio) dorme
+## sem IA nem animação (Enemy.update_sleep); ela chegando perto, o alarme ou desligar o sono acordam.
+func test_far_enemies_sleep() -> void:
+	var main: Node = await _main_scene()
+	Enemy.sleep_enabled = true
+	var p: Player = main.player
+	var p1: Soldier = main.soldiers[16]  # ronda da linha 2 do labirinto
+	await t._frames(30)
+	check(Roof.has(p.global_position) and p1.asleep and not p1.is_physics_processing() and p1.model.process_mode == Node.PROCESS_MODE_DISABLED,
+		"ela no telhado: a ronda do labirinto dorme (sem IA nem animação)", "%s %s" % [p1.asleep, p1.state])
+	var calm: Array = main.all_enemies().filter(func(e: Enemy) -> bool: return e and not e.lurking and not e.dead and e.process_mode != Node.PROCESS_MODE_DISABLED)
+	check(calm.all(func(e: Enemy) -> bool: return e.asleep), "do telhado ninguém percebe nada: todos dormem",
+		str(calm.filter(func(e: Enemy) -> bool: return not e.asleep).map(func(e: Enemy) -> String: return "%s %s" % [e.get_script().get_global_name(), e.state])))
+	var at := p1.global_position
+	await t._frames(60)
+	check(p1.global_position.is_equal_approx(at), "dormindo a ronda não anda")
+	# ela desce ao labirinto, perto dele: acorda e segue a ronda; o túnel (outra sala, longe, portão fechado) segue dormindo
+	p.global_position = Level.maze_cell(2, 2)
+	p.reset_physics_interpolation()
+	await t._frames(30)
+	check(not p1.asleep and p1.is_physics_processing() and p1.model.process_mode == Node.PROCESS_MODE_INHERIT,
+		"ela perto: a ronda acorda", "%s" % p1.asleep)
+	var guards: Array = main.tunnel.guards
+	check(guards.all(func(e: Enemy) -> bool: return e.asleep), "os guardas do túnel, longe e atrás do portão, dormem")
+	# alertado acorda (o alarme chega por chamada, não pela IA)
+	guards[0].alert_t = 5.0
+	await t._frames(30)
+	check(not guards[0].asleep and guards[0].is_physics_processing(), "alertado acorda")
+	Enemy.sleep_enabled = false
+	await t._frames(30)
+	check(main.all_enemies().all(func(e: Enemy) -> bool: return e == null or not e.asleep), "sono desligado: todos acordados")
 	main.queue_free()
 	await t.process_frame

@@ -10,6 +10,7 @@ var t: SceneTree  # o runner (run_tests.gd)
 func run(runner: SceneTree) -> void:
 	t = runner
 	await test_maze_layout()
+	await test_mezz_climb()
 	await test_roof_and_hatch()
 	await test_fall_damage()
 	await test_sniper_ladder_window()
@@ -20,6 +21,53 @@ func run(runner: SceneTree) -> void:
 	await test_sniper_patrol_in_level()
 	await test_sniper_spots_standing_in_maze()
 	await test_blood_smell()
+
+
+## Subida do mezanino pelas caixas: do bolsão atrás da quina, pulo = escala a caixa-degrau (Level.MAZE_STEP); de cima
+## dela, pulo = sobe na beira do mezanino pelo vão do guarda-corpo. As pilhas do lado do degrau não se escalam.
+func test_mezz_climb() -> void:
+	var w := await _level_world()
+	Level.build(w)
+	var catwalk := Catwalk.new()
+	catwalk.suspended = true
+	w.add_child(catwalk)
+	var below := Level.maze_cell(Level.MAZE_STEP.x, Level.MAZE_STEP.y + 1)
+	var p: Player = t._spawn_player(w, below + Vector3(0, 0, 0.35))  # perto da caixa-degrau (+z)
+	p.rotation.y = PI  # de frente para a caixa-degrau (+z)
+	p.camera_rig.yaw = PI
+	t.check(Level.MAZE[Level.MAZE_STEP.y][Level.MAZE_STEP.x] == "S", "a caixa-degrau está no mapa do labirinto ('S')")
+	await t._frames(10)
+	_release_all()
+	for step in [[1.4, "a caixa-degrau"], [Catwalk.FLOOR_Y, "a beira do mezanino"]]:
+		if step[0] > 2.0:
+			# em cima da caixa, na beira dela junto ao mezanino: vira para ele (oeste)
+			p.global_position = Vector3(Catwalk.X1 + 0.55, p.global_position.y, Catwalk.STEP_GAP[0])
+			p.velocity = Vector3.ZERO
+			p.rotation.y = PI * 0.5
+			p.camera_rig.yaw = PI * 0.5
+			await t._frames(5)
+		Input.action_press("jump")
+		await t._frames(2)
+		Input.action_release("jump")
+		var waited := 0
+		while waited < 240 and (p.moves.busy() or waited < 10):
+			await t._frames(5)
+			waited += 5
+		t.check(absf(p.global_position.y - float(step[0])) < 0.15 and not p.moves.busy(), "pulo na frente: sobe em " + str(step[1]),
+			"%s %s" % [p.global_position, p.moves.mode])
+		if step[0] > 2.0:
+			# no mezanino: anda para dentro
+			Input.action_press("move_forward")
+			await t._frames(40)
+			Input.action_release("move_forward")
+			await t._frames(5)
+	t.check(Catwalk.covers(p.global_position) and p.global_position.y > Catwalk.FLOOR_Y - 0.1, "chegou ao mezanino", str(p.global_position))
+	# do degrau, para o leste, a pilha de 2,7 m não se escala (o labirinto não se pula por cima)
+	p.global_position = Level.maze_cell(Level.MAZE_STEP.x, Level.MAZE_STEP.y) + Vector3.UP * 1.4
+	p.velocity = Vector3.ZERO
+	await t._frames(5)
+	t.check(p.moves.find_ledge(Vector3.RIGHT).is_empty(), "do degrau não se escala a pilha do lado")
+	t.check(is_equal_approx(Catwalk.STEP_GAP[0], Level.maze_cell(0, Level.MAZE_STEP.y).z), "vão do guarda-corpo ao lado do degrau")
 
 
 func _level_world() -> Node3D:
@@ -36,7 +84,7 @@ func _release_all() -> void:
 
 ## Corredor do labirinto (célula que não é pilha)?
 func _open(c: int, r: int) -> bool:
-	return r >= 0 and r < Level.MAZE.size() and c >= 0 and c < Level.MAZE[r].length() and not Level.MAZE[r][c] in ["#", "Q"]
+	return r >= 0 and r < Level.MAZE.size() and c >= 0 and c < Level.MAZE[r].length() and not Level.MAZE[r][c] in ["#", "Q", "S"]
 
 
 ## Vizinha `n` de `cur` é passagem?
@@ -91,7 +139,7 @@ func test_maze_layout() -> void:
 	t.check(not _open(Level.MAZE_Q.x, Level.MAZE_Q.y) and _open(Level.MAZE_Q.x, Level.MAZE_Q.y + 1) and _open(Level.MAZE_Q.x + 1, Level.MAZE_Q.y),
 		"a quina Q: pilha com corredor atrás (linha de baixo) e ao lado (coluna 3)")
 	for e in Pickup.LAYOUT:
-		t.check(not Level.in_maze(e.pos), "nenhum item no labirinto", str(e.pos))
+		t.check(not Level.in_maze(e.pos) or e.kind == "health", "no labirinto só kit de vida (munição, a do guarda)", str(e.pos))
 	# corredores livres, pilhas altas demais para pendurar e subir (labirinto não se pula por cima)
 	var space := w.get_world_3d().direct_space_state
 	var grab_top: float = Moves.data().hang.top + PlayerMoves.GRAB_MAX
@@ -115,7 +163,7 @@ func test_maze_layout() -> void:
 				q.exclude = ladders
 				if not space.intersect_shape(q, 1).is_empty():
 					blocked.append(Vector2i(c, r))
-			else:
+			elif Vector2i(c, r) != Level.MAZE_STEP:  # o degrau da subida do mezanino é baixo de propósito (test_mezz_climb)
 				var top := space.intersect_ray(PhysicsRayQueryParameters3D.create(at + Vector3.UP * 2.74, at + Vector3.DOWN, 1))
 				if top.is_empty() or top.position.y <= grab_top:
 					low.append([Vector2i(c, r), top.get("position", Vector3.ZERO).y])

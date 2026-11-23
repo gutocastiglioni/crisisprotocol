@@ -18,6 +18,8 @@ var segments := 0
 var colors: Array = [[1.0, UiStyle.ACTION]]
 var title_color := TEXT
 var blink := false
+var over := 0.0  # 0..1: faixa por cima da barra (colete), na metade de cima, cor `over_color`
+var over_color := UiStyle.ARMOR
 var _t := 0.0
 
 
@@ -65,6 +67,11 @@ func _draw() -> void:
 		draw_rect(Rect2(box.position, Vector2(maxf(roundf(bar_w * v), 1.0), BAR_H)), c.darkened(0.55) if off else c)
 		# brilho de cima: cara de barra de jogo antigo, não de retângulo chapado
 		draw_rect(Rect2(box.position, Vector2(maxf(roundf(bar_w * v), 1.0), 1.0)), c.lightened(0.35))
+	if over > 0.0 and segments == 0:
+		# colete: a metade de cima da barra, por cima da vida (a vida aparece embaixo e onde o colete acabou)
+		var ow := maxf(roundf(bar_w * clampf(over, 0.0, 1.0)), 1.0)
+		draw_rect(Rect2(box.position, Vector2(ow, BAR_H - 2.0)), over_color.darkened(0.55) if off else over_color)
+		draw_rect(Rect2(box.position, Vector2(ow, 1.0)), over_color.lightened(0.35))
 	if tail != "" and not off:
 		var p := Vector2(TITLE_W + bar_w + 4.0, y)
 		draw_string_outline(font, p, tail, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, 2, Color.BLACK)

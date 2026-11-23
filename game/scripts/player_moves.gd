@@ -16,6 +16,8 @@ const AIR_REGRAB := 0.5
 const DROP_PUSH := 0.14  # ao soltar da borda, afasta da parede (pendurada, a cápsula encosta nela)
 const ROLL_TURN := 18.0  # rapidez com que vira para a direção da cambalhota
 const KNEEL_WALK := 8.0  # quadros até chegar ao lugar de ajoelhar na frente do baú
+## ações em que mouse/analógico seguem girando a câmera (Player.camera_locked): nas outras ela fica parada
+const FREE_LOOK := ["roll", "hang", "ladder"]
 
 var p: Player
 var mode := ""  # "", "roll", "grab", "hang", "climb", "mantle", "pickup"
@@ -53,6 +55,12 @@ var _mount_yaw := 0.0
 var _mount_turn := 0.0
 var _mount_top := false
 const CLIMB_SPEED := 0.9
+## descendo a escada com o botão de corrida (SHIFT / L3) apertado: desliza pelos corrimãos, sem pisar nos degraus, e
+## chega embaixo em pé (não é queda: sem dano)
+const SLIDE_SPEED := 4.5
+var sliding := false
+## pendurada mirando com arma de uma mão (Player lê): o braço direito solta e mira; arma longa não deixa
+var hang_aiming := false
 const MOUNT_TURN := 0.45  # s para virar meia volta antes de entrar na escada
 const MOUNT_SLIDE := 0.9  # m/s: pelo topo, enquanto vira, ela anda até o lugar onde a entrada começa
 const MOUNT_STEP_BOTTOM := 0.3  # s do passo até o degrau de baixo
@@ -89,6 +97,8 @@ func update(delta: float) -> void:
 
 ## Interrompe a ação (golpe, mordida, morte, reinício). Pegando a arma antes das mãos chegarem nela, a arma fica.
 func cancel() -> void:
+	hang_aiming = false
+	sliding = false
 	if mode in ["grab", "hang", "climb", "mantle", "assassinate", "crit_strike", "ladder", "ladder_mount", "ladder_out", "ladder_in", "hatch"] or (mode == "pickup" and not _got_item):
 		p.model.holster(false)
 	if is_instance_valid(_enemy):
@@ -287,13 +297,32 @@ func _grab() -> void:
 
 func _hang() -> void:
 	p.velocity = Vector3.ZERO
+	# mirar pendurada: só com arma de uma mão (a outra segura a borda); com arma longa avisa e não mira
+	var want_aim := Input.is_action_pressed("aim") and not p.dead
+	var one_hand := not p.weapon() in HeroineModel.LONG_GUNS
+	if want_aim and not one_hand:
+		p._say(HANG_TWO_HANDS)
+	hang_aiming = want_aim and one_hand
+	p.model.holster(not hang_aiming)
 	var toward := p.move_wish().dot(_fwd)
+	if hang_aiming:
+		_armed = false  # mirando, o direcional não sobe nem solta (a câmera é quem mira)
+		if Input.is_action_just_pressed("jump"):
+			hang_aiming = false
+			_start_climb(0.0)
+		elif InputSetup.crouch_tapped():
+			hang_aiming = false
+			drop()
+		return
 	if absf(toward) < 0.3:
 		_armed = true
 	if Input.is_action_just_pressed("jump") or (_armed and toward > 0.5):
 		_start_climb(0.0)
 	elif InputSetup.crouch_tapped() or (_armed and toward < -0.5):
 		drop()
+
+
+const HANG_TWO_HANDS := "PENDURADA SÓ DÁ PARA MIRAR COM ARMA DE UMA MÃO"
 
 
 ## Solta da borda e cai.
@@ -356,6 +385,8 @@ func _pickup() -> void:
 		if drop:
 			p.silencer = true
 		p.give_weapon(w)
+		if drop and GameMode.limited_ammo():
+			p.collect(w, SupplyDrop.AMMO)  # a pistola da caixa vem com um pente a mais
 		Sfx.play(p.model, "weapon_pickup", p.global_position + Vector3.UP * 0.8)
 	if f >= _frames:
 		mode = ""
@@ -589,16 +620,22 @@ func _ladder_climb(delta: float) -> void:
 			_start_ladder_top(false)
 			return
 	elif dir < 0.0:
-		# Descer escada
-		_ladder_y -= CLIMB_SPEED * delta
-		p.model.set_state("ladder_down", 1.2)
-		if absf(_ladder_y - _ladder_sound_y) >= RUNG_SOUND_DIST:
-			_ladder_sound_y = _ladder_y
-			Sfx.play(p.model, "climb")
+		# Descer escada; com o botão de corrida, desliza (mãos e pés nos corrimãos, a pose parada da escada)
+		sliding = Input.is_action_pressed("sprint")
+		_ladder_y -= (SLIDE_SPEED if sliding else CLIMB_SPEED) * delta
+		if sliding:
+			p.model.set_state("ladder_idle")
+		else:
+			p.model.set_state("ladder_down", 1.2)
+			if absf(_ladder_y - _ladder_sound_y) >= RUNG_SOUND_DIST:
+				_ladder_sound_y = _ladder_y
+				Sfx.play(p.model, "climb")
 		if _ladder_y <= 0.08:
+			sliding = false
 			_ladder_dismount_bottom()
 			return
 	else:
+		sliding = false
 		p.model.set_state("ladder_idle")
 	
 	_update_ladder_pos()

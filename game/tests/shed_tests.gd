@@ -198,9 +198,9 @@ func test_new_guards() -> void:
 	var main: Node = await _main()
 	var p: Player = main.player
 	p.health = 100000
-	var spots := {16: Vector3(-2.6, 0, 63.82), 17: Vector3(-10.0, 0, 67.3), 18: Vector3(-12.2, 0, 62.2), 19: Vector3(-7.4, 0, 60.29),
+	var spots := {16: Vector3(-7.4, 0, 63.71), 17: Vector3(-10.0, 0, 67.3), 18: Vector3(-12.2, 0, 62.2), 19: Vector3(-7.4, 0, 60.29),
 		20: Vector3(1.5, 0, 50.8), 21: Vector3(-1.4, 0, 55.0), 22: Vector3(2.2, 0, 44.2), 23: Vector3(-11.6, 0, 45.1),
-		24: Vector3(-8.7, 0, 44.2), 25: Vector3(-11.9, 0, 3.4), 26: Vector3(-3.7, 0, 5.0), 2: Vector3(0.6, 0, 57.2),
+		24: Vector3(-8.7, 0, 44.2), 25: Vector3(-11.9, 0, 3.4), 26: Vector3(-5.45, 0, 4.2), 2: Vector3(0.6, 0, 57.2),
 		12: Vector3(-2.6, 0, Level.MAZE_FRONT + 0.15 + Level.CONSOLE_GUARD)}
 	t.check(main.soldiers.size() == Soldier.GUARDS.size() and Soldier.GUARDS.size() == 27, "27 guardas no galpão", str(main.soldiers.size()))
 	for i: int in spots:
@@ -208,10 +208,10 @@ func test_new_guards() -> void:
 		t.check(_near(sd.global_position, spots[i], 0.45), "guarda %d no lugar da planta" % i, str(sd.global_position))
 	for i in [2, 12, 16, 17, 18, 19]:
 		t.check(main.soldiers[i].weapon == "pistol", "guarda %d do labirinto de pistola" % i)
-	var distracted := [12, 16, 17, 20, 21, 25, 26, 11, 13, 15]
+	var distracted := [12, 17, 20, 21, 25, 26, 11, 13, 15]
 	t.check(distracted.all(func(i: int) -> bool: return main.soldiers[i].distracted), "os do computador, das bancadas, do armário, do celular e do caminhão estão distraídos")
 	# distraídos: com ela parada de pé a 2,5 m na frente deles, não a veem
-	for i in [16, 20, 21, 25, 26]:
+	for i in [20, 21, 25, 26]:
 		_quiet(main)
 		var sd: Soldier = main.soldiers[i]
 		sd.process_mode = Node.PROCESS_MODE_INHERIT

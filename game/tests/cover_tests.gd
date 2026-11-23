@@ -27,6 +27,7 @@ func run(runner: SceneTree) -> void:
 	await test_aim_open_side()
 	await test_slide_keeps_gun_close()
 	await test_hidden_behind()
+	await test_corridor_camera()
 	GameMode.set_mode(GameMode.ARCADE)
 	await test_arcade_off()
 
@@ -415,3 +416,38 @@ func test_hidden_behind() -> void:
 func test_arcade_off() -> void:
 	var p: Player = await _covered()
 	t.check(not p.cover.active and p.model.state == "idle", "arcade: o V/L3 não encosta (só esgueira, jogo de antes)", p.model.state)
+
+
+## Encostada num corredor estreito (outra parede a 1,6 m na frente dela): a câmera gira sozinha para olhar ao longo do
+## corredor, para o lado em que ela olha, no ombro do lado aberto; no aberto (sem a parede da frente) fica onde estava.
+## Mexer na câmera interrompe o giro.
+func test_corridor_camera() -> void:
+	var open_p: Player = await _covered()
+	var yaw0 := open_p.camera_rig.yaw
+	await t._frames(40)
+	t.check(open_p.cover.corridor_dir() == Vector3.ZERO and absf(angle_difference(open_p.camera_rig.yaw, yaw0)) < 0.05,
+		"no aberto: a câmera não gira sozinha")
+	var w: Node3D = await _world_with_wall()
+	var front := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, 2.4, 0.6)
+	col.shape = box
+	front.add_child(col)
+	front.position = Vector3(0, 1.2, WALL_FACE + 1.6 + 0.3)
+	w.add_child(front)
+	var p: Player = t._spawn_player(w, Vector3(0, 0, -0.2))
+	await t._frames(10)
+	await _command()
+	await t._frames(90)
+	var d: Vector3 = p.cover.corridor_dir()
+	t.check(p.cover.active and d != Vector3.ZERO, "encostada no corredor estreito: acha o corredor")
+	var look := -p.camera_rig.yaw_basis().z
+	t.check(look.dot(d) > 0.95 and absf(look.x) > 0.8, "a câmera olha ao longo do corredor, para onde ela olha", str(look))
+	t.check(p.camera_rig.yaw_basis().x.dot(p.cover.normal) > 0.0 and p.camera_rig.side_goal > 0.0
+		or p.camera_rig.yaw_basis().x.dot(p.cover.normal) < 0.0 and p.camera_rig.side_goal < 0.0, "ombro do lado aberto (longe da parede dela)")
+	# o jogador gira a câmera: ela fica onde ele pôs
+	p.camera_rig._look(Vector2(0.8, 0.0))
+	var mine := p.camera_rig.yaw
+	await t._frames(40)
+	t.check(absf(angle_difference(p.camera_rig.yaw, mine)) < 0.05, "mexeu na câmera: o giro sozinho para")

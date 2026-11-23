@@ -42,6 +42,7 @@ const STATES := {
 ## encostada: com arma longa só os braços vêm da pose de carregar (o tronco reclinado e a cabeça virada ficam)
 const COVER := ["cover_l", "cover_r", "cover_crouch_l", "cover_crouch_r"]
 const ARMS := ["UpperArm_L", "LowerArm_L", "Hand_L", "UpperArm_R", "LowerArm_R", "Hand_R"]
+const HANG_AIM_ARM := ["UpperArm_R", "LowerArm_R", "Hand_R"]
 ## passo lateral: a parte de cima do StrafeL/R é a da mira (arma esticada); andando de lado sem mirar (colada na parede,
 ## passo até a quina), a parte de cima vem da pose parada: a da encostada (`cover_upper`) ou em pé/agachada
 const STRAFES := ["strafe_l", "strafe_r", "crouch_strafe_l", "crouch_strafe_r", "strafe_fast_l", "strafe_fast_r"]
@@ -104,6 +105,9 @@ var atlas: Texture2D = ATLAS
 
 var skeleton: Skeleton3D
 var aim_pitch: AimPitch
+var hang_aim: HangAim  # pendurada mirando com a pistola: tronco gira e o braço direito aponta (PlayerMoves "hang")
+var _hang_aim := 0.0
+var _hang_aim_on := false
 var lean_tilt: LeanTilt
 var head_look: HeadLook
 var anim_player: AnimationPlayer
@@ -170,6 +174,8 @@ func _ready() -> void:
 	skeleton.add_child(aim_pitch)
 	lean_tilt = LeanTilt.new()
 	skeleton.add_child(lean_tilt)
+	hang_aim = HangAim.new()
+	skeleton.add_child(hang_aim)
 	head_look = HeadLook.new()
 	skeleton.add_child(head_look)
 	_setup_braid()
@@ -371,6 +377,14 @@ func _build_tree() -> void:
 		bt.connect_node("reload", 0, "shoot")
 		bt.connect_node("reload", 1, "reload_pose")
 		under_hit = "reload"
+	# pendurada mirando com a pistola: só o braço direito vem da pose de mira (a esquerda segue na borda)
+	var hang_blend := AnimationNodeBlend2.new()
+	_filter_bones(hang_blend, HANG_AIM_ARM)
+	bt.add_node("a_hang_aim", _anim("AimIdle"))
+	bt.add_node("hang_aim", hang_blend)
+	bt.connect_node("hang_aim", 0, under_hit)
+	bt.connect_node("hang_aim", 1, "a_hang_aim")
+	under_hit = "hang_aim"
 	bt.add_node("hit", AnimationNodeAdd2.new())
 	bt.connect_node("hit", 0, under_hit)
 	bt.connect_node("hit", 1, "hit_dir")
@@ -407,6 +421,9 @@ func _process(delta: float) -> void:
 	_reload_step(delta)
 	_aim = move_toward(_aim, _aim_target, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim)
+	_hang_aim = move_toward(_hang_aim, 1.0 if _hang_aim_on else 0.0, delta * 6.0)
+	tree.set("parameters/hang_aim/blend_amount", _hang_aim)
+	hang_aim.amount = _hang_aim
 	aim_pitch.influence = _aim
 	var strafing := state in STRAFES and _aim_target == 0.0
 	var cover_strafe := strafing and cover_upper != ""
@@ -584,8 +601,22 @@ func is_aimed() -> bool:
 	return _aim > 0.9
 
 
-func shoot() -> void:
-	tree.set("parameters/shoot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+## Pendurada mirando com a pistola: liga/desliga o braço direito apontado para `at` (no mundo).
+func set_hang_aim(on: bool, at := Vector3.ZERO) -> void:
+	_hang_aim_on = on
+	if on:
+		hang_aim.target = at
+
+
+## Já com o braço apontado (pendurada): pode atirar.
+func is_hang_aimed() -> bool:
+	return _hang_aim > 0.9
+
+
+## Tiro: a animação de tiro (parte de cima) e o som. `anim` falso = só o som (pendurada: a pose de tiro soltaria a borda).
+func shoot(anim := true) -> void:
+	if anim:
+		tree.set("parameters/shoot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	Sfx.play(self, gun() + "_shot", muzzle_position())
 	if weapon == "shotgun":
 		_pump_t = 0.0

@@ -50,7 +50,7 @@ extends Node3D
 
 const POST_SHADER := preload("res://shaders/psx_post.gdshader")
 const MOVE_SHOTS := [
-	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "climb", "mantle", "pickup", "rifle", "rifle_aim",
+	"walk", "crouch_walk", "crouch_aim", "jump", "hang", "hang_aim", "climb", "mantle", "pickup", "rifle", "rifle_aim",
 	"pickup_shotgun", "shotgun", "shotgun_aim", "fire_pistol", "fire_m16", "fire_shotgun", "pump",
 	"roll_side", "jump_side", "sniper_aim", "sniper_zoom",
 	"hit_crouch", "stagger", "getup", "getup_fwd", "reload_pistol", "reload_m16",
@@ -175,6 +175,7 @@ var _end_hint: UiStyle.Hint
 var _end_credit: Label  # crédito do modelo do raptor (só na tela de fim)
 var _crosshair: Crosshair
 var _capture := ""
+var _sleep_t := 0.0  # próxima conferência de quem dorme (Enemy.update_sleep)
 var _shot := "idle"
 var _t := 0.0
 var _until := 1.5
@@ -229,7 +230,7 @@ func _ready() -> void:
 	locker.rotation.y = Yard.LOCKER_YAW
 	add_child(locker)
 	chests.append(locker)
-	# caixa de paraquedas no canto do fundo do telhado, escondida na neblina
+	# caixa de paraquedas no telhado, escondida atrás da casa de máquinas da luz vermelha
 	drop = SupplyDrop.new()
 	drop.position = SupplyDrop.POS
 	drop.rotation.y = SupplyDrop.YAW
@@ -279,14 +280,13 @@ func _ready() -> void:
 	add_child(catwalk)
 
 	# guerrilheiro de M16 de ronda no perímetro do mezanino (posto elevado; atira de longe, sem laser); morto, o fuzil e o
-	# cartão caem da beira no pé da escada (Catwalk.DROP_POINT)
+	# cartão ficam com ele lá em cima: ela sobe pelas caixas (Level.MAZE_STEP) para pegar
 	sniper = Sniper.new()
 	sniper.weapon = "m16"
 	sniper.target = player
 	sniper.position = Catwalk.ROUTE[0]
 	sniper.rotation.y = 0.0  # olhando para frente do galpão (-Z)
 	sniper.route.assign(Catwalk.ROUTE)
-	sniper.drop_at = Catwalk.DROP_POINT
 	add_child(sniper)
 	
 	# keycard no sniper que abre o portão da primeira fase
@@ -373,6 +373,7 @@ func _ready() -> void:
 	drop.picked.connect(func(d: SupplyDrop) -> void: inspect.show_drop(d))
 	gate_card.picked.connect(func(k: KeyItem) -> void: inspect.show_item(k))
 	player.health_changed.connect(_set_health)
+	player.armor_changed.connect(_set_armor)
 	player.headshot.connect(func(_who: Node) -> void: _headshot_t = HEADSHOT_TIME)
 	player.notice.connect(show_notice)
 	player.surrender_broken.connect(_on_surrender_broken)
@@ -612,7 +613,9 @@ func shed_soldiers() -> Array[Soldier]:
 
 ## Um computador do galpão destravou uma grade: aviso na tela; o da sala dos clones também é checkpoint.
 func _on_shed_objective(id: String) -> void:
-	show_notice({"panel": "GRADE DESTRAVADA", "office": "PORTA DO ARQUIVO DESTRAVADA", "control": "PORTÃO DA DOCA DESTRAVADO"}.get(id,
+	# o nome é o da placa em cima da porta (Shed.door_signs): a do arquivo diz DOCA; o portão da doca, ÁREA RESTRITA
+	show_notice({"panel": "GRADE PARA O ESCRITÓRIO DESTRAVADA", "office": "PORTA PARA A DOCA DESTRAVADA (NO ARQUIVO)",
+		"control": "PORTÃO DA ÁREA RESTRITA DESTRAVADO"}.get(id,
 		"PORTÃO DO PÁTIO ABERTO"))
 	if id == "control":
 		reach_checkpoint("control")
@@ -707,6 +710,7 @@ func _build_hud() -> void:
 	_hud_health.colors = [[0.25, UiStyle.DANGER], [0.5, UiStyle.ACCENT], [1.0, UiStyle.ACTION]]
 	layer.add_child(_hud_health)
 	_set_health(player.health)
+	_set_armor(player.armor)
 	danger = DangerMeter.new()
 	danger.player = player
 	danger.position = Vector2(6, 15)
@@ -971,6 +975,11 @@ func _on_locked(c: Chest) -> void:
 		player.use_key(id)
 
 
+func _set_armor(v: int) -> void:
+	if _hud_health:
+		_hud_health.over = float(v) / Player.MAX_ARMOR
+
+
 func _set_health(v: int) -> void:
 	_hud_health.value = float(v) / Player.MAX_HEALTH
 	_hud_health.tail = str(maxi(v, 0))
@@ -1152,6 +1161,7 @@ func _parse_args() -> void:
 			var path := a.trim_prefix("--capture=")
 			if OS.is_debug_build() and path.get_extension().to_lower() == "png" and not path.replace("\\", "/").begins_with("//"):
 				_capture = path
+				Enemy.sleep_enabled = false  # capturas põem a câmera longe dela e esperam o inimigo agir
 			else:
 				push_warning("--capture ignorado (só .png local em build de debug): " + path)
 		elif a.begins_with("--shot="):
@@ -1351,6 +1361,11 @@ func _parse_args() -> void:
 
 
 func _process(delta: float) -> void:
+	# inimigos longe e sem como percebê-la dormem (Enemy.update_sleep): sem isso a fase inteira roda IA e esqueleto
+	_sleep_t -= delta
+	if _sleep_t <= 0.0 and player:
+		_sleep_t = Enemy.SLEEP_CHECK
+		Enemy.update_sleep(get_tree().get_nodes_in_group("enemies"), player)
 	if _crosshair == null:
 		return
 	var in_sniper := player.is_sniper_zoomed()
@@ -2125,7 +2140,7 @@ func _setup_move_shot() -> void:
 	for d in dummies:
 		d.visible = false
 	var spots := {
-		"hang": [Vector3(-2.5, 0, -0.35), 0.0], "climb": [Vector3(-2.5, 0, -0.35), 0.0],
+		"hang": [Vector3(-2.5, 0, -0.35), 0.0], "hang_aim": [Vector3(-2.5, 0, -0.35), 0.0], "climb": [Vector3(-2.5, 0, -0.35), 0.0],
 		"mantle": [Vector3(0, 0, -9.95), 0.0], "pickup": [chest.kneel_transform().origin + chest.global_basis.z * 0.5, chest.rotation.y],
 		"pickup_shotgun": [chests[1].kneel_transform().origin + chests[1].global_basis.z * 0.5, chests[1].rotation.y],
 		# de frente para a pilha de caixas de madeira, com a coluna de metal à esquerda
@@ -2177,6 +2192,13 @@ func _move_shot(at: Callable) -> void:
 				Input.action_press("aim")
 		"jump", "hang", "mantle":
 			tap.call("jump", 0.4)
+		"hang_aim":
+			# pendurada, a câmera vira para a direita dela (--yaw soma) e mira com a pistola a partir de 1,2 s
+			tap.call("jump", 0.4)
+			if _t > 1.0 and _t < 1.2:
+				player.camera_rig.yaw = player.rotation.y - 1.4 + (0.0 if is_nan(_yaw) else _yaw)
+			if _t > 1.2:
+				Input.action_press("aim")
 		"climb":
 			tap.call("jump", 0.4)
 			tap.call("jump", 1.2)

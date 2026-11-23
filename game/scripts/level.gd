@@ -136,13 +136,13 @@ static func build(parent: Node) -> Dictionary:
 ## desce no nicho do canto da direita ('L', fechado por pilhas) e a única saída é o portão de grade do meio (Shed.MID_GATE),
 ## depois de dar a volta inteira: corredor da linha 2 para oeste, a volta em quadrado debaixo do mezanino (Catwalk, colunas
 ## 0..3, linhas 0..2), o corredor da parede oeste até a frente, e o caminho em zigue-zague até o portão.
-## Uma letra por célula (MAZE_CELL m; linha 0 = o fundo): '#' = pilha de duas caixas, 'Q' = pilha da quina (atrás dela,
+## Uma letra por célula (MAZE_CELL m; linha 0 = o fundo): '#' = pilha de duas caixas, 'S' = a caixa-degrau (MAZE_STEP), 'Q' = pilha da quina (atrás dela,
 ## esgueirando, ela vê o atirador do mezanino pelo corredor da coluna 3), '.' / '_' = corredor ('_' = debaixo do
 ## mezanino), 'L' = pé da escada do alçapão (ela desce no vão entre a escada e a parede do fundo e sai pelo lado: a
 ## coluna 8 das linhas 0 e 1 fica aberta, senão a cápsula não passa entre a escada e a pilha). As pilhas passam do alcance de pendurar (Moves hang.top +
 ## PlayerMoves.GRAB_MAX): não dá para subir e pular o labirinto. Debaixo do mezanino a de cima é mais baixa (cabe sob o piso).
 const MAZE := [
-	"____.###.L",
+	"____S###.L",
 	"_##_.###..",
 	"_##_......",
 	".#########",
@@ -155,6 +155,11 @@ const MAZE_FRONT := NORTH - 12.0  # parede da frente do labirinto (com o portão
 const MAZE_STACK := 2.7  # altura da pilha (debaixo do mezanino, até embaixo do piso dele)
 const MAZE_HATCH := Vector2i(9, 0)  # célula do pé da escada do alçapão
 const MAZE_Q := Vector2i(2, 5)  # a pilha da quina
+## A subida do mezanino ('S' no MAZE): no fundo do bolsão sem saída ao lado da beira leste do mezanino (coluna 4), uma
+## caixa só (1,4 m), sem no_climb: ela escala a caixa e, de cima, sobe na beira do mezanino (3 m) pelo vão do guarda-corpo
+## (Catwalk.STEP_GAP). As pilhas de 2,7 m em volta seguem sem escalar. Fica num corredor que o guarda do mezanino já via:
+## não abre vista nova para os pontos cegos das rondas.
+const MAZE_STEP := Vector2i(4, 0)
 ## Caixas soltas pelo galpão: [centro no chão (x, z), caixas na pilha (2 = 2,4 m, tapa a visão; 1 = caixa baixa de
 ## LOW_CRATE_H, esconde agachada), giro]. As paredes das salas são do Shed (sólidas); estas são cobertura e pontos cegos.
 const DIVIDERS := [
@@ -212,9 +217,13 @@ static func _maze(parent: Node) -> void:
 	for r in MAZE.size():
 		var row: String = MAZE[r]
 		for c in row.length():
-			if row[c] != "#" and row[c] != "Q":
+			if row[c] != "#" and row[c] != "Q" and row[c] != "S":
 				continue
 			var at := maze_cell(c, r)
+			if Vector2i(c, r) == MAZE_STEP:
+				# o degrau da subida do mezanino: uma caixa só, que se escala
+				block(parent, Vector3(MAZE_CELL.x + 0.02, 1.4, MAZE_CELL.y + 0.02), at + Vector3(0, 0.7, 0), "crate", 1.0 / MAZE_CELL.x, 0.0)
+				continue
 			# variação fixa por célula: as pilhas não ficam alinhadas como tijolos
 			# vizinhas encostadas (sem fresta para a visão nem para o tiro)
 			var k := float((c * 7 + r * 13) % 5) / 4.0 - 0.5
@@ -243,9 +252,8 @@ static func _dividers(parent: Node) -> void:
 ## luzinhas, e uma luz verde fraca na frente (o nicho não tem lâmpada: é ela que mostra o guarda).
 static func _console(parent: Node) -> void:
 	console_at(parent, CONSOLE, CONSOLE_YAW, true)
-	# bancadas dos guardas distraídos do labirinto (Soldier.P1_BENCH / P2_BENCH): quem digita fica do lado -z
-	for b: Vector3 in [Soldier.P1_BENCH, Soldier.P2_BENCH]:
-		console_at(parent, b, PI * 0.5, false)
+	# bancada do P2 (Soldier.P2_BENCH, na parede do fundo debaixo do mezanino): quem digita fica do lado -z
+	console_at(parent, Soldier.P2_BENCH, PI * 0.5, false)
 
 
 ## O mesmo painel em qualquer parede: `c` = ponto no chão na face da parede, `yaw` = giro do +X (para quem digita: 0 = leste,

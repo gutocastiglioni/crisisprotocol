@@ -53,6 +53,19 @@ const SWING_FOV := 8.0  # graus a mais de campo de visão
 const SWING_BACK := 0.3  # m a mais atrás dela
 const SWING_SPRING := 5.0  # mola (rad/s)
 const SWING_DAMP := 0.7  # amortecimento (< 1: na volta passa um pouco do ponto, o repuxo da mola)
+## survival, encostada num corredor estreito (PlayerCover.corridor_dir): ao encostar (ou trocar o lado para onde ela olha) a
+## câmera gira sozinha para olhar ao longo do corredor, no ombro do lado aberto (longe da parede dela); mexer na câmera
+## interrompe o giro
+const CORRIDOR_TURN := 5.0  # rapidez do giro (1/s)
+const CORRIDOR_NEW := 0.35  # rad: a direção do corredor mudou mais que isto = gira de novo
+## peso de câmera de mão (survival, jeito Max Payne 3): o pivô segue com um pouco de atraso correndo e a imagem balança
+## de leve (ruído lento), mais andando/correndo, menos mirando
+const FOLLOW_RATE := 14.0  # rapidez com que o pivô alcança ela parada/andando (1/s)
+const FOLLOW_RATE_RUN := 7.0  # correndo: fica um pouco para trás e alcança quando ela para
+const SWAY_IDLE := 0.003  # rad de balanço parada
+const SWAY_MOVE := 0.008  # rad correndo
+const SWAY_AIM := 0.0015  # rad mirando
+const SWAY_FREQ := 0.45  # Hz
 
 var target: Node3D
 var yaw := 0.0
@@ -72,7 +85,12 @@ var _side_vel := 0.0  # velocidade da troca de lado (mola)
 var swing := 0.0  # 0..1: quanto do efeito do giro está valendo (SWING_*)
 var _swing_vel := 0.0
 var _turn := 0.0  # giro da câmera (rad, + = para a direita) desde o último quadro
-## Ações (alçapão, porta abrindo, pegar item em pé, detonador; pegar arma no baú/caixa não): a câmera gira em volta dela
+var _corridor_dir := Vector3.ZERO  # última direção de corredor estreito para onde a câmera girou
+var _corridor_turning := false  # girando sozinha para o corredor
+var _corridor_side := 0.0  # ombro pedido pelo corredor (0 = nenhum)
+var _sway_t := 0.0
+var _sway := 0.0  # amplitude atual do balanço
+## Ações (alçapão, porta abrindo; pegar item/arma, computador e detonador não): a câmera gira em volta dela
 ## até um ângulo que mostra a ação (perfil / 3/4 de frente: rosto, mãos e o objeto), mais perto e de cima, e no fim volta
 ## devagar ao enquadramento de antes (o giro do jogador fica guardado em `yaw`). Lado escolhido no começo da ação: o mais
 ## livre de parede (`_pick_side`); `_place_camera` segue encurtando se algo entrar no meio.
@@ -81,18 +99,15 @@ var _turn := 0.0  # giro da câmera (rad, + = para a direita) desde o último qu
 const ACTIONS := {
 	"hatch": {"angle": 95.0, "length": 2.1, "pitch": -0.42, "fov": 50.0, "fwd": 0.0, "drop": 0.15},
 	"door": {"angle": 40.0, "length": 2.6, "pitch": -0.3, "fov": 52.0, "fwd": 0.8, "drop": 0.3},
-	"pulse": {"angle": 140.0, "length": 1.8, "pitch": -0.3, "fov": 48.0, "fwd": 0.3, "drop": 0.3},
 }
 const ACTION_IN := 0.6  # s para girar até o ângulo da ação
 const ACTION_OUT := 1.2  # s para voltar ao normal (mais devagar que a chegada)
 const ACT_LOWS := [0.8, 0.3]  # alturas (acima dos pés) do ponto olhado ajoelhada/debruçada, para escolher o lado
-const PULSE_HOLD := 0.9  # ação sem animação (pegar item em pé, detonador): s no ângulo antes de voltar
 var _act_lin := 0.0  # 0..1 linear; o peso usado é o smoothstep dele
-var _act_cfg: Dictionary = ACTIONS.pulse
+var _act_cfg: Dictionary = ACTIONS.door
 var _dodge := 0.0  # 0..1: quanto do afastamento da cambalhota (`*_dodge`) está valendo
 var _act_kind := ""
 var _act_side := 1.0  # +1/-1: de que lado dela a câmera gira
-var _pulse := 0.0
 var _head_bone := -1
 ## Raio da esfera que a câmera arrasta pelo cenário (camada 1): o centro dela nunca chega mais perto que isto de uma
 ## superfície, e o plano de perto (`camera.near`) fica sempre do lado de fora.
@@ -133,6 +148,9 @@ func _look(d: Vector2) -> void:
 	# numa cena (Cutscene) a câmera dela não está na tela: mouse/analógico não a giram por trás
 	if target and target.get("cutscene"):
 		return
+	# numa ação com animação (pegar, abrir, escalar...) a câmera fica parada e no fim volta a este giro (Player.camera_locked)
+	if target and target.has_method("camera_locked") and target.camera_locked():
+		return
 	if target and target.has_method("is_sniper_zoomed") and target.is_sniper_zoomed():
 		var zoom_factor: float = target.call("sniper_zoom")
 		d *= clampf(1.0 / zoom_factor, 0.05, 0.5)
@@ -150,6 +168,7 @@ func _process(delta: float) -> void:
 	var pad := Input.get_vector("look_left", "look_right", "look_up", "look_down")
 	if pad.length() > 0.0:
 		_look(pad * PAD_SENS * delta)
+	_follow_corridor(delta)
 	# tela em pé: mantém a largura do campo de visão para ela não sair do quadro ao mirar
 	var vp := get_viewport().get_visible_rect().size
 	camera.keep_aspect = Camera3D.KEEP_WIDTH if vp.y > vp.x else Camera3D.KEEP_HEIGHT
@@ -176,9 +195,19 @@ func _process(delta: float) -> void:
 	if in_sniper:
 		goal.y = focus.y + (1.15 if target.get("crouching") else 1.52)
 	_anchor = goal
-	global_position = goal if not _snapped else global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
+	var running: bool = moving and target.get("velocity").length() > Moves.speed("walk") * 1.2
+	var rate := FOLLOW_RATE_RUN if shoulder and running and not aiming and act == 0.0 else FOLLOW_RATE
+	global_position = goal if not _snapped else global_position.lerp(goal, 1.0 - exp(-rate * delta))
 	_snapped = true
 	rotation = Vector3(lerpf(pitch, float(_act_cfg.pitch), act), lerp_angle(yaw, _act_yaw(), act) if act > 0.0 else yaw, 0.0)
+	if shoulder and not in_sniper:
+		# câmera de mão: balanço lento e pequeno (dois senos fora de fase, sem repetir o desenho)
+		var amp := SWAY_AIM if aiming else (SWAY_MOVE if running else SWAY_IDLE)
+		_sway = lerpf(_sway, amp * (1.0 - act), 1.0 - exp(-3.0 * delta))
+		_sway_t += delta * TAU * SWAY_FREQ
+		rotation.x += _sway * sin(_sway_t * 1.0) * 0.8
+		rotation.y += _sway * sin(_sway_t * 0.73 + 1.3)
+		rotation.z = _sway * 0.6 * sin(_sway_t * 0.51 + 2.1)
 	var k := 1.0 - exp(-10.0 * delta)
 
 	if in_sniper:
@@ -256,6 +285,31 @@ func _sweep(from: Vector3, to: Vector3) -> Vector3:
 	return from + d / dist * maxf(0.0, from.distance_to(hit.position) - CAM_RADIUS)
 
 
+## Encostada num corredor estreito (survival, sem mirar): quando a direção do corredor muda (encostou, trocou de lado), gira
+## o `yaw` até ela; mexer na câmera para o giro. Enquanto encostada ali, pede o ombro do lado aberto (`_corridor_side`).
+func _follow_corridor(delta: float) -> void:
+	var c = target.get("cover") if GameMode.shoulder_cam() else null
+	var d: Vector3 = c.corridor_dir() if c != null and not target.get("aiming") else Vector3.ZERO
+	if d == Vector3.ZERO:
+		_corridor_dir = Vector3.ZERO
+		_corridor_turning = false
+		_corridor_side = 0.0
+		return
+	if _corridor_dir == Vector3.ZERO or _corridor_dir.angle_to(d) > CORRIDOR_NEW:
+		_corridor_dir = d
+		_corridor_turning = true
+	if _idle_look == 0.0 and _corridor_turning and _turn != 0.0:
+		_corridor_turning = false  # o jogador pegou a câmera
+	var want := atan2(-_corridor_dir.x, -_corridor_dir.z)
+	if _corridor_turning:
+		yaw = lerp_angle(yaw, want, 1.0 - exp(-CORRIDOR_TURN * delta))
+		if absf(angle_difference(yaw, want)) < 0.02:
+			_corridor_turning = false
+	# ombro longe da parede dela: o direito se a direita da câmera aponta para o corredor
+	var n: Vector3 = c.normal
+	_corridor_side = 1.0 if yaw_basis().x.dot(n) >= 0.0 else -1.0
+
+
 ## Giro da câmera para o lado em que ela está na tela (sem mirar): a mola puxa `swing` para a rapidez do giro; parou, volta.
 func _update_swing(delta: float, aiming: bool) -> void:
 	var rate := _turn / maxf(delta, 0.001)
@@ -264,16 +318,12 @@ func _update_swing(delta: float, aiming: bool) -> void:
 	swing = clampf(swing + _swing_vel * delta, -0.3, 1.2)
 
 
-## Peso (0..1) do enquadramento de ação: sobe em ACTION_IN enquanto ela faz uma ação de `ACTIONS` (ou num `focus_pulse`),
+## Peso (0..1) do enquadramento de ação: sobe em ACTION_IN enquanto ela faz uma ação de `ACTIONS`,
 ## desce em ACTION_OUT quando acaba; curva suave nas duas pontas.
 func _update_action(delta: float, in_sniper: bool) -> float:
 	var kind: String = target.call("camera_action") if target.has_method("camera_action") else ""
-	_pulse = maxf(0.0, _pulse - delta)
-	if kind == "" and _pulse > 0.0:
-		kind = "pulse"
 	if in_sniper or target.get("dead") or target.get("cutscene"):
 		kind = ""
-		_pulse = 0.0
 	if kind != "":
 		if kind != _act_kind:
 			_act_kind = kind
@@ -339,32 +389,18 @@ func _head_y() -> float:
 	return (sk.global_transform * sk.get_bone_global_pose(_head_bone)).origin.y
 
 
-## Ação sem animação (pegar item em pé, armar o detonador): gira até o ângulo da ação, fica PULSE_HOLD e volta. `snap` =
-## corta direto para o ângulo (antes de uma tela que pausa o jogo: ao fechar ela, a câmera já está lá e só volta).
-func focus_pulse(snap := false) -> void:
-	_pulse = PULSE_HOLD
-	_act_kind = "pulse"
-	_act_cfg = ACTIONS.pulse
-	if target == null or not is_inside_tree():
-		return
-	_pick_side()
-	if not snap:
-		return
-	_act_lin = 1.0
-	global_position = _act_pivot()
-	rotation = Vector3(float(_act_cfg.pitch), _act_yaw(), 0.0)
-	spring.spring_length = float(_act_cfg.length)
-	spring.position.x = 0.0
-	camera.fov = float(_act_cfg.fov)
-	_anchor = global_position
-	_place_camera()
-
-
 ## Ombro da câmera sem mirar (survival): o direito, a não ser que parede/caixa feche um lado da frente do corpo dela; aí o
 ## ombro do lado aberto (pela câmera). Andar não troca de ombro. Sem nada pedindo por `SIDE_RELAX`, volta ao direito.
 ## Mirando, nada muda aqui.
 func _update_side(delta: float, aiming: bool) -> void:
 	if aiming:
+		return
+	if _corridor_side != 0.0:
+		side_goal = _corridor_side
+		_side_relax = 0.0
+		_side_wall_t = 0.0
+		_side_vel += ((side_goal - side) * SIDE_SPRING * SIDE_SPRING - 2.0 * SIDE_SPRING * _side_vel) * delta
+		side = clampf(side + _side_vel * delta, -1.0, 1.0)
 		return
 	var chest: Vector3 = target.global_position + Vector3.UP * (0.9 if target.get("crouching") else 1.3)
 	var body := Basis(Vector3.UP, target.global_rotation.y)
@@ -440,7 +476,6 @@ func reset_view(new_yaw: float) -> void:
 	_side_vel = 0.0
 	_act_lin = 0.0
 	_act_kind = ""
-	_pulse = 0.0
 
 
 ## Treme a câmera por `time` segundos (golpes, mordida).

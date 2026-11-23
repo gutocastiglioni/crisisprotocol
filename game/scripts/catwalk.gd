@@ -4,8 +4,9 @@ extends Node3D
 ## guarda de M16 (Sniper rifleman, ronda no perímetro). Piso de concreto a FLOOR_Y em pilares, faixa de perigo nas beiras
 ## abertas (frente e leste), guarda-corpo com rodapé de chapa e a escada de aço na beira da frente.
 ## Debaixo dele o labirinto continua: os corredores ('_') e as pilhas mais baixas (cabem sob o piso).
-## Fase (main, `suspended`): a escada fica recolhida e trancada (`Ladder.locked`, degraus só de LADDER_LIFT para cima) e
-## não há como subir: ela só o vê de baixo (pela quina Level.MAZE_Q, esgueirando). Embaixo da escada, E = LOCKED_TEXT.
+## Fase (main, `suspended`): a escada fica recolhida e trancada (`Ladder.locked`, degraus só de LADDER_LIFT para cima);
+## sobe-se pelas caixas: a caixa baixa do degrau (Level.MAZE_STEP, no bolsão da coluna 4) e, de cima dela, pulo até a
+## beira leste pelo vão do guarda-corpo (STEP_GAP). Embaixo da escada, E = LOCKED_TEXT.
 
 const FLOOR_Y := 3.0
 const X0 := Level.WEST  # parede oeste
@@ -23,8 +24,8 @@ const POSTS := [Vector2(X1 - 0.12, FRONT_Z + 0.12), Vector2(X1 - 0.12, WALL_Z - 
 ## Ronda do guarda no perímetro (Sniper: `_catwalk_point` / `_clamp_to_catwalk` o seguram aqui dentro).
 const ROUTE := [Vector3(X0 + 0.6, FLOOR_Y, FRONT_Z + 0.54), Vector3(X1 - 0.6, FLOOR_Y, FRONT_Z + 0.54),
 	Vector3(X1 - 0.6, FLOOR_Y, WALL_Z - 0.6), Vector3(X0 + 0.6, FLOOR_Y, WALL_Z - 0.6)]
-## Morto lá em cima, o cartão e o fuzil dele caem da beira no pé da escada (o mezanino não tem subida).
-const DROP_POINT := Vector3(LADDER_X + 0.2, 0, FRONT_Z - 0.75)
+## Vão do guarda-corpo leste ao lado do degrau de caixas (Level.MAZE_STEP): z do meio e largura.
+const STEP_GAP := [Level.NORTH - (Level.MAZE_STEP.y + 0.5) * Level.MAZE_CELL.y, 1.0]
 const LOCKED_TEXT := "Está trancada. O guarda deve gostar de privacidade.
 Não vou precisar dela de qualquer forma."
 
@@ -72,9 +73,11 @@ func _build_guardrails() -> void:
 	var gap := 0.8
 	var l := LADDER_X - gap * 0.5
 	var r := LADDER_X + gap * 0.5
-	# frente (com o vão da escada) e o lado leste: rodapé de chapa (segura o corpo) + corrimão
+	var sa: float = STEP_GAP[0] - STEP_GAP[1] * 0.5
+	var sb: float = STEP_GAP[0] + STEP_GAP[1] * 0.5
+	# frente (com o vão da escada) e o lado leste (com o vão da subida pelas caixas): rodapé de chapa (segura o corpo) + corrimão
 	for e: Array in [[Vector2(X0, FRONT_Z), Vector2(l, FRONT_Z)], [Vector2(r, FRONT_Z), Vector2(X1, FRONT_Z)],
-			[Vector2(X1, FRONT_Z), Vector2(X1, WALL_Z)]]:
+			[Vector2(X1, FRONT_Z), Vector2(X1, sa)], [Vector2(X1, sb), Vector2(X1, WALL_Z)]]:
 		var a: Vector2 = e[0]
 		var b: Vector2 = e[1]
 		var d := b - a

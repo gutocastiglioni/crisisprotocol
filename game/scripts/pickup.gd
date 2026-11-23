@@ -31,9 +31,16 @@ const COLORS := {
 ## prêmio de quem sobe o barranco), túnel da mina e pedreira (chão livre entre as ruínas). `kind` = nome da arma (caixa de
 ## munição dela) ou "health".
 const LAYOUT := [
-	# galpão: o kit de vida no corredor escondido das estantes e a munição de pistola no arsenal do escritório; fora isso,
-	# só a que os guardas largam
+	# galpão: kits de vida em cada sala (labirinto: o canto do baú da M16 e o mezanino, prêmio de quem sobe; arsenal do escritório;
+	# corredor escondido das estantes; doca; atrás da primeira caixa da sala dos clones; pátio descoberto, junto ao
+	# container) e a munição de pistola no arsenal; fora isso, só a munição que os guardas largam
+	{"pos": Vector3(0.6, 0, 56.8), "kind": "health", "amount": 35},
+	{"pos": Vector3(-8.2, Catwalk.FLOOR_Y, 66.0), "kind": "health", "amount": 35},
+	{"pos": Vector3(-0.6, 0, 44.1), "kind": "health", "amount": 35},
 	{"pos": Vector3(-12.0, 0, 40.5), "kind": "health", "amount": 35},
+	{"pos": Vector3(-6.0, CloneLab.FLOOR_Y, 29.0), "kind": "health", "amount": 35},
+	{"pos": Vector3(-6.6, CloneLab.FLOOR_Y, 22.6), "kind": "health", "amount": 35},
+	{"pos": Vector3(-1.6, 0, 3.0), "kind": "health", "amount": 35},
 	{"pos": Vector3(-1.8, 0, 44.1), "kind": "pistol", "amount": 10},
 	# S1 (faixa leste, até a emboscada) e o fim dela, antes do primeiro portão de grade
 	{"pos": Vector3(-15.0, 0, -15.5), "kind": "pistol", "amount": 10},

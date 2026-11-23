@@ -103,6 +103,13 @@ const TRUCK_BED := 1.0
 const TRUCK_TOP := 3.4
 const TRUCK_CHEST := Vector3(-8.7, TRUCK_BED, 3.4)  # baú da escopeta na caçamba, boca para a traseira (main)
 const CONTAINER := [-4.9, -2.2, 2.3, 4.0, 2.6]
+## Caixas abertas em que os guardas distraídos do pátio mexem (Soldier.GUARDS 25 = T, na frente do caminhão; 26 = T2, a
+## descarregada no chão encostada na traseira aberta): [centro no chão, tamanho, giro]; o alto a ~1 m, onde ficam as mãos da
+## animação Console (Level.CONSOLE_KEYS_Y).
+const LOAD_CRATES := [
+	[Vector3(-11.2, 0, 3.4), Vector3(0.4, 1.0, 0.8), 0.0],
+	[Vector3(-6.15, 0, 4.2), Vector3(0.4, 1.0, 0.6), 0.0],
+]
 ## Pilhas altas (2 caixas) no pátio descoberto, na frente do portão da mata: tapam a vista dos postos; passa-se pelos lados.
 const CORNER_SCREEN := [Vector2(-6.2, -7.8), Vector2(-6.2, -9.02)]
 ## Luzes de parede do pátio descoberto (não tem teto para luminária): ponto na face da parede.
@@ -422,6 +429,14 @@ static func _yard(parent: Node) -> void:
 	((box.get_child(0) as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("tint", Color(1.3, 0.6, 0.35))
 	box.set_meta("surface", "metal")
 	box.set_meta("no_climb", true)
+	# caixas abertas em que T e T2 mexem (animação Console: as mãos na altura da tampa)
+	for lc: Array in LOAD_CRATES:
+		var size: Vector3 = lc[1]
+		var crate := Level.block(parent, size, lc[0] + Vector3.UP * size.y * 0.5, "crate", 1.0 / maxf(size.x, size.z), lc[2])
+		crate.set_meta("no_climb", true)
+		var hollow := Level._prop(parent, BoxMesh.new(), Vector3(size.x - 0.1, 0.02, size.z - 0.1), lc[0] + Vector3.UP * (size.y + 0.002), "wall", 2.0)
+		hollow.rotation.y = lc[2]
+		(hollow.material_override as ShaderMaterial).set_shader_parameter("tint", Color(0.12, 0.1, 0.08))  # boca aberta, escura
 	for sc: Vector2 in CORNER_SCREEN:
 		for k in [0, 1]:
 			var crate := Level.block(parent, Vector3(1.22, 1.22, 1.22), Vector3(sc.x, 0.61 + k * 1.22, sc.y), "crate", 1.0 / 1.22, 0.02 - k * 0.05)

@@ -68,6 +68,9 @@ func _initialize() -> void:
 	node_added.connect(_sync_nav_maps)
 	# os testes do jogo de ação de antes valem no perfil "arcade" (o que o jogo mantém inteiro); o "survival" tem os seus
 	GameMode.set_mode(GameMode.ARCADE)
+	# inimigos dormindo longe dela (Enemy.update_sleep) só no teste que confere isso: os outros põem a jogadora longe e
+	# esperam a ronda andar
+	Enemy.sleep_enabled = false
 	_run.call_deferred()
 
 
@@ -332,10 +335,12 @@ func test_ragdoll() -> void:
 	check(not m.is_ragdoll() and m.tree.active, "ragdoll desliga e animação volta")
 
 
-func _spawn_player(w: Node3D, pos := Vector3.ZERO) -> Player:
+func _spawn_player(w: Node3D, pos := Vector3.ZERO, vest := false) -> Player:
 	var p := Player.new()
 	p.position = pos
 	w.add_child(p)
+	if not vest:
+		p.armor = 0  # os testes de dano contam a vida direto (o colete tem o teste dele: survival_tests.test_vest)
 	return p
 
 

@@ -24,6 +24,7 @@ extends CharacterBody3D
 ## Cena (`cutscene`, ver Cutscene): sem controle nem dano; quem a toca move o corpo por `cutscene_walk`.
 
 signal health_changed(value: int)
+signal armor_changed(value: int)  ## colete (`armor`, 0..MAX_ARMOR): o HUD desenha por cima da barra de vida
 signal died
 signal headshot(who: Node)
 signal armor_hit(who: Node, tag: String)  ## o tiro bateu numa proteção com nome (Flak Jacket, casco): a mira mostra
@@ -47,6 +48,9 @@ signal surrender_broken(how: String)
 # andando, agachada e mirando, a velocidade é a dos ciclos de passo (Moves.speed): o pé não escorrega
 const RUN_SPEED := 4.4
 const SPRINT_SPEED := 4.2  # corrida forte do survival (SHIFT / L3): acima da corrida normal (3,5), longe de velocista
+## survival, direcional todo sem o botão de corrida: trote (andar rápido) mais lento que a corrida e com passo mais baixo
+## (PlayerStealth.JOG_NOISE): só a corrida forte faz o barulho de corrida
+const JOG_SPEED := 2.7
 const JUMP_SPEED := 4.6  # pulo normal (~0,6 m)
 const JUMP_FWD := 2.4  # embalo mínimo do pulo projetado (~1,2 m)
 const JUMP_UP_SPEED := 4.9  # pulo parado (~0,65 m, no lugar)
@@ -93,6 +97,9 @@ const NOTICE_GAP := 0.8  # o mesmo aviso de "vazia"/"pare" no máximo a cada tan
 const SNIPER_ZOOM_LEVELS: Array[float] = [2.0, 4.0, 8.0, 16.0]
 const SNIPER_ZOOM_LABELS: Array[String] = ["2.0x", "4.0x", "8.0x", "16.0x"]
 const MAX_HEALTH := 100
+## Colete (survival, GameMode "vest", jeito Syphon Filter): começa cheio e leva o dano antes da vida (vida + colete = o
+## dobro do que ela aguentava); o kit de vida enche os dois (Player.collect "health"). Queda não passa pelo colete.
+const MAX_ARMOR := 100
 const BLEED_AT := 30  # vida até isto: ela pinga sangue (rastro `Blood.Trail`); acima, não sangra
 const STAND_H := 1.7  # cápsula em pé
 const CROUCH_H := 1.15  # cápsula agachada: passa por baixo de um vão de 1,25 m (pista de treino)
@@ -114,6 +121,7 @@ const VOID_Y := -10.0  # todo chão do mapa está em y = 0: caindo abaixo disto 
 var model: HeroineModel
 var camera_rig: CameraRig
 var health := 100
+var armor := 0
 var crouching := false
 var aiming := false
 var dead := false
@@ -186,6 +194,7 @@ var _trail := Blood.Trail.new()
 
 func _ready() -> void:
 	_fill_mags()  # começa com o pente cheio (o reset_loadout repete ao reiniciar)
+	armor = start_armor()
 	collision_layer = 2
 	collision_mask = 1 | Yard.GRATE_LAYER  # portões de grade e bordas do planalto da trilha do pátio
 	add_to_group("player")
@@ -211,6 +220,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	model.set_hang_aim(false)  # só pendurada mirando (o passo de "busy" liga de novo)
 	stealth.update(delta)
 	_fit_capsule()
 	if not dead and not grabbed:
@@ -258,6 +268,11 @@ func _physics_process(delta: float) -> void:
 		model.visible = true
 		model.set_aim(false)
 		moves.update(delta)
+		# pendurada mirando com a pistola: o braço aponta para o ponto da retícula e o gatilho vale
+		aiming = moves.hanging() and moves.hang_aiming
+		model.set_hang_aim(aiming, camera_rig.aim_point([get_rid()]) if aiming else Vector3.ZERO)
+		if aiming and Input.is_action_pressed("shoot"):
+			fire()
 		# movimentos com caminho (escada, borda, cambalhota) não contam como queda; ao soltar, conta dali
 		_fall_top = NAN
 		return
@@ -320,9 +335,7 @@ func _physics_process(delta: float) -> void:
 			# chave/cartão no chão antes do baú: o cartão do sniper do mezanino pode cair junto ao container do cadeado
 			var key_node := pick_key()
 			if key_node:
-				if camera_rig:
-					camera_rig.focus_pulse(true)  # corta para ela antes da tela do item; ao fechar, afasta
-				key_node.take(self)
+				key_node.take(self)  # a câmera fica onde está (girar para ela ao pegar confundia)
 				return
 			var chest := pick_target()
 			if chest and chest.is_locked():
@@ -342,14 +355,10 @@ func _physics_process(delta: float) -> void:
 			var det := pick_detonator()
 			if det:
 				det.arm()
-				if camera_rig:
-					camera_rig.focus_pulse()
 				return
 			var term := pick_terminal()
 			if term:
 				term.use()
-				if camera_rig:
-					camera_rig.focus_pulse()
 				return
 			var door := pick_door()
 			if door:
@@ -432,7 +441,7 @@ func _physics_process(delta: float) -> void:
 			model.set_state("walk", speed / Moves.speed("walk"))
 		else:
 			var sprinting := GameMode.sprint() and Input.is_action_pressed("sprint")
-			hv = wish * (SPRINT_SPEED if sprinting else RUN_SPEED * GameMode.move_scale())
+			hv = wish * (SPRINT_SPEED if sprinting else (JOG_SPEED if GameMode.sprint() else RUN_SPEED * GameMode.move_scale()))
 			_face(wish, delta)
 			model.set_state("run", hv.length() / RUN_SPEED)
 	if is_on_floor() and _air_t == 0.0 and velocity.y <= 0.0:
@@ -532,7 +541,10 @@ func _jump(wish: Vector3) -> bool:
 		model.play("jump_up")
 	else:
 		rotation.y = atan2(-fwd.x, -fwd.z)
-		velocity = fwd * maxf(flat.dot(fwd), JUMP_FWD) + Vector3.UP * JUMP_SPEED
+		var push := maxf(flat.dot(fwd), JUMP_FWD)
+		if GameMode.sprint() and push >= JOG_SPEED * 0.9:
+			push = maxf(push, RUN_SPEED * GameMode.move_scale())  # pulo trotando: o alcance da corrida (os vãos da fase são medidos nela)
+		velocity = fwd * push + Vector3.UP * JUMP_SPEED
 		model.play("jump")
 	move_and_slide()
 	return true
@@ -765,17 +777,28 @@ func reset_loadout() -> void:
 	model.set_weapon("pistol")
 
 
+## Colete cheio do perfil (0 sem colete: arcade).
+static func start_armor() -> int:
+	return MAX_ARMOR if GameMode.value("vest") else 0
+
+
 ## Item do chão: munição de uma arma (`kind` = nome da arma) ou "health". Devolve false se não coube (munição no máximo,
 ## vida cheia): o item fica onde está.
 func collect(kind: String, amount: int) -> bool:
 	if dead or grabbed:
 		return false
 	if kind == "health":
-		if health >= MAX_HEALTH:
+		# o kit enche a vida e o colete (sem colete no perfil, só a vida)
+		var top := start_armor()
+		if health >= MAX_HEALTH and armor >= top:
 			return false
-		health = mini(MAX_HEALTH, health + amount)
+		var heal := mini(amount, MAX_HEALTH - health)
+		var plate := mini(amount, top - armor)
+		health += heal
+		armor += plate
 		health_changed.emit(health)
-		notice.emit("VIDA +%d" % amount)
+		armor_changed.emit(armor)
+		notice.emit(("VIDA +%d" % heal if heal > 0 else "") + ("  " if heal > 0 and plate > 0 else "") + ("COLETE +%d" % plate if plate > 0 else ""))
 		return true
 	var room: int = int(GameMode.AMMO_CAP[kind]) - ammo_of(kind)
 	if room <= 0:
@@ -810,7 +833,12 @@ func _say(text: String) -> void:
 func give_weapon(w: String, grant := -1) -> void:
 	if w == "":
 		return
-	if not w in weapons:
+	if w in weapons:
+		# já tinha a arma (ex.: o M16 que o guarda largou antes do baú): o baú/caixa vira munição dela
+		var more: int = grant if grant > 0 else int(GameMode.WEAPON_AMMO[w])
+		if GameMode.limited_ammo() and more > 0:
+			collect(w, more)
+	else:
 		weapons.append(w)
 		if GameMode.limited_ammo():
 			var n: int = grant if grant > 0 else int(GameMode.WEAPON_AMMO[w])
@@ -928,7 +956,8 @@ func pick_door() -> Door:
 
 
 func fire() -> void:
-	if dead or grabbed or moves.busy():
+	var hang := moves.hanging() and moves.hang_aiming
+	if dead or grabbed or (moves.busy() and not hang):
 		return
 	if not aiming and not Input.is_action_pressed("aim") and stealth.try_strike():
 		return
@@ -936,8 +965,10 @@ func fire() -> void:
 		return
 	var kind := weapon()
 	var stats := weapon_stats(kind)
-	if GameMode.aim_to_shoot() and not (aiming and model.is_aimed()):
+	if GameMode.aim_to_shoot() and not (aiming and (model.is_hang_aimed() if hang else model.is_aimed())):
 		return  # sem mira apertada não há tiro (nem retícula): nada de tiro do quadril
+	if hang and not model.is_hang_aimed():
+		return  # o braço ainda está saindo da borda
 	if reloading != "":
 		return  # recarregando: o tiro espera o pente
 	if not has_ammo(kind):
@@ -962,8 +993,9 @@ func fire() -> void:
 		_hip_aim_t = HIP_AIM_TIME
 		aiming = true
 		_aim_at(1.0)
-	model.set_aim(true)
-	model.shoot()
+	if not hang:
+		model.set_aim(true)
+	model.shoot(not hang)
 	camera_rig.shake(stats.shake, 0.12 if kind == "shotgun" else 0.06)
 	var ray := camera_rig.aim_ray()
 	var muzzle := model.muzzle_position()
@@ -1230,6 +1262,15 @@ func camera_action() -> String:
 	return moves.mode if CameraRig.ACTIONS.has(moves.mode) else ""
 
 
+## Mouse/analógico não giram a câmera: numa ação com animação (pegar, escalar, abrir, golpe furtivo, entrar/sair da
+## escada), caída ou levantando. No fim a câmera volta ao giro de antes da ação (ninguém mexeu no `yaw`). Cambalhota,
+## subir/descer a escada e pendurada (mira) seguem livres.
+func camera_locked() -> bool:
+	if cutscene or _down_t > 0.0 or _rising or _daze > 0.0 or grabbed:
+		return true
+	return moves.busy() and not moves.mode in PlayerMoves.FREE_LOOK
+
+
 func camera_focus() -> Vector3:
 	if model.is_ragdoll():
 		return model.ragdoll.bodies["Hips"].global_position - Vector3.UP * 0.9
@@ -1240,7 +1281,11 @@ func camera_focus() -> Vector3:
 func take_hit(amount: int, dir: Vector3, at: Vector3) -> void:
 	if dead or cutscene:
 		return
-	health = maxi(0, health - amount)
+	var soak := mini(armor, amount)  # o colete leva primeiro
+	if soak > 0:
+		armor -= soak
+		armor_changed.emit(armor)
+	health = maxi(0, health - (amount - soak))
 	health_changed.emit(health)
 	Blood.splash(get_parent(), at, dir, -dir, amount / 20.0)
 	Rumble.pulse(0.7, clampf(0.3 + amount / 40.0, 0.3, 1.0), 0.25)
@@ -1714,6 +1759,8 @@ func respawn() -> void:
 	stealth.loud_t = 0.0
 	health = 100
 	health_changed.emit(health)
+	armor = start_armor()
+	armor_changed.emit(armor)
 	velocity = Vector3.ZERO
 	global_transform = _spawn
 	reset_physics_interpolation()

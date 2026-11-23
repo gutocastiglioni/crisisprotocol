@@ -38,6 +38,9 @@ const RESUME_DIST := 0.35  # pausada (mira/quina/levantou), volta a encostar se 
 const HELD_MOVE := 0.1  # pausada e sem conseguir voltar, direcional empurrado mais que isto: solta de vez
 const PEEK_EDGE := 0.4  # mirando encostada: a parede acaba a até isto dela = está na beirada, esgueira por ela
 const OVER_MAX := Level.LOW_CRATE_H + 0.1  # mirando encostada: o alto do bloco até isto acima do chão dela = mira em pé por cima dele (as caixas baixas do galpão contam)
+const NARROW := 2.6  # parede/caixa na frente dela a até isto: corredor estreito, a câmera olha ao longo dele (corridor_dir)
+const CORRIDOR_OPEN := 25.0  # graus da direção do corredor para o meio dele
+const NARROW_FAN := [0.0, 45.0, -45.0, 60.0, -60.0]  # raios (graus a partir da frente dela) que procuram o outro lado
 const TOWARD := 0.2  # a câmera olha para o lado da parede (frente da câmera . -normal acima disto): mirar usa a cobertura
 
 var p: Player
@@ -317,6 +320,27 @@ func _edge_dist(at: Vector3, dir: Vector3, upto: float) -> float:
 			return o
 		o += 0.06
 	return INF
+
+
+## Encostada num corredor estreito (outra parede/caixa a até NARROW na frente dela): a direção, no plano, para a câmera olhar
+## pelo corredor para o lado em que ela olha (CORRIDOR_OPEN graus abertos para o meio dele); ZERO fora disso. A câmera
+## atrás dela ficaria de cara na parede da frente e o corredor não aparecia.
+func corridor_dir() -> Vector3:
+	if not active:
+		return Vector3.ZERO
+	var from := p.global_position + Vector3.UP * (CROUCH_RAY_Y if p.crouching else RAY_Y)
+	# na frente dela, reto ou nas diagonais (a frente pode ser a boca de outro corredor): algo perto = corredor estreito
+	var closed := false
+	for deg: float in NARROW_FAN:
+		var d := normal.rotated(Vector3.UP, deg_to_rad(deg))
+		if not _ray(from, from + d * NARROW / maxf(cos(deg_to_rad(deg)), 0.5)).is_empty():
+			closed = true
+			break
+	if not closed:
+		return Vector3.ZERO
+	var along := -_right() * side
+	var a := deg_to_rad(CORRIDOR_OPEN)
+	return (along * cos(a) + normal * sin(a)).normalized()
 
 
 func _right() -> Vector3:

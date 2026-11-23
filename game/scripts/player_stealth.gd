@@ -4,7 +4,11 @@ extends RefCounted
 ## deles; agachada, devagar, parada ou no capim alto = menos) e o barulho dos passos (raptors e soldados ouvem pelo
 ## grupo "enemies"). Tiros e cambalhota fazem barulho pela própria Player (make_noise) e a deixam visível (`shot`).
 
-const RUN_NOISE_SPEED := 2.5  # acima disto os passos são de corrida
+const RUN_NOISE_SPEED := 3.0  # acima disto os passos são de corrida (a corrida forte do survival, a corrida do arcade)
+const JOG_NOISE_SPEED := 1.6  # acima disto (e abaixo da corrida) os passos são do trote (Player.JOG_SPEED)
+const WALK_NOISE := 4.0  # m que os passos chegam: andando
+const JOG_NOISE := 6.0  # trotando
+const RUN_NOISE := 10.0  # correndo
 const LOUD_TIME := 1.5  # depois de atirar, o clarão e o estampido a deixam bem visível por este tempo
 const STEP_TIME := 0.3
 const COVER_GROUP := "cover"  # capim alto (Yard): nó com meta "radius"; dentro dele ela é vista de menos longe
@@ -45,15 +49,19 @@ func update(delta: float) -> void:
 		step_t = STEP_TIME
 		if p.crouching:
 			p.make_noise(2.0, 0.25)
+		elif speed < JOG_NOISE_SPEED:
+			p.make_noise(WALK_NOISE, 0.3)
 		elif speed < RUN_NOISE_SPEED:
-			p.make_noise(4.0, 0.3)
+			p.make_noise(JOG_NOISE, 0.4)
 		else:
-			p.make_noise(10.0, 0.5)
+			p.make_noise(RUN_NOISE, 0.5)
 	var v := 0.7  # parada em pé
 	if p.crouching:
 		v = 0.39 if moving else 0.3
 	elif speed >= RUN_NOISE_SPEED:
 		v = 1.0
+	elif speed >= JOG_NOISE_SPEED:
+		v = 0.85
 	elif moving:
 		v = 0.75
 	var open := v

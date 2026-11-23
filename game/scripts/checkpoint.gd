@@ -41,7 +41,7 @@ static func capture(main: Node, id: String) -> Dictionary:
 	var p: Player = main.player
 	var data := {
 		"id": id,
-		"player": {"health": p.health, "weapons": p.weapons.duplicate(), "silencer": p.silencer, "keys": p.keys.duplicate(),
+		"player": {"health": p.health, "armor": p.armor, "weapons": p.weapons.duplicate(), "silencer": p.silencer, "keys": p.keys.duplicate(),
 			"ammo": p.ammo.duplicate(), "mag": p.mag.duplicate(), "weapon": p.weapon(), "shots": p.shots_fired},
 		"play_t": main._play_t,
 		"smelled": main.smelled,
@@ -90,6 +90,8 @@ static func restore(main: Node, data: Dictionary) -> void:
 	p.model.set_weapon(s.weapon)
 	p.health = s.health
 	p.health_changed.emit(p.health)
+	p.armor = int(s.get("armor", Player.start_armor()))
+	p.armor_changed.emit(p.armor)
 	p.shots_fired = s.shots
 	p.global_position = spawn[0]
 	p.rotation = Vector3(0, spawn[1], 0)

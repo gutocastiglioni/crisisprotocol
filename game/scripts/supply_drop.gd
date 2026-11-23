@@ -2,18 +2,22 @@ class_name SupplyDrop
 extends StaticBody3D
 ## Caixa de lançamento aéreo caída de paraquedas no telhado do galpão, no canto do fundo (`POS`): caixa de
 ## compensado oliva com cintas de carga, caída torta, a lona do paraquedas murcha esparramada atrás e as cordas até as
-## alças da caixa. Fica escondida na neblina do telhado (Roof._fog) até ela chegar perto. Interagir (E) na frente: igual
+## alças da caixa. Fica escondida atrás da casa de máquinas da luz vermelha (Roof._props). Interagir (E) na frente: igual
 ## ao baú (PlayerMoves.start_pickup), ela ajoelha (kneel_transform), a tampa abre (`open`), a mão direita pega a pistola
 ## com silenciador deitada na caixa (animação PickupPistol; `take_item` no quadro da pegada), que entra no lugar da
-## pistola dela (`Player.silencer`: mesma arma e munição, tiro abafado), e ela levanta; no fim (`finish`) o sinal
+## pistola dela (`Player.silencer`: mesma arma e munição, tiro abafado) com AMMO balas a mais, e ela levanta; no fim (`finish`) o sinal
 ## `picked` faz o main mostrar o item (Inspect.show_drop). A pistola na caixa (pistol_crate.glb) já vem do build onde a
 ## mão a pega, em relação à raiz ajoelhada (art/heroine_drop.py). Reinício (`reset`): fechada de novo, com a pistola
 ## dentro. Frente = +Z local.
 
 signal picked(drop: SupplyDrop)
 
-const POS := Vector3(-10.5, Roof.Y, 64.0)  # no telhado, no canto do fundo à esquerda (na neblina mais grossa, Roof.DROP_FOG)
-const YAW := 0.4
+## no telhado, no corredor entre a casa de máquinas da luz vermelha (Roof._props: 2,2 x 1,6 m em (-0,5, 56)) e o
+## alambrado: do começo (Roof.START) a casa de máquinas a tapa; a frente dá para oeste (quem vem pelo corredor) e a lona
+## se estende para leste pelo corredor
+const POS := Vector3(0.4, Roof.Y, 54.1)
+const YAW := -PI * 0.5
+const AMMO := 10  # balas de pistola que vêm com ela (sobrevivência; Player.collect, até o AMMO_CAP)
 const SIZE := Vector3(0.9, 0.42, 0.62)  # corpo (sem a tampa)
 const LID_T := 0.06
 const TILT := 3.0  # graus em volta da frente: caiu com um lado apoiado na lona dobrada
@@ -26,7 +30,7 @@ const ATLAS := preload("res://assets/characters/heroine_atlas.png")
 const NAME := "PISTOLA COM SILENCIADOR"
 const DESCRIPTION := "Pistola .45 com silenciador rosqueado.\nTiro abafado: só quem está perto ouve."
 ## lona: retângulo atrás da caixa (x0, x1, z0, z1 em relação à caixa) e grade de pontos
-const CHUTE := [-1.4, 1.5, -0.45, -2.75]
+const CHUTE := [-0.9, 0.9, -0.45, -2.3]  # cabe no corredor entre a casa de máquinas e o alambrado
 const CHUTE_GRID := Vector2i(9, 7)
 ## por dentro, como os baús: paredes de compensado (RIM de espessura) e a espuma FOAM_IN abaixo da boca, com o vão da
 ## pistola (heroine_drop.CRATE_TOP = SIZE.y - FOAM_IN: o meio da espessura dela no topo da espuma)

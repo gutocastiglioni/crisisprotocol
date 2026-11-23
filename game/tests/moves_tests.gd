@@ -33,6 +33,8 @@ func run(runner: SceneTree) -> void:
 	await test_gamepad_buttons()
 	await test_crouch_pistol_guard()
 	await test_weapon_follows_aim()
+	await test_hang_aim()
+	await test_ladder_slide()
 
 
 func _world() -> Node3D:
@@ -532,3 +534,76 @@ func test_weapon_follows_aim() -> void:
 			var err := rad_to_deg(barrel.angle_to(to))
 			t.check(err < 5.0, "%s mirando %+.0f°: cano aponta para a retícula" % [wpn, rad_to_deg(pitch)], "%.1f°" % err)
 	Input.action_release("aim")
+
+
+## Pendurada: com a pistola, mirar solta o braço direito (aponta para a retícula, a esquerda na borda) e atira sem cair;
+## com arma longa avisa e não mira. Soltar a mira volta as duas mãos à borda; pular sobe.
+func test_hang_aim() -> void:
+	var w := await _world()
+	_box(w, Vector3(2, 2.4, 2), Vector3(0, 1.2, -1.6))
+	var p := _player(w, Vector3(0, 0, 0.0))
+	await t._frames(10)
+	await _tap("jump")
+	await t._frames(40)
+	t.check(p.moves.hanging(), "pendurada", p.moves.mode)
+	var said: Array[String] = []
+	p.notice.connect(func(x: String) -> void: said.append(x))
+	p.give_weapon("m16")
+	Input.action_press("aim")
+	await t._frames(20)
+	t.check(not p.aiming and p.moves.hanging() and said.has(PlayerMoves.HANG_TWO_HANDS), "arma de duas mãos: não mira pendurada e avisa", str(said))
+	Input.action_release("aim")
+	p.model.set_weapon("pistol")
+	await t._frames(5)
+	Input.action_press("aim")
+	await t._frames(30)
+	t.check(p.aiming and p.moves.hanging() and p.model.is_hang_aimed(), "pistola: mira pendurada", "%s %s" % [p.aiming, p.moves.mode])
+	var palm_l := _palm(p.model, "L")
+	t.check(absf(palm_l.y - 2.43) < 0.12, "a mão esquerda segue na borda", str(palm_l))
+	var shots := p.shots_fired
+	Input.action_press("shoot")
+	await t._frames(20)
+	Input.action_release("shoot")
+	t.check(p.shots_fired > shots and p.moves.hanging(), "atira pendurada e continua na borda", "%d %s" % [p.shots_fired, p.moves.mode])
+	Input.action_release("aim")
+	await t._frames(20)
+	t.check(not p.aiming and p.moves.hanging() and not p.model.is_hang_aimed(), "soltou a mira: as duas mãos na borda")
+	await _tap("jump")
+	await t._frames(120)
+	t.check(not p.moves.busy() and p.global_position.y > 2.3, "pula: sobe", str(p.global_position))
+
+
+## Escada: descendo com o botão de corrida, desliza (bem mais rápido que descer degrau a degrau) e chega embaixo em pé, sem
+## dano de queda; sem o botão, desce no passo.
+func test_ladder_slide() -> void:
+	var w := await _world()
+	var lad := Ladder.new()
+	lad.height = 6.0
+	lad.position = Vector3(0, 0, -1.0)
+	w.add_child(lad)
+	var p := _player(w, Vector3(0, 0, 0.0))
+	await t._frames(5)
+	p.moves.start_ladder(lad, true)
+	var t0 := 0
+	while p.moves.mode != "ladder" and t0 < 300:
+		await t._frames(5)
+		t0 += 5
+	t.check(p.moves.mode == "ladder", "na escada, pelo topo", p.moves.mode)
+	var y0 := p.global_position.y
+	Input.action_press("move_back")
+	await t._frames(30)
+	var step_rate := (y0 - p.global_position.y) / 0.5
+	Input.action_press("sprint")
+	var y1 := p.global_position.y
+	await t._frames(15)
+	var slide_rate := (y1 - p.global_position.y) / 0.25
+	t.check(p.moves.sliding and slide_rate > step_rate * 3.0, "segurando corrida: desliza bem mais rápido", "%.2f x %.2f m/s" % [slide_rate, step_rate])
+	var waited := 0
+	while p.moves.busy() and waited < 300:
+		await t._frames(5)
+		waited += 5
+	Input.action_release("sprint")
+	Input.action_release("move_back")
+	await t._frames(10)
+	t.check(not p.moves.busy() and p.health == 100 and not p.dead and p.global_position.y < 0.2, "chega embaixo em pé, sem dano",
+		"%s %d" % [p.global_position, p.health])

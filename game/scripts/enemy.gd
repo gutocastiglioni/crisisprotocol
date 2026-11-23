@@ -45,6 +45,16 @@ var dead := false
 var lurking := false
 ## morto antes do checkpoint de onde ela voltou (`clear_out`): fora do jogo até o próximo `reset`
 var cleared := false
+## Dormindo (`update_sleep`): calmo e sem como percebê-la nem ser visto (ela no telhado, ou longe e com parede/porta fechada
+## no meio): sem IA (`_physics_process`) nem animação (modelo parado) até acordar. O jogo inteiro tinha ~64 inimigos rodando
+## IA e esqueleto em cada quadro (túnel e pedreira inclusive) e era isso que pesava.
+var asleep := false
+## Desligado nos testes (run_tests.gd) e nas capturas: eles põem a jogadora longe e esperam a ronda andar.
+static var sleep_enabled := true
+const SLEEP_DIST := 30.0  # mais perto que isto nunca dorme, mesmo sem som entre os dois
+const SLEEP_STATES := ["idle", "patrol", "look", "guard"]
+const SLEEP_CHECK := 0.25  # s entre as conferências (main)
+var _model_slept := false
 var rng := RandomNumberGenerator.new()
 # ajustes de cada tipo de inimigo
 var sight_range := SIGHT_RANGE
@@ -100,6 +110,7 @@ var _stuck_n := 0
 var nav_map := RID()
 var search_sweeps := SEARCH_SWEEPS  # 0 = só olha em volta onde chegou (sniper preso à passarela)
 var alarm_responders := 99  # quantos do mesmo tipo (os mais perto) saem do posto quando um dá o alarme (raptors: a matilha toda)
+var alarm_stagger := 0.0  # s a mais de espera por posição na fila do alarme (`rank`): os que vão chegam um depois do outro
 var alarm_walks := false  # vai ao alarme como quem investiga (gente: trote, "?"), em vez de caçar na corrida
 ## Gente: tiro ouvido (barulho de alcance `GUNFIRE_RADIUS` ou mais) vai ver na busca ativa, correndo de arma pronta (não a
 ## amarela andando; o guarda de posto só olha, como antes) e companheiro morto à vista (`witness_death`) põe em alerta
@@ -273,7 +284,7 @@ func _calm_state(delta: float) -> bool:
 				else:
 					start_search()
 		"hunt":
-			if _go(_goal, hunt_speed, delta):
+			if _go(_goal, _hunt_speed(), delta):
 				start_search()
 		"search":
 			_search_look(delta)
@@ -570,7 +581,7 @@ func _search_goal(at: Vector3) -> Vector3:
 		return EnemyCrowd.disperse_goal(self, at)
 	var path := NavigationServer3D.map_get_path(_nav(), global_position, at, true)
 	var near := path[path.size() - 1] if not path.is_empty() else at
-	if not _claimed(near):
+	if not _claimed(near) and not _deadly(near):
 		return near
 	var spots := []
 	var blind := []  # sem vista do lugar (dentro do labirinto quase nada vê): ainda serve, desde que livre
@@ -578,7 +589,7 @@ func _search_goal(at: Vector3) -> Vector3:
 		for k in 12:
 			var a := TAU * k / 12.0
 			var q: Variant = _floor_at(at + Vector3(cos(a), 0.0, sin(a)) * r)
-			if q == null or _claimed(q):
+			if q == null or _claimed(q) or _deadly(q):
 				continue
 			var score := r + _flat(q - global_position).length() * 0.25
 			(spots if _sees_from(q, at) else blind).append([score, q])
@@ -599,7 +610,7 @@ func _sweep_goal() -> Variant:
 		for k in 10:
 			var a := TAU * (k + rng.randf()) / 10.0
 			var q: Variant = _floor_at(_search_center + Vector3(cos(a), 0.0, sin(a)) * r)
-			if q == null or _claimed(q) or _visited.any(func(v: Vector3) -> bool: return _flat(v - q).length() < 2.5):
+			if q == null or _claimed(q) or _deadly(q) or _visited.any(func(v: Vector3) -> bool: return _flat(v - q).length() < 2.5):
 				continue
 			var score := _flat(q - global_position).length() + rng.randf_range(0.0, 2.0)
 			if not _sees_from(global_position, q):
@@ -691,6 +702,45 @@ func _reaches(pos: Vector3) -> bool:
 		return false
 	return Level.connected(get_tree(), a, b)
 
+## Calmo, vivo, em cena e fora do alcance dela (telhado, ou a SLEEP_DIST m ou mais sem som entre os dois): pode dormir.
+func _may_sleep(p: Player) -> bool:
+	if dead or lurking or cleared or process_mode == Node.PROCESS_MODE_DISABLED or in_combat() or alert_t > 0.0 \
+			or aware > 0.0 or _shout_t > 0.0 or not state in SLEEP_STATES:
+		return false
+	var at := p.global_position
+	if Roof.has(at):
+		return true
+	return _flat(at - global_position).length() >= SLEEP_DIST and not _reaches(at)
+
+
+func _set_asleep(on: bool) -> void:
+	asleep = on
+	set_physics_process(not on)
+	if on:
+		velocity = Vector3.ZERO
+	var m := get("model") as Node
+	if m == null:
+		return
+	if on and m.process_mode == Node.PROCESS_MODE_INHERIT:
+		m.process_mode = Node.PROCESS_MODE_DISABLED
+		_model_slept = true
+	elif not on and _model_slept:
+		_model_slept = false
+		if not lurking:  # escondido na moita o modelo fica parado (Raptor.lurk)
+			m.process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## Põe para dormir quem pode (`_may_sleep`) e acorda o resto (alarme, ela chegando, R). Chamado pelo main a cada SLEEP_CHECK s.
+static func update_sleep(list: Array, p: Player) -> void:
+	for n in list:
+		var e := n as Enemy
+		if e == null or not is_instance_valid(e):
+			continue
+		var want := sleep_enabled and p != null and not p.dead and e._may_sleep(p)
+		if want != e.asleep:
+			e._set_asleep(want)
+
+
 func is_searching() -> bool:
 	return not in_combat() and not dead and (alert_level() == 2 or state in ["hunt", "search", "sweep", "investigate"])
 
@@ -712,13 +762,37 @@ func hear_noise(pos: Vector3, radius: float, power: float) -> void:
 		spot()
 		return
 	if tactical and radius >= GUNFIRE_RADIUS:
-		# tiro: ninguém vai ver "o que foi" andando; vai correndo, de arma pronta (busca ativa)
+		# tiro: só os `alarm_responders` mais perto do tiro (quem já está na luta conta) vão lá; os outros ficam
+		# alertados olhando para lá, como no alarme (um tiro no labirinto não chama o labirinto inteiro)
+		if _gunfire_rank(pos, radius) >= alarm_responders:
+			alert_t = alert_time
+			_heed(pos)
+			return
+		# ninguém vai ver "o que foi" andando; vai correndo, de arma pronta (busca ativa)
 		_shot_heard = true
 		aware = 1.0
 		_heard = true
 		return
 	aware = minf(aware + power * (1.0 - d / radius), 1.0)
 	_heard = _heard or aware >= 1.0
+
+## Na luta, procurando ou já saindo por um alarme: ocupa uma das `alarm_responders` vagas.
+func _responding() -> bool:
+	return in_combat() or is_searching() or _alarm_delay > 0.0
+
+## Vaga dele entre os do mesmo tipo que também ouvem o tiro em `pos` (0 = o primeiro): os que já estão na luta ou indo
+## para lá vêm antes (perto ou longe), depois os outros do mais perto ao mais longe.
+func _gunfire_rank(pos: Vector3, radius: float) -> int:
+	var mine := _flat(pos - global_position).length_squared()
+	var kind: Script = get_script()
+	var n := 0
+	for e: Node in get_tree().get_nodes_in_group("enemies"):
+		var en := e as Enemy
+		if en == null or en == self or en.get_script() != kind or not en.can_hear(pos, radius):
+			continue
+		if en._responding() or _flat(pos - en.global_position).length_squared() < mine:
+			n += 1
+	return n
 
 ## Companheiro morreu em `at` e o corpo caindo faz barulho a `radius` m: só nota quem tem linha livre até ele (caixa, parede
 ## ou porta no meio abafam). O tiro que matou é outro barulho (`Player.make_noise`) e segue chegando como sempre.
@@ -789,7 +863,7 @@ func on_alarm(src: Node3D, at: Vector3, rank := 0, seen := false) -> void:
 		_heed(at)
 		return
 	aware = 1.0
-	_alarm_delay = global_position.distance_to(src.global_position) * 0.015 + rng.randf_range(0.2, 0.7)
+	_alarm_delay = global_position.distance_to(src.global_position) * 0.015 + rng.randf_range(0.2, 0.7) + rank * alarm_stagger
 
 ## Ouviu o alarme mas não é dos que vão: para, olha para o lugar e segue a rotina (alertado: vê mais longe e mais aberto).
 func _heed(at: Vector3) -> void:
@@ -843,13 +917,26 @@ func broadcast_alarm(at: Vector3, earshot := false, seen := false, about: Enemy 
 	# só quem o alarme alcança disputa as vagas de quem sai (os de outra sala do galpão, atrás de porta fechada, não ocupam)
 	var others: Array = get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool: return _alarm_reaches(e, earshot, about))
 	others.sort_custom(func(a: Enemy, b: Enemy) -> bool: return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
+	# quem já está na luta ou indo para lá ocupa as vagas antes dos novos, perto ou longe: cada um que a vê e avisa de
+	# novo não chama mais 2 (senão o labirinto inteiro vinha)
+	var busy := {}
+	for e: Enemy in others:
+		if e._responding():
+			busy[e.get_script()] = busy.get(e.get_script(), 0) + 1
 	var ranks := {}
+	var fresh := {}
 	for e: Enemy in others:
 		var kind: Script = e.get_script()
-		e.on_alarm(self, at, ranks.get(kind, 0), seen)
+		var rank: int
+		if e._responding():
+			rank = ranks.get(kind, 0)
+			ranks[kind] = rank + 1
+		else:
+			rank = busy.get(kind, 0) + fresh.get(kind, 0)
+			fresh[kind] = fresh.get(kind, 0) + 1
+		e.on_alarm(self, at, rank, seen)
 		if about != null and not about in e._known_dead:
 			e._known_dead.append(about)
-		ranks[kind] = ranks.get(kind, 0) + 1
 
 func _alarm_reaches(e: Node, earshot: bool, about: Enemy) -> bool:
 	var en := e as Enemy
@@ -1262,6 +1349,16 @@ func _note_corpses(delta: float) -> void:
 ## Velocidade vasculhando em volta do lugar procurado (passo de ronda; o guerrilheiro na busca ativa vai no trote).
 func _sweep_speed() -> float:
 	return patrol_speed
+
+## Velocidade correndo até o lugar da caça (quem herda escolhe: o guerrilheiro chega agachado perto dele).
+func _hunt_speed() -> float:
+	return hunt_speed
+
+
+## Lugar onde não convém ir procurar (o guerrilheiro: onde um colega acabou de morrer); quem herda decide.
+func _deadly(_p: Vector3) -> bool:
+	return false
+
 
 ## Velocidade indo ver um lugar (quem herda escolhe: o guerrilheiro anda na busca amarela e corre na ativa).
 func _investigate_speed() -> float:

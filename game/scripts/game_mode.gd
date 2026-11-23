@@ -24,12 +24,12 @@ const PROFILES := {
 	ARCADE: {
 		"shoulder_cam": false, "move_scale": 1.0, "roll_cooldown": 0.0, "aim_to_shoot": false,
 		"weapon_handling": false, "limited_ammo": false, "enemy_damage": 1.0, "pickups": false, "sprint": false,
-		"back_walk": false, "cover": false, "pack_turns": false,
+		"back_walk": false, "cover": false, "pack_turns": false, "vest": false,
 	},
 	SURVIVAL: {
 		"shoulder_cam": true, "move_scale": 0.8, "roll_cooldown": 1.4, "aim_to_shoot": true,
 		"weapon_handling": true, "limited_ammo": true, "enemy_damage": 2.0, "pickups": true, "sprint": true,
-		"back_walk": true, "cover": true, "pack_turns": true,
+		"back_walk": true, "cover": true, "pack_turns": true, "vest": true,
 	},
 }
 
